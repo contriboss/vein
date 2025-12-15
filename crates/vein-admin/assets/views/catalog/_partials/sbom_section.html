@@ -1,0 +1,14 @@
+{% if metadata.sbom %}
+<article class="sbom-card">
+  <div class="sbom-header">
+    <h2>CycloneDX SBOM</h2>
+    <a class="download" href="{{ metadata.sbom_download_url }}" download>Download JSON</a>
+  </div>
+  <pre class="sbom-json">{{ metadata.sbom_json }}</pre>
+</article>
+{% else %}
+<article class="sbom-card">
+  <h2>CycloneDX SBOM</h2>
+  <p class="empty">SBOM not yet available. Fetch this gem through Vein to trigger generation.</p>
+</article>
+{% endif %}

@@ -1,0 +1,68 @@
+use crate::config::reliability::ReliabilityConfig;
+use serde::Deserialize;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpstreamConfig {
+    #[serde(default = "default_upstream_url", with = "serde_url")]
+    pub url: url::Url,
+    #[serde(default, with = "serde_url_vec")]
+    pub fallback_urls: Vec<url::Url>,
+    #[serde(default = "default_timeout_secs")]
+    pub timeout_secs: u64,
+    #[serde(default = "default_pool_size")]
+    pub connection_pool_size: usize,
+    #[serde(default)]
+    pub reliability: ReliabilityConfig,
+}
+
+impl Default for UpstreamConfig {
+    fn default() -> Self {
+        Self {
+            url: default_upstream_url(),
+            fallback_urls: Vec::new(),
+            timeout_secs: default_timeout_secs(),
+            connection_pool_size: default_pool_size(),
+            reliability: ReliabilityConfig::default(),
+        }
+    }
+}
+
+fn default_upstream_url() -> url::Url {
+    url::Url::parse("https://rubygems.org/").expect("valid default upstream url")
+}
+
+fn default_timeout_secs() -> u64 {
+    30
+}
+
+fn default_pool_size() -> usize {
+    128
+}
+
+mod serde_url {
+    use serde::{Deserialize, Deserializer};
+    use url::Url;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Url, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Url::parse(&s).map_err(serde::de::Error::custom)
+    }
+}
+
+mod serde_url_vec {
+    use serde::{Deserialize, Deserializer};
+    use url::Url;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Url>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let list = Vec::<String>::deserialize(deserializer)?;
+        list.into_iter()
+            .map(|s| Url::parse(&s).map_err(serde::de::Error::custom))
+            .collect()
+    }
+}

@@ -1,0 +1,70 @@
+# Vein Configuration Example
+# Copy to vein.toml and customize as needed
+
+[server]
+host = "0.0.0.0"
+port = 8346
+workers = 4  # Number of worker threads (default: CPU count)
+
+[storage]
+path = "./gems"  # Local filesystem storage for cached gems
+
+[database]
+# For SQLite, point to a file with a URL (preferred) or uncomment `path`.
+url = "sqlite://./vein.db"
+# path = "./vein.db"
+# For Postgres, switch to e.g.:
+# url = "postgres://user:pass@db.internal/vein"
+# max_connections = 32
+
+# DATABASE RELIABILITY CONFIGURATION
+[database.reliability.retry]
+enabled = true                    # Enable automatic retries (default: true)
+max_attempts = 5                  # Maximum retry attempts including initial request (default: 5)
+initial_backoff_ms = 500          # Initial backoff delay in milliseconds (default: 500)
+max_backoff_secs = 30             # Maximum backoff delay in seconds (default: 30)
+backoff_strategy = "exponential"  # Strategy: "exponential", "fibonacci", or "constant" (default: "exponential")
+# backoff_strategy = "fibonacci"  # Fibonacci: 500ms, 500ms, 1000ms, 1500ms, 2500ms...
+# backoff_strategy = "constant"   # Constant: always uses initial_backoff_ms
+
+[logging]
+level = "info"  # debug, info, warn, error
+json = false     # Set to true for JSON-formatted logs
+
+# HOT CACHE CONFIGURATION
+[hotcache]
+# Cron schedule for refreshing hot cache from SQLite index
+# Format: "sec min hour day month weekday year"
+# Examples:
+#   "0 0 * * * *"     = Every hour at :00
+#   "0 */30 * * * *"  = Every 30 minutes
+#   "0 0 0 * * *"     = Once per day at midnight
+# Set to empty string ("") to disable automatic refresh
+refresh_schedule = "0 0 * * * *"
+
+# HOTCACHE RELIABILITY CONFIGURATION
+[hotcache.reliability.retry]
+enabled = true                   # Enable automatic retries (default: true)
+max_attempts = 3                 # Maximum retry attempts including initial request (default: 3)
+initial_backoff_ms = 1000        # Initial backoff delay in milliseconds (default: 1000)
+max_backoff_secs = 2             # Maximum backoff delay in seconds (default: 2)
+backoff_strategy = "constant"    # Strategy: "exponential", "fibonacci", or "constant" (default: "constant")
+# backoff_strategy = "exponential"  # Exponential: 1000ms, 2000ms, 4000ms...
+# backoff_strategy = "fibonacci"    # Fibonacci: 1000ms, 1000ms, 2000ms...
+
+# UPSTREAM CONFIGURATION (Optional)
+# By default, Vein runs in cache-only mode.
+# Uncomment this section to enable proxying to an upstream server:
+
+# [upstream]
+# url = "https://rubygems.org"                 # primary upstream
+# fallback_urls = ["https://gems.coop"]        # optional fallback list, tried in order
+# timeout_secs = 30
+# connection_pool_size = 128
+#
+# [upstream.reliability.retry]
+# enabled = true
+# max_attempts = 3
+# initial_backoff_ms = 100
+# max_backoff_secs = 2
+# backoff_strategy = "exponential"

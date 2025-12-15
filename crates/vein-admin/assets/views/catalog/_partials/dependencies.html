@@ -1,0 +1,13 @@
+{% if metadata.dependencies and metadata.dependencies | length > 0 %}
+<ul class="dependencies">
+  {% for dep in metadata.dependencies %}
+  <li>
+    <span class="name">{{ dep.name }}</span>
+    <span class="requirement">{{ dep.requirement }}</span>
+    <span class="kind">{{ dep.kind }}</span>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="empty">No dependencies recorded.</p>
+{% endif %}

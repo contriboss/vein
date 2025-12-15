@@ -1,0 +1,28 @@
+services:
+  vein:
+    image: ghcr.io/contriboss/vein:latest
+    container_name: vein
+    ports:
+      - "8346:8346"
+    volumes:
+      # Persistent gem cache
+      - vein-gems:/data/gems
+      # Persistent database
+      - vein-db:/data/db
+      # Optional: custom configuration
+      # - ./vein.toml:/data/vein.toml:ro
+    environment:
+      - RUST_LOG=info
+    restart: unless-stopped
+    networks:
+      - vein-network
+
+volumes:
+  vein-gems:
+    driver: local
+  vein-db:
+    driver: local
+
+networks:
+  vein-network:
+    driver: bridge

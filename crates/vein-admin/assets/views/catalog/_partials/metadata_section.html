@@ -1,0 +1,58 @@
+{% if metadata %}
+<article>
+  <h2>Gem overview</h2>
+  <table class="meta-table">
+    <tbody>
+      <tr><th>Summary</th><td>{{ metadata.summary | default(value="—") }}</td></tr>
+      <tr><th>Authors</th><td>{{ metadata.authors | join(sep=", ") | default(value="—") }}</td></tr>
+      <tr><th>Emails</th><td>{{ metadata.emails | join(sep=", ") | default(value="—") }}</td></tr>
+      <tr><th>Licences</th><td>{{ metadata.licenses | join(sep=", ") | default(value="—") }}</td></tr>
+      <tr><th>Homepage</th><td>{% if metadata.homepage %}{% include "catalog/_partials/link.html" with url=metadata.homepage %}{% else %}—{% endif %}</td></tr>
+      <tr><th>Documentation</th><td>{% if metadata.documentation_url %}{% include "catalog/_partials/link.html" with url=metadata.documentation_url %}{% else %}—{% endif %}</td></tr>
+      <tr><th>Changelog</th><td>{% if metadata.changelog_url %}{% include "catalog/_partials/link.html" with url=metadata.changelog_url %}{% else %}—{% endif %}</td></tr>
+      <tr><th>Source</th><td>{% if metadata.source_code_url %}{% include "catalog/_partials/link.html" with url=metadata.source_code_url %}{% else %}—{% endif %}</td></tr>
+      <tr><th>Bug tracker</th><td>{% if metadata.bug_tracker_url %}{% include "catalog/_partials/link.html" with url=metadata.bug_tracker_url %}{% else %}—{% endif %}</td></tr>
+      <tr><th>Wiki</th><td>{% if metadata.wiki_url %}{% include "catalog/_partials/link.html" with url=metadata.wiki_url %}{% else %}—{% endif %}</td></tr>
+      <tr><th>Funding</th><td>{% if metadata.funding_url %}{% include "catalog/_partials/link.html" with url=metadata.funding_url %}{% else %}—{% endif %}</td></tr>
+      <tr><th>Platform</th><td>{{ metadata.platform | default(value="ruby") }}</td></tr>
+      <tr><th>Built at</th><td>{{ metadata.built_at | default(value="—") }}</td></tr>
+      <tr><th>Size</th><td>{{ metadata.size_formatted }}</td></tr>
+      <tr><th>SHA256</th><td><code>{{ metadata.sha256 }}</code></td></tr>
+      <tr><th>Requires Ruby</th><td>{{ metadata.required_ruby_version | default(value="—") }}</td></tr>
+      <tr><th>Requires RubyGems</th><td>{{ metadata.required_rubygems_version | default(value="—") }}</td></tr>
+      <tr><th>Native extensions</th><td>{% if metadata.has_native_extensions %}Yes{% else %}No{% endif %}</td></tr>
+      <tr><th>Embedded binaries</th><td>{% if metadata.has_embedded_binaries %}Yes{% else %}No{% endif %}</td></tr>
+      <tr><th>Executables</th><td>{{ metadata.executables | join(sep=", ") | default(value="—") }}</td></tr>
+      <tr><th>Extensions</th><td>{{ metadata.extensions | join(sep=", ") | default(value="—") }}</td></tr>
+      <tr><th>Native languages</th><td>{{ metadata.native_languages | join(sep=", ") | default(value="—") }}</td></tr>
+    </tbody>
+  </table>
+</article>
+
+{% if metadata.description %}
+<article class="description">
+  <h2>Description</h2>
+  {% for paragraph in metadata.description_paragraphs %}
+  <p>{{ paragraph | safe }}</p>
+  {% endfor %}
+</article>
+{% endif %}
+
+<article>
+  <h2>Dependencies</h2>
+  {% include "catalog/_partials/dependencies.html" %}
+</article>
+
+{% include "catalog/_partials/sbom_section.html" %}
+
+<article>
+  <h2>Metadata payload</h2>
+  {% if metadata.metadata_json %}
+  <pre class="metadata-json">{{ metadata.metadata_json }}</pre>
+  {% else %}
+  <p class="empty">No extra metadata payload recorded.</p>
+  {% endif %}
+</article>
+{% else %}
+<p class="empty">Metadata for this gem has not been cached yet. Trigger a fetch by installing this gem through Vein.</p>
+{% endif %}

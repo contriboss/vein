@@ -1,0 +1,97 @@
+{% extends "_base.html" %}
+
+{% block title %}Vein Catalogue{% endblock %}
+
+{% block extra_styles %}
+.meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  color: rgba(240, 246, 255, 0.75);
+}
+h1 {
+  margin-top: 0;
+  font-size: clamp(1.8rem, 3vw, 2.4rem);
+}
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 1.5rem;
+}
+.filters a {
+  display: inline-flex;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.02);
+  color: #cbd5f5;
+  font-size: 0.9rem;
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+.filters a:hover {
+  border-color: rgba(79, 140, 255, 0.6);
+  color: #fff;
+}
+.filters a.active {
+  background: #4f8cff;
+  color: #091220;
+  border-color: #4f8cff;
+  font-weight: 600;
+}
+ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  columns: 2;
+  column-gap: 2rem;
+}
+li {
+  break-inside: avoid;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+}
+.pager {
+  margin-top: 2rem;
+  display: flex;
+  gap: 1rem;
+}
+.pager span {
+  color: rgba(240, 246, 255, 0.6);
+}
+{% endblock %}
+
+{% block content %}
+<div class="meta">
+  <h1>Vein Catalogue</h1>
+  <span>Total gems: {{ total_label }}</span>
+</div>
+<nav class="links">
+  <a href="/">Dashboard</a>
+  <a href="/changelog">Changelog</a>
+  <a href="/permissions">Entitlements</a>
+  <a href="/security">Security</a>
+</nav>
+<div class="filters">
+  <a class="{% if not selected_language %}active{% endif %}" href="/catalog">All languages</a>
+  {% for language in languages %}
+  <a class="{% if selected_language == language %}active{% endif %}" href="/catalog?lang={{ language | urlencode }}">{{ language }}</a>
+  {% endfor %}
+</div>
+<ul>
+  {% for entry in entries %}
+  <li><a href="/catalog/{{ entry.name | urlencode }}{% if selected_language %}?lang={{ selected_language | urlencode }}{% endif %}">{{ entry.name }}</a></li>
+  {% endfor %}
+</ul>
+<div class="pager">
+  {% if page > 1 %}
+  <a href="/catalog?page={{ page - 1 }}{% if selected_language %}&amp;lang={{ selected_language | urlencode }}{% endif %}">Previous</a>
+  {% endif %}
+  <span>Page {{ page }} of {{ total_pages }}</span>
+  {% if page < total_pages %}
+  <a href="/catalog?page={{ page + 1 }}{% if selected_language %}&amp;lang={{ selected_language | urlencode }}{% endif %}">Next</a>
+  {% endif %}
+</div>
+{% endblock %}

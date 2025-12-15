@@ -1,0 +1,17 @@
+/target
+Cargo.lock
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Storage
+/gems
+/cache
+
+# Config
+vein.toml
+.env
+*.redb
+.dictator/

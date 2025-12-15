@@ -1,0 +1,27 @@
+# Git
+.git
+.gitignore
+
+# Build artifacts
+target/
+
+# Reference implementations
+reference/
+
+# Development files
+*.md
+PLANNING.md
+
+# Runtime artifacts
+*.db
+*.db-shm
+*.db-wal
+gems/
+cache/
+vein.toml
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
