@@ -16,6 +16,7 @@ Vein is a **smart caching proxy** for RubyGems that:
 
 - **Blazing Fast**: High-performance proxy with Rama
 - **Smart Caching**: Proxy once, serve forever from local cache
+- **Supply Chain Protection**: Optional quarantine delays for new gem versions
 - **Minimal Config**: Works out of the box, configure only what you need
 - **Simple Deployment**: Single binary, no complex dependencies
 - **Ore Integration**: Works seamlessly with ore-light's fallback mechanism
@@ -68,6 +69,7 @@ Client Request → Vein → Local Cache?
 - [x] Cache revalidation on corruption
 - [x] Legacy API rejection (with monitoring)
 - [x] CycloneDX SBOM extraction with admin preview & download API
+- [x] Quarantine system (supply chain attack protection)
 
 ### Usage
 
@@ -103,6 +105,67 @@ cargo run -- cache refresh --config vein.toml
 - **Admin dashboard**: start `make admin` then browse to `http://127.0.0.1:9400/catalog/<gem>?version=<version>` to preview the generated SBOM and download the JSON directly from the UI.
 - **Proxy endpoint**: any client can fetch the SBOM without the admin UI by calling `GET /.well-known/vein/sbom?name=<gem>&version=<version>[&platform=<platform>]` against the running Vein proxy. The response is a CycloneDX 1.5 document with `Content-Type: application/json` and a download-friendly filename. Omit the `platform` query for default `ruby` builds; supply it for native variants (e.g. `arm64-darwin`).
 - SBOMs are generated automatically the first time a gem is cached and refreshed whenever the gem is re-fetched.
+
+### Quarantine (Supply Chain Protection)
+
+Vein can delay new gem versions from appearing in Bundler's index, giving the community time to catch malicious packages before they reach your CI/CD.
+
+**How it works:**
+- New gem versions are quarantined for a configurable period (default: 3 days)
+- `bundle update` and `bundle outdated` won't see quarantined versions
+- Direct installs (`gem install foo -v 1.2.3`) still work (explicit choice)
+- Versions auto-promote when quarantine expires
+
+**Real-world scenario (rest-client 1.6.13, August 2019):**
+- Malicious version published, yanked ~12 hours later
+- Any CI/CD running `bundle update` during that window got compromised
+- With Vein's 3-day quarantine: zero exposure
+
+**Enable in config:**
+
+```toml
+[delay_policy]
+enabled = true
+default_delay_days = 3
+skip_weekends = true        # Don't release on Sat/Sun
+release_hour_utc = 10       # Release at 10:00 UTC
+
+# Per-gem overrides (glob patterns supported)
+[[delay_policy.gems]]
+pattern = "rails*"
+delay_days = 7              # Extra scrutiny for Rails ecosystem
+
+[[delay_policy.gems]]
+pattern = "internal-*"
+delay_days = 0              # Trust internal gems
+
+# Pin specific versions for immediate availability
+[[delay_policy.pinned]]
+name = "rails"
+version = "8.0.1"
+reason = "Security patch - verified safe"
+```
+
+**CLI commands:**
+
+```bash
+# Show quarantine status
+vein quarantine status
+
+# List versions in quarantine
+vein quarantine list
+
+# Manually promote expired versions
+vein quarantine promote
+
+# Approve a version for immediate release
+vein quarantine approve rails 8.0.1 --reason "Security patch"
+
+# Block a malicious version
+vein quarantine block badgem 1.0.0 --reason "Malware detected"
+```
+
+**Admin UI:** Browse to `/quarantine` on the admin server to view stats and approve/block versions.
 
 ### Configuration
 
@@ -147,6 +210,12 @@ level = "info"  # debug, info, warn, error
 refresh_schedule = "0 0 * * * *"  # Every hour (default)
 # refresh_schedule = "0 */30 * * * *"  # Every 30 minutes
 # refresh_schedule = ""  # Disabled
+
+[delay_policy]
+enabled = false              # Enable quarantine system
+default_delay_days = 3       # Default quarantine period
+skip_weekends = true         # Don't release on weekends
+release_hour_utc = 10        # Hour to release (0-23)
 ```
 
 ### Storage Architecture

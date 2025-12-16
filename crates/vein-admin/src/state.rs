@@ -4,7 +4,10 @@ use crate::ruby::RubyStatus;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use vein::config::Config as VeinConfig;
-use vein_adapter::{CacheBackend, GemMetadata, IndexStats, SbomCoverage};
+use vein_adapter::{
+    CacheBackend, GemMetadata, GemVersion, IndexStats, QuarantineStats, SbomCoverage,
+    VersionStatus,
+};
 
 #[derive(Clone)]
 pub struct AdminResources {
@@ -96,6 +99,64 @@ impl AdminResources {
         platform: Option<&str>,
     ) -> Result<Option<GemMetadata>> {
         self.cache.gem_metadata(name, version, platform).await
+    }
+
+    // Quarantine methods
+    pub fn quarantine_enabled(&self) -> bool {
+        self.config.delay_policy.enabled
+    }
+
+    pub async fn quarantine_stats(&self) -> Result<QuarantineStats> {
+        self.cache.quarantine_stats().await
+    }
+
+    pub async fn quarantine_pending(&self, limit: u32, offset: u32) -> Result<Vec<GemVersion>> {
+        self.cache.get_all_quarantined(limit, offset).await
+    }
+
+    pub async fn approve_version(
+        &self,
+        name: &str,
+        version: &str,
+        platform: Option<&str>,
+        reason: &str,
+    ) -> Result<()> {
+        self.cache
+            .update_version_status(
+                name,
+                version,
+                platform,
+                VersionStatus::Pinned,
+                Some(format!("approved: {}", reason)),
+            )
+            .await
+    }
+
+    pub async fn block_version(
+        &self,
+        name: &str,
+        version: &str,
+        platform: Option<&str>,
+        reason: &str,
+    ) -> Result<()> {
+        self.cache
+            .update_version_status(
+                name,
+                version,
+                platform,
+                VersionStatus::Yanked,
+                Some(format!("blocked: {}", reason)),
+            )
+            .await
+    }
+
+    pub async fn get_gem_version(
+        &self,
+        name: &str,
+        version: &str,
+        platform: Option<&str>,
+    ) -> Result<Option<GemVersion>> {
+        self.cache.get_gem_version(name, version, platform).await
     }
 }
 

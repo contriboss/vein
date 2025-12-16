@@ -14,6 +14,7 @@ pub mod db;
 pub mod gem_metadata;
 pub mod hotcache;
 pub mod proxy;
+pub mod quarantine;
 pub mod upstream;
 
 pub use vein_adapter::*;

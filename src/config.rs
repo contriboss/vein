@@ -8,6 +8,7 @@ use serde::Deserialize;
 
 // Re-export all submodules
 pub mod database;
+pub mod delay_policy;
 pub mod hotcache;
 pub mod logging;
 pub mod reliability;
@@ -20,6 +21,7 @@ mod tests;
 
 // Re-export types from submodules for convenience
 pub use database::{DatabaseBackend, DatabaseConfig};
+pub use delay_policy::{DelayPolicyConfig, GemDelayOverride, PinnedVersion};
 pub use hotcache::HotCacheConfig;
 pub use logging::LoggingConfig;
 pub use reliability::{BackoffStrategy, ReliabilityConfig, RetryConfig};
@@ -41,6 +43,8 @@ pub struct Config {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub hotcache: HotCacheConfig,
+    #[serde(default)]
+    pub delay_policy: DelayPolicyConfig,
 }
 
 impl Config {

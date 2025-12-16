@@ -7,6 +7,7 @@ pub mod changelog;
 pub mod dashboard;
 pub mod health;
 pub mod permissions;
+pub mod quarantine;
 pub mod security;
 
 pub(crate) fn resources(ctx: &AppContext) -> Result<AdminResources> {

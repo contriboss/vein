@@ -78,3 +78,87 @@ pub struct DbGemMetadataRow {
 pub fn format_timestamp(ts: DateTime<Utc>) -> String {
     ts.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
+
+// ==================== Quarantine Row Types ====================
+
+use super::quarantine::GemVersion;
+
+/// SQLite row type for gem_versions table (stores DateTime as TEXT)
+#[derive(Debug, FromRow)]
+pub struct GemVersionRow {
+    pub id: i64,
+    pub name: String,
+    pub version: String,
+    pub platform: Option<String>,
+    pub sha256: Option<String>,
+    pub published_at: String,
+    pub available_after: String,
+    pub status: String,
+    pub status_reason: Option<String>,
+    pub upstream_yanked: bool,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+/// PostgreSQL row type for gem_versions table (uses native DateTime)
+#[derive(Debug, FromRow)]
+pub struct PostgresGemVersionRow {
+    pub id: i64,
+    pub name: String,
+    pub version: String,
+    pub platform: Option<String>,
+    pub sha256: Option<String>,
+    pub published_at: DateTime<Utc>,
+    pub available_after: DateTime<Utc>,
+    pub status: String,
+    pub status_reason: Option<String>,
+    pub upstream_yanked: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+impl From<GemVersionRow> for GemVersion {
+    fn from(row: GemVersionRow) -> Self {
+        GemVersion {
+            id: row.id,
+            name: row.name,
+            version: row.version,
+            platform: row.platform,
+            sha256: row.sha256,
+            published_at: DateTime::parse_from_rfc3339(&row.published_at)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+            available_after: DateTime::parse_from_rfc3339(&row.available_after)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+            status: row.status.parse().unwrap_or_default(),
+            status_reason: row.status_reason,
+            upstream_yanked: row.upstream_yanked,
+            created_at: DateTime::parse_from_rfc3339(&row.created_at)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+            updated_at: DateTime::parse_from_rfc3339(&row.updated_at)
+                .map(|dt| dt.with_timezone(&Utc))
+                .unwrap_or_else(|_| Utc::now()),
+        }
+    }
+}
+
+impl From<PostgresGemVersionRow> for GemVersion {
+    fn from(row: PostgresGemVersionRow) -> Self {
+        GemVersion {
+            id: row.id,
+            name: row.name,
+            version: row.version,
+            platform: row.platform,
+            sha256: row.sha256,
+            published_at: row.published_at,
+            available_after: row.available_after,
+            status: row.status.parse().unwrap_or_default(),
+            status_reason: row.status_reason,
+            upstream_yanked: row.upstream_yanked,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
+    }
+}

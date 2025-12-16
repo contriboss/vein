@@ -1,14 +1,14 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use sqlx::{
     PgPool, Transaction,
     postgres::{PgPoolOptions, Postgres},
 };
 
 use super::{
-    CacheBackend,
-    models::{DbGemMetadataRow, PostgresCachedAssetRow, format_timestamp},
+    CacheBackend, GemVersion, QuarantineStats, VersionStatus,
+    models::{DbGemMetadataRow, PostgresCachedAssetRow, PostgresGemVersionRow, format_timestamp},
     serialization::{hydrate_metadata_row, parse_language_rows, prepare_metadata_strings},
     types::{AssetKey, CachedAsset, GemMetadata, IndexStats, SbomCoverage},
 };
@@ -518,5 +518,362 @@ impl CacheBackend for PostgresCacheBackend {
         .await
         .context("counting catalog gems by language (postgres)")?;
         Ok(total.max(0) as u64)
+    }
+
+    // ==================== Quarantine Methods ====================
+
+    async fn get_gem_version(
+        &self,
+        name: &str,
+        version: &str,
+        platform: Option<&str>,
+    ) -> Result<Option<GemVersion>> {
+        let row = sqlx::query_as::<_, PostgresGemVersionRow>(
+            r#"
+            SELECT id, name, version, platform, sha256, published_at, available_after,
+                   status, status_reason, upstream_yanked, created_at, updated_at
+            FROM gem_versions
+            WHERE name = $1
+              AND version = $2
+              AND ((platform IS NULL AND $3 IS NULL) OR platform = $3)
+            "#,
+        )
+        .bind(name)
+        .bind(version)
+        .bind(platform)
+        .fetch_optional(&self.pool)
+        .await
+        .context("fetching gem version (postgres)")?;
+
+        Ok(row.map(Into::into))
+    }
+
+    async fn upsert_gem_version(&self, gem_version: &GemVersion) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO gem_versions (
+                name, version, platform, sha256, published_at, available_after,
+                status, status_reason, upstream_yanked, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+            ON CONFLICT ON CONSTRAINT gem_versions_unique
+            DO UPDATE SET
+                sha256 = EXCLUDED.sha256,
+                published_at = EXCLUDED.published_at,
+                available_after = EXCLUDED.available_after,
+                status = EXCLUDED.status,
+                status_reason = EXCLUDED.status_reason,
+                upstream_yanked = EXCLUDED.upstream_yanked,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(&gem_version.name)
+        .bind(&gem_version.version)
+        .bind(gem_version.platform.as_deref())
+        .bind(gem_version.sha256.as_deref())
+        .bind(gem_version.published_at)
+        .bind(gem_version.available_after)
+        .bind(gem_version.status.to_string())
+        .bind(gem_version.status_reason.as_deref())
+        .bind(gem_version.upstream_yanked)
+        .bind(gem_version.created_at)
+        .execute(&self.pool)
+        .await
+        .context("upserting gem version (postgres)")?;
+
+        Ok(())
+    }
+
+    async fn get_latest_available_version(
+        &self,
+        name: &str,
+        platform: Option<&str>,
+        now: DateTime<Utc>,
+    ) -> Result<Option<GemVersion>> {
+        // Get all available versions and sort in Rust for proper semver comparison
+        let rows = sqlx::query_as::<_, PostgresGemVersionRow>(
+            r#"
+            SELECT id, name, version, platform, sha256, published_at, available_after,
+                   status, status_reason, upstream_yanked, created_at, updated_at
+            FROM gem_versions
+            WHERE name = $1
+              AND ((platform IS NULL AND $2 IS NULL) OR platform = $2)
+              AND upstream_yanked = FALSE
+              AND (status = 'available' OR status = 'pinned'
+                   OR (status = 'quarantine' AND available_after <= $3))
+            "#,
+        )
+        .bind(name)
+        .bind(platform)
+        .bind(now)
+        .fetch_all(&self.pool)
+        .await
+        .context("fetching available versions (postgres)")?;
+
+        // Find the latest version using semver comparison
+        let mut versions: Vec<GemVersion> = rows.into_iter().map(Into::into).collect();
+        versions.sort_by(|a, b| compare_versions(&b.version, &a.version));
+
+        Ok(versions.into_iter().next())
+    }
+
+    async fn get_quarantined_versions(
+        &self,
+        name: &str,
+        now: DateTime<Utc>,
+    ) -> Result<Vec<GemVersion>> {
+        let rows = sqlx::query_as::<_, PostgresGemVersionRow>(
+            r#"
+            SELECT id, name, version, platform, sha256, published_at, available_after,
+                   status, status_reason, upstream_yanked, created_at, updated_at
+            FROM gem_versions
+            WHERE name = $1
+              AND status = 'quarantine'
+              AND available_after > $2
+            ORDER BY version DESC
+            "#,
+        )
+        .bind(name)
+        .bind(now)
+        .fetch_all(&self.pool)
+        .await
+        .context("fetching quarantined versions (postgres)")?;
+
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    async fn update_version_status(
+        &self,
+        name: &str,
+        version: &str,
+        platform: Option<&str>,
+        status: VersionStatus,
+        reason: Option<String>,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE gem_versions
+            SET status = $1, status_reason = $2, updated_at = NOW()
+            WHERE name = $3
+              AND version = $4
+              AND ((platform IS NULL AND $5 IS NULL) OR platform = $5)
+            "#,
+        )
+        .bind(status.to_string())
+        .bind(reason)
+        .bind(name)
+        .bind(version)
+        .bind(platform)
+        .execute(&self.pool)
+        .await
+        .context("updating version status (postgres)")?;
+
+        Ok(())
+    }
+
+    async fn promote_expired_quarantines(&self, now: DateTime<Utc>) -> Result<u64> {
+        let result = sqlx::query(
+            r#"
+            UPDATE gem_versions
+            SET status = 'available', status_reason = 'auto-promoted', updated_at = NOW()
+            WHERE status = 'quarantine'
+              AND available_after <= $1
+            "#,
+        )
+        .bind(now)
+        .execute(&self.pool)
+        .await
+        .context("promoting expired quarantines (postgres)")?;
+
+        Ok(result.rows_affected())
+    }
+
+    async fn mark_yanked(&self, name: &str, version: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            UPDATE gem_versions
+            SET status = 'yanked', upstream_yanked = TRUE, updated_at = NOW()
+            WHERE name = $1 AND version = $2
+            "#,
+        )
+        .bind(name)
+        .bind(version)
+        .execute(&self.pool)
+        .await
+        .context("marking version yanked (postgres)")?;
+
+        Ok(())
+    }
+
+    async fn get_all_quarantined(&self, limit: u32, offset: u32) -> Result<Vec<GemVersion>> {
+        let rows = sqlx::query_as::<_, PostgresGemVersionRow>(
+            r#"
+            SELECT id, name, version, platform, sha256, published_at, available_after,
+                   status, status_reason, upstream_yanked, created_at, updated_at
+            FROM gem_versions
+            WHERE status = 'quarantine'
+            ORDER BY available_after ASC
+            LIMIT $1 OFFSET $2
+            "#,
+        )
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(&self.pool)
+        .await
+        .context("fetching all quarantined (postgres)")?;
+
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    async fn quarantine_stats(&self) -> Result<QuarantineStats> {
+        let now = Utc::now();
+        let today_end = now + Duration::days(1);
+        let week_end = now + Duration::days(7);
+
+        let (quarantined, available, yanked, pinned): (i64, i64, i64, i64) = sqlx::query_as(
+            r#"
+            SELECT
+                COALESCE(SUM(CASE WHEN status = 'quarantine' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN status = 'yanked' THEN 1 ELSE 0 END), 0),
+                COALESCE(SUM(CASE WHEN status = 'pinned' THEN 1 ELSE 0 END), 0)
+            FROM gem_versions
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .context("fetching quarantine counts (postgres)")?;
+
+        let releasing_today: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM gem_versions
+            WHERE status = 'quarantine'
+              AND available_after > $1
+              AND available_after <= $2
+            "#,
+        )
+        .bind(now)
+        .bind(today_end)
+        .fetch_one(&self.pool)
+        .await
+        .context("counting versions releasing today (postgres)")?;
+
+        let releasing_week: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM gem_versions
+            WHERE status = 'quarantine'
+              AND available_after > $1
+              AND available_after <= $2
+            "#,
+        )
+        .bind(now)
+        .bind(week_end)
+        .fetch_one(&self.pool)
+        .await
+        .context("counting versions releasing this week (postgres)")?;
+
+        Ok(QuarantineStats {
+            total_quarantined: quarantined.max(0) as u64,
+            total_available: available.max(0) as u64,
+            total_yanked: yanked.max(0) as u64,
+            total_pinned: pinned.max(0) as u64,
+            versions_releasing_today: releasing_today.max(0) as u64,
+            versions_releasing_this_week: releasing_week.max(0) as u64,
+        })
+    }
+
+    async fn get_gem_versions_for_index(&self, name: &str) -> Result<Vec<GemVersion>> {
+        let rows = sqlx::query_as::<_, PostgresGemVersionRow>(
+            r#"
+            SELECT id, name, version, platform, sha256, published_at, available_after,
+                   status, status_reason, upstream_yanked, created_at, updated_at
+            FROM gem_versions
+            WHERE name = $1
+            ORDER BY version DESC
+            "#,
+        )
+        .bind(name)
+        .fetch_all(&self.pool)
+        .await
+        .context("fetching gem versions for index (postgres)")?;
+
+        Ok(rows.into_iter().map(Into::into).collect())
+    }
+
+    async fn quarantine_table_exists(&self) -> Result<bool> {
+        let exists: bool = sqlx::query_scalar(
+            r#"
+            SELECT EXISTS (
+                SELECT FROM information_schema.tables
+                WHERE table_name = 'gem_versions'
+            )
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .context("checking quarantine table exists (postgres)")?;
+
+        Ok(exists)
+    }
+
+    async fn run_quarantine_migrations(&self) -> Result<()> {
+        // Create gem_versions table
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS gem_versions (
+                id BIGSERIAL PRIMARY KEY,
+                name TEXT NOT NULL,
+                version TEXT NOT NULL,
+                platform TEXT,
+                sha256 TEXT,
+                published_at TIMESTAMPTZ NOT NULL,
+                available_after TIMESTAMPTZ NOT NULL,
+                status TEXT NOT NULL DEFAULT 'quarantine',
+                status_reason TEXT,
+                upstream_yanked BOOLEAN NOT NULL DEFAULT FALSE,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CONSTRAINT gem_versions_unique UNIQUE (name, version, platform)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .context("creating gem_versions table (postgres)")?;
+
+        // Create indexes
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_gem_versions_name ON gem_versions(name)",
+        )
+        .execute(&self.pool)
+        .await
+        .context("creating name index (postgres)")?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_gem_versions_status ON gem_versions(status)",
+        )
+        .execute(&self.pool)
+        .await
+        .context("creating status index (postgres)")?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_gv_available ON gem_versions(available_after)",
+        )
+        .execute(&self.pool)
+        .await
+        .context("creating available_after index (postgres)")?;
+
+        Ok(())
+    }
+}
+
+/// Compare two version strings using semver when possible.
+fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
+    // Try semver parsing first
+    match (semver::Version::parse(a), semver::Version::parse(b)) {
+        (Ok(va), Ok(vb)) => va.cmp(&vb),
+        // Fall back to string comparison if semver fails
+        _ => a.cmp(b),
     }
 }

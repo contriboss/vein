@@ -51,6 +51,7 @@ impl Hooks for App {
             .add_route(controllers::catalog::routes())
             .add_route(controllers::changelog::routes())
             .add_route(controllers::permissions::routes())
+            .add_route(controllers::quarantine::routes())
             .add_route(controllers::security::routes())
     }
 

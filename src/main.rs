@@ -7,12 +7,14 @@
     clippy::unused_async
 )]
 
-mod config;
 mod db;
 mod gem_metadata;
 mod hotcache;
 mod proxy;
 mod upstream;
+
+// Use config from library to avoid type conflicts with quarantine module
+use vein::config;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -37,11 +39,11 @@ use tracing_subscriber::{
 };
 use vein_adapter::{CacheBackend, FilesystemStorage};
 
-use crate::config::{Config, DatabaseBackend};
+use config::{Config, DatabaseBackend};
 use crate::db::connect_cache_backend;
 use crate::hotcache::HotCache;
 use crate::proxy::VeinProxy;
-use vein::catalog;
+use vein::{catalog, quarantine};
 
 #[derive(Debug, Parser)]
 #[command(author, version, about = "Vein RubyGems mirror server")]
@@ -83,6 +85,11 @@ enum Command {
         #[arg(long, default_value_t = 5)]
         timeout: u64,
     },
+    /// Quarantine management operations
+    Quarantine {
+        #[command(subcommand)]
+        action: QuarantineCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -105,6 +112,63 @@ enum CatalogCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum QuarantineCommand {
+    /// Show quarantine statistics
+    Status {
+        /// Path to the configuration file
+        #[arg(long, default_value = "vein.toml")]
+        config: PathBuf,
+    },
+    /// List versions currently in quarantine
+    List {
+        /// Path to the configuration file
+        #[arg(long, default_value = "vein.toml")]
+        config: PathBuf,
+        /// Maximum number of entries to show
+        #[arg(long, default_value_t = 50)]
+        limit: u32,
+    },
+    /// Manually promote all expired quarantines now
+    Promote {
+        /// Path to the configuration file
+        #[arg(long, default_value = "vein.toml")]
+        config: PathBuf,
+    },
+    /// Approve a specific gem version for immediate availability
+    Approve {
+        /// Path to the configuration file
+        #[arg(long, default_value = "vein.toml")]
+        config: PathBuf,
+        /// Gem name
+        gem: String,
+        /// Version string
+        version: String,
+        /// Platform (optional)
+        #[arg(long)]
+        platform: Option<String>,
+        /// Reason for approval
+        #[arg(long, default_value = "cli approval")]
+        reason: String,
+    },
+    /// Block a specific gem version (mark as yanked)
+    Block {
+        /// Path to the configuration file
+        #[arg(long, default_value = "vein.toml")]
+        config: PathBuf,
+        /// Gem name
+        gem: String,
+        /// Version string
+        version: String,
+        /// Platform (optional)
+        #[arg(long)]
+        platform: Option<String>,
+        /// Reason for blocking
+        #[arg(long, default_value = "cli block")]
+        reason: String,
+    },
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     match cli.command {
@@ -117,6 +181,25 @@ fn main() -> Result<()> {
             CatalogCommand::Sync { config } => run_catalog_sync(config),
         },
         Command::Health { url, timeout } => run_health(url, timeout),
+        Command::Quarantine { action } => match action {
+            QuarantineCommand::Status { config } => run_quarantine_status(config),
+            QuarantineCommand::List { config, limit } => run_quarantine_list(config, limit),
+            QuarantineCommand::Promote { config } => run_quarantine_promote(config),
+            QuarantineCommand::Approve {
+                config,
+                gem,
+                version,
+                platform,
+                reason,
+            } => run_quarantine_approve(config, gem, version, platform, reason),
+            QuarantineCommand::Block {
+                config,
+                gem,
+                version,
+                platform,
+                reason,
+            } => run_quarantine_block(config, gem, version, platform, reason),
+        },
     }
 }
 
@@ -138,6 +221,10 @@ fn run_server(config_path: PathBuf) -> Result<()> {
     let (index, backend_kind) = rt
         .block_on(connect_cache_backend(config.as_ref()))
         .context("connecting to cache index")?;
+
+    // Ensure quarantine tables exist if enabled
+    rt.block_on(quarantine::ensure_tables(index.as_ref(), &config.delay_policy))
+        .context("initializing quarantine tables")?;
 
     let hot_cache_path = hot_cache_path(config.as_ref(), &backend_kind);
     let hot_cache =
@@ -199,6 +286,9 @@ fn run_server(config_path: PathBuf) -> Result<()> {
             });
         });
     }
+
+    // Start quarantine promotion scheduler if enabled
+    quarantine::spawn_promotion_scheduler(&config.delay_policy, index.clone(), None);
 
     drop(rt);
 
@@ -463,6 +553,206 @@ fn run_catalog_sync(config_path: PathBuf) -> Result<()> {
             return Err(err.context("syncing catalogue"));
         }
     }
+
+    Ok(())
+}
+
+fn run_quarantine_status(config_path: PathBuf) -> Result<()> {
+    let config = Arc::new(Config::load(Some(config_path)).context("loading configuration")?);
+
+    if !config.delay_policy.enabled {
+        println!("Quarantine feature is disabled in configuration.");
+        println!("Enable it by setting delay_policy.enabled = true in vein.toml");
+        return Ok(());
+    }
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("constructing quarantine runtime")?;
+
+    let (index, _) = rt
+        .block_on(connect_cache_backend(config.as_ref()))
+        .context("connecting to cache index")?;
+
+    let stats = rt
+        .block_on(index.quarantine_stats())
+        .context("fetching quarantine stats")?;
+
+    println!("Quarantine Status");
+    println!("=================");
+    println!("Quarantined:     {}", stats.total_quarantined);
+    println!("Available:       {}", stats.total_available);
+    println!("Pinned:          {}", stats.total_pinned);
+    println!("Blocked/Yanked:  {}", stats.total_yanked);
+    println!();
+    println!("Releasing today:      {}", stats.versions_releasing_today);
+    println!("Releasing this week:  {}", stats.versions_releasing_this_week);
+    println!();
+    println!("Default delay: {} days", config.delay_policy.default_delay_days);
+    println!("Skip weekends: {}", config.delay_policy.skip_weekends);
+
+    Ok(())
+}
+
+fn run_quarantine_list(config_path: PathBuf, limit: u32) -> Result<()> {
+    let config = Arc::new(Config::load(Some(config_path)).context("loading configuration")?);
+
+    if !config.delay_policy.enabled {
+        println!("Quarantine feature is disabled in configuration.");
+        return Ok(());
+    }
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("constructing quarantine runtime")?;
+
+    let (index, _) = rt
+        .block_on(connect_cache_backend(config.as_ref()))
+        .context("connecting to cache index")?;
+
+    let versions = rt
+        .block_on(index.get_all_quarantined(limit, 0))
+        .context("fetching quarantined versions")?;
+
+    if versions.is_empty() {
+        println!("No versions currently in quarantine.");
+        return Ok(());
+    }
+
+    println!(
+        "{:<30} {:<15} {:<15} {:<10} {}",
+        "GEM", "VERSION", "PLATFORM", "STATUS", "AVAILABLE AFTER"
+    );
+    println!("{}", "-".repeat(90));
+
+    for v in versions {
+        let platform = v.platform.as_deref().unwrap_or("ruby");
+        println!(
+            "{:<30} {:<15} {:<15} {:<10} {}",
+            v.name,
+            v.version,
+            platform,
+            format!("{:?}", v.status),
+            v.available_after.format("%Y-%m-%d %H:%M UTC")
+        );
+    }
+
+    Ok(())
+}
+
+fn run_quarantine_promote(config_path: PathBuf) -> Result<()> {
+    let config = Arc::new(Config::load(Some(config_path)).context("loading configuration")?);
+
+    if !config.delay_policy.enabled {
+        println!("Quarantine feature is disabled in configuration.");
+        return Ok(());
+    }
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("constructing quarantine runtime")?;
+
+    let (index, _) = rt
+        .block_on(connect_cache_backend(config.as_ref()))
+        .context("connecting to cache index")?;
+
+    let count = rt
+        .block_on(quarantine::promote_now(index.as_ref()))
+        .context("promoting expired quarantines")?;
+
+    if count > 0 {
+        println!("Promoted {} version(s) from quarantine to available.", count);
+    } else {
+        println!("No versions ready for promotion.");
+    }
+
+    Ok(())
+}
+
+fn run_quarantine_approve(
+    config_path: PathBuf,
+    gem: String,
+    version: String,
+    platform: Option<String>,
+    reason: String,
+) -> Result<()> {
+    use vein_adapter::VersionStatus;
+
+    let config = Arc::new(Config::load(Some(config_path)).context("loading configuration")?);
+
+    if !config.delay_policy.enabled {
+        println!("Quarantine feature is disabled in configuration.");
+        return Ok(());
+    }
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("constructing quarantine runtime")?;
+
+    let (index, _) = rt
+        .block_on(connect_cache_backend(config.as_ref()))
+        .context("connecting to cache index")?;
+
+    rt.block_on(index.update_version_status(
+        &gem,
+        &version,
+        platform.as_deref(),
+        VersionStatus::Pinned,
+        Some(format!("approved: {}", reason)),
+    ))
+    .context("approving version")?;
+
+    let platform_str = platform.as_deref().unwrap_or("ruby");
+    println!(
+        "Approved {}-{} ({}) for immediate availability.",
+        gem, version, platform_str
+    );
+    println!("Reason: {}", reason);
+
+    Ok(())
+}
+
+fn run_quarantine_block(
+    config_path: PathBuf,
+    gem: String,
+    version: String,
+    platform: Option<String>,
+    reason: String,
+) -> Result<()> {
+    use vein_adapter::VersionStatus;
+
+    let config = Arc::new(Config::load(Some(config_path)).context("loading configuration")?);
+
+    if !config.delay_policy.enabled {
+        println!("Quarantine feature is disabled in configuration.");
+        return Ok(());
+    }
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("constructing quarantine runtime")?;
+
+    let (index, _) = rt
+        .block_on(connect_cache_backend(config.as_ref()))
+        .context("connecting to cache index")?;
+
+    rt.block_on(index.update_version_status(
+        &gem,
+        &version,
+        platform.as_deref(),
+        VersionStatus::Yanked,
+        Some(format!("blocked: {}", reason)),
+    ))
+    .context("blocking version")?;
+
+    let platform_str = platform.as_deref().unwrap_or("ruby");
+    println!("Blocked {}-{} ({}).", gem, version, platform_str);
+    println!("Reason: {}", reason);
 
     Ok(())
 }

@@ -1,5 +1,6 @@
 mod cache;
 mod handlers;
+mod quarantine;
 mod response;
 mod types;
 mod utils;
@@ -314,11 +315,27 @@ impl VeinProxy {
 
         if status == reqwest::StatusCode::NOT_MODIFIED && cached_bytes.is_some() {
             let meta = cached_meta.unwrap_or_default();
-            let resp = self.write_compact_response(
-                cached_bytes.as_deref().unwrap_or_default(),
-                &meta,
-                compact.content_type(),
-            )?;
+            let body = cached_bytes.as_deref().unwrap_or_default();
+
+            // Apply quarantine filtering for /info/{gem} requests
+            let filtered_body = match &compact {
+                CompactRequest::Info { name } => {
+                    quarantine::filter_compact_info(
+                        &self.config.delay_policy,
+                        self.index.as_ref(),
+                        name,
+                        body,
+                    )
+                    .await
+                    .unwrap_or_else(|err| {
+                        warn!(error = %err, gem = %name, "Failed to filter quarantined versions");
+                        body.to_vec()
+                    })
+                }
+                _ => body.to_vec(),
+            };
+
+            let resp = self.write_compact_response(&filtered_body, &meta, compact.content_type())?;
             ctx.cache = CacheStatus::Revalidated;
             return Ok(Some((resp, CacheStatus::Revalidated)));
             // If we got a 304 but have no cache, fall through to refetch below
@@ -353,7 +370,25 @@ impl VeinProxy {
                 .await
                 .context("persisting compact meta")?;
 
-            let resp = self.write_compact_response(&body, &meta, compact.content_type())?;
+            // Apply quarantine filtering for /info/{gem} requests
+            let filtered_body = match &compact {
+                CompactRequest::Info { name } => {
+                    quarantine::filter_compact_info(
+                        &self.config.delay_policy,
+                        self.index.as_ref(),
+                        name,
+                        &body,
+                    )
+                    .await
+                    .unwrap_or_else(|err| {
+                        warn!(error = %err, gem = %name, "Failed to filter quarantined versions");
+                        body.to_vec()
+                    })
+                }
+                _ => body.to_vec(),
+            };
+
+            let resp = self.write_compact_response(&filtered_body, &meta, compact.content_type())?;
             let cache_status = if cached_bytes.is_some() {
                 CacheStatus::Revalidated
             } else {
@@ -435,7 +470,7 @@ impl VeinProxy {
             .await
             .context("creating temp file")?;
 
-        cache::run_cache_miss_flow(
+        let result = cache::run_cache_miss_flow(
             cacheable,
             self.index.clone(),
             self.storage.clone(),
@@ -444,7 +479,30 @@ impl VeinProxy {
             temp_file,
             treating_as_revalidation,
         )
-        .await
+        .await;
+
+        // Record new version in quarantine system (only for gems, not specs)
+        if result.is_ok() && cacheable.kind == vein_adapter::AssetKind::Gem {
+            if let Err(err) = quarantine::record_new_version(
+                &self.config.delay_policy,
+                self.index.as_ref(),
+                &cacheable.name,
+                &cacheable.version,
+                cacheable.platform.as_deref(),
+                "", // SHA256 is computed in run_cache_miss_flow, not available here
+            )
+            .await
+            {
+                warn!(
+                    error = %err,
+                    gem = %cacheable.name,
+                    version = %cacheable.version,
+                    "Failed to record version in quarantine system"
+                );
+            }
+        }
+
+        result
     }
 
     fn request_summary(&self, ctx: &RequestContext) -> String {
