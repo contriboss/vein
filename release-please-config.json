@@ -1,0 +1,26 @@
+{
+  "release-type": "rust",
+  "packages": {
+    ".": {
+      "package-name": "vein"
+    },
+    "crates/vein-adapter": {
+      "package-name": "vein-adapter"
+    },
+    "crates/vein-admin": {
+      "package-name": "vein-admin"
+    },
+    "crates/vein-admin/migration": {
+      "package-name": "migration"
+    }
+  },
+  "plugins": [
+    {
+      "type": "linked-versions",
+      "groupName": "vein",
+      "components": ["vein", "vein-adapter", "vein-admin", "migration"]
+    }
+  ],
+  "include-component-in-tag": false,
+  "tag-separator": ""
+}
