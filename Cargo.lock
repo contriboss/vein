@@ -2627,7 +2627,7 @@ checksum = "f52b00d39961fc5b2736ea853c9cc86238e165017a493d1d5c8eac6bdc4cc273"
 
 [[package]]
 name = "migration"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "sea-orm-migration",
@@ -6117,7 +6117,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 
 [[package]]
 name = "vein"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6166,7 +6166,7 @@ dependencies = [
 
 [[package]]
 name = "vein-adapter"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6182,7 +6182,7 @@ dependencies = [
 
 [[package]]
 name = "vein-admin"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-trait",
