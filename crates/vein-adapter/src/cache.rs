@@ -1,4 +1,5 @@
 pub mod models;
+#[cfg(feature = "postgres")]
 pub mod postgres;
 pub mod quarantine;
 pub mod serialization;
@@ -24,6 +25,7 @@ pub use quarantine::{
 };
 
 // Re-export backend implementations
+#[cfg(feature = "postgres")]
 pub use postgres::PostgresCacheBackend;
 pub use sqlite::SqliteCacheBackend;
 

@@ -13,6 +13,11 @@ impl StorageConfig {
             self.path = base_dir.join(&self.path);
         }
     }
+
+    pub fn ensure_directories(&self) -> std::io::Result<()> {
+        std::fs::create_dir_all(&self.path)?;
+        Ok(())
+    }
 }
 
 impl Default for StorageConfig {

@@ -124,8 +124,8 @@ pub fn calculate_availability(published: DateTime<Utc>, policy: &DelayPolicy) ->
     if policy.skip_weekends {
         // Push weekend releases to Monday
         match available.weekday() {
-            Weekday::Sat => available = available + Duration::days(2),
-            Weekday::Sun => available = available + Duration::days(1),
+            Weekday::Sat => available += Duration::days(2),
+            Weekday::Sun => available += Duration::days(1),
             _ => {}
         }
     }

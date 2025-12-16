@@ -7,10 +7,15 @@ authors = ["Abdelkader Boudih <oss@seuros.com>"]
 description = "Shared storage adapters for Vein services"
 publish = false
 
+[features]
+default = ["postgres", "tls"]
+postgres = ["sqlx/postgres"]
+tls = ["sqlx/runtime-tokio-rustls"]
+
 [dependencies]
 anyhow = "1.0.95"
 async-trait = "0.1.85"
-sqlx = { version = "0.8.2", features = ["runtime-tokio-rustls", "sqlite", "postgres", "chrono"] }
+sqlx = { version = "0.8.2", features = ["runtime-tokio", "sqlite", "chrono"] }
 tokio = { version = "1.43", features = ["fs", "macros", "rt-multi-thread", "sync"] }
 chrono = { version = "0.4.38", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }

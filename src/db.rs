@@ -4,7 +4,9 @@ use anyhow::{Context, Result};
 use tracing::{debug, error, info, warn};
 
 use crate::config::{BackoffStrategy, Config, DatabaseBackend};
-use vein_adapter::{CacheBackend, PostgresCacheBackend, SqliteCacheBackend};
+use vein_adapter::{CacheBackend, SqliteCacheBackend};
+#[cfg(feature = "postgres")]
+use vein_adapter::PostgresCacheBackend;
 
 pub async fn connect_cache_backend(
     config: &Config,
@@ -32,6 +34,7 @@ pub async fn connect_cache_backend(
             .context("connecting sqlite cache")?;
             Arc::new(backend)
         }
+        #[cfg(feature = "postgres")]
         DatabaseBackend::Postgres {
             url,
             max_connections,
@@ -44,6 +47,10 @@ pub async fn connect_cache_backend(
             .await
             .context("connecting postgres cache")?;
             Arc::new(backend)
+        }
+        #[cfg(not(feature = "postgres"))]
+        DatabaseBackend::Postgres { .. } => {
+            anyhow::bail!("PostgreSQL support not compiled in. Rebuild with --features postgres");
         }
     };
     Ok((cache, backend))

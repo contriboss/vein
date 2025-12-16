@@ -14,27 +14,28 @@ readme = "README.md"
 keywords = ["rubygems", "proxy", "cache", "mirror", "ruby"]
 categories = ["development-tools", "caching", "network-programming"]
 
+[features]
+default = ["tls", "postgres"]
+tls = ["rama/rustls", "reqwest/rustls-tls-native-roots", "vein-adapter/tls"]
+postgres = ["vein-adapter/postgres"]
+android = []
+
 [dependencies]
-# Rama proxy framework (rustls only)
-rama = { git = "https://github.com/plabayo/rama.git", features = ["http-full", "rustls", "tcp", "opentelemetry"] }
+# Rama proxy framework (conditional TLS via feature)
+rama = { git = "https://github.com/plabayo/rama.git", features = ["http-full", "tcp", "opentelemetry"] }
 
 # Async runtime
 tokio = { version = "1.43", features = ["full"] }
 async-trait = "0.1.85"
 
-# Database
-sqlx = { version = "0.8.2", features = [
-    "runtime-tokio-rustls",
-    "sqlite",
-    "postgres",
-    "chrono",
-] }
+# Database (features controlled by workspace features)
+sqlx = { version = "0.8.2", features = ["sqlite", "chrono"] }
 
 # Hot cache (redb for fast lookups)
 redb = "3.1"
 
-# HTTP client (for upstream proxy)
-reqwest = { version = "0.12.12", default-features = false, features = ["json", "stream", "rustls-tls-native-roots", "blocking"] }
+# HTTP client (for upstream proxy, conditional TLS)
+reqwest = { version = "0.12.12", default-features = false, features = ["json", "stream", "blocking"] }
 http = "1.1.0"
 url = "2.5.4"
 
@@ -92,11 +93,15 @@ chrono-machines = "0.2.1"
 # Time handling
 chrono = { version = "0.4.38", features = ["serde"] }
 
-vein-adapter = { path = "crates/vein-adapter" }
+vein-adapter = { path = "crates/vein-adapter", default-features = false }
 
 [dev-dependencies]
 tokio-test = "0.4.4"
 tempfile = "3.14.0"
+
+# Android-specific dependencies with bundled SQLite
+[target.'cfg(target_os = "android")'.dependencies]
+sqlx = { version = "0.8.2", features = ["runtime-tokio", "sqlite", "chrono"] }
 
 [profile.release]
 lto = true

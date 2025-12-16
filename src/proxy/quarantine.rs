@@ -146,15 +146,15 @@ pub async fn filter_compact_info(
 
         // Parse the line to extract version and platform
         // Format: "version platform|checksum|deps" or "version |checksum|deps"
-        if let Some((version_key, _rest)) = parse_compact_line(line) {
-            if quarantined.contains(&version_key) {
-                debug!(
-                    gem = %gem_name,
-                    version_key = %version_key,
-                    "Filtering quarantined version from compact index"
-                );
-                continue; // Skip this line
-            }
+        if let Some((version_key, _rest)) = parse_compact_line(line)
+            && quarantined.contains(&version_key)
+        {
+            debug!(
+                gem = %gem_name,
+                version_key = %version_key,
+                "Filtering quarantined version from compact index"
+            );
+            continue; // Skip this line
         }
 
         output_lines.push(line);
@@ -201,6 +201,7 @@ fn format_version_key(version: &str, platform: Option<&str>) -> String {
 ///
 /// This is more complex because we'd need to filter per-gem.
 /// For now, we pass through unfiltered - the `/info/{gem}` filtering is sufficient.
+#[allow(dead_code, clippy::unused_async)]
 pub async fn filter_compact_versions(
     config: &DelayPolicyConfig,
     _index: &dyn CacheBackend,

@@ -482,8 +482,8 @@ impl VeinProxy {
         .await;
 
         // Record new version in quarantine system (only for gems, not specs)
-        if result.is_ok() && cacheable.kind == vein_adapter::AssetKind::Gem {
-            if let Err(err) = quarantine::record_new_version(
+        if result.is_ok() && cacheable.kind == vein_adapter::AssetKind::Gem
+            && let Err(err) = quarantine::record_new_version(
                 &self.config.delay_policy,
                 self.index.as_ref(),
                 &cacheable.name,
@@ -500,7 +500,6 @@ impl VeinProxy {
                     "Failed to record version in quarantine system"
                 );
             }
-        }
 
         result
     }
