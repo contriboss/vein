@@ -9,7 +9,6 @@
 
 mod db;
 mod gem_metadata;
-mod hotcache;
 mod proxy;
 mod upstream;
 
@@ -32,16 +31,14 @@ use rama::{
     rt::Executor,
     tcp::server::TcpListener,
 };
-use tokio_cron_scheduler::{Job, JobScheduler};
 use tracing_subscriber::{
     layer::{Layer, SubscriberExt},
     util::SubscriberInitExt,
 };
-use vein_adapter::{CacheBackend, FilesystemStorage};
+use vein_adapter::FilesystemStorage;
 
 use config::{Config, DatabaseBackend};
 use crate::db::connect_cache_backend;
-use crate::hotcache::HotCache;
 use crate::proxy::VeinProxy;
 use vein::{catalog, quarantine};
 
@@ -65,11 +62,6 @@ enum Command {
         /// Path to the configuration file
         #[arg(long, default_value = "vein.toml")]
         config: PathBuf,
-    },
-    /// Cache maintenance operations
-    Cache {
-        #[command(subcommand)]
-        action: CacheCommand,
     },
     /// Catalogue operations
     Catalog {
@@ -98,16 +90,6 @@ enum Command {
         /// Overwrite existing config file
         #[arg(long)]
         force: bool,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-enum CacheCommand {
-    /// Refresh the hot cache from the SQLite index
-    Refresh {
-        /// Path to the configuration file
-        #[arg(long, default_value = "vein.toml")]
-        config: PathBuf,
     },
 }
 
@@ -240,9 +222,6 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Serve { config } => run_server(config),
         Command::Stats { config } => run_stats(config),
-        Command::Cache { action } => match action {
-            CacheCommand::Refresh { config } => run_cache_refresh(config),
-        },
         Command::Catalog { action } => match action {
             CatalogCommand::Sync { config } => run_catalog_sync(config),
         },
@@ -290,7 +269,7 @@ fn run_server(config_path: PathBuf) -> Result<()> {
     rt.block_on(storage.prepare())
         .context("preparing storage directory")?;
 
-    let (index, backend_kind) = rt
+    let (index, _backend_kind) = rt
         .block_on(connect_cache_backend(config.as_ref()))
         .context("connecting to cache index")?;
 
@@ -298,73 +277,12 @@ fn run_server(config_path: PathBuf) -> Result<()> {
     rt.block_on(quarantine::ensure_tables(index.as_ref(), &config.delay_policy))
         .context("initializing quarantine tables")?;
 
-    let hot_cache_path = hot_cache_path(config.as_ref(), &backend_kind);
-    let hot_cache =
-        HotCache::open_with_config(&hot_cache_path, config.hotcache.reliability.clone())
-            .context("opening hot cache")?;
-    match hot_cache.stats() {
-        Ok(stats) => tracing::info!(
-            total_entries = stats.total_entries,
-            cached_gems = stats.cached_gems,
-            latest_versions = stats.latest_versions,
-            "hot cache initialized"
-        ),
-        Err(err) => tracing::warn!(error = %err, "failed to read hot cache stats"),
-    }
-
-    // Set up hot cache refresh scheduler if enabled
-    if !config.hotcache.refresh_schedule.is_empty() {
-        let hot_cache_clone = hot_cache.clone();
-        let index_clone = index.clone();
-        let schedule = config.hotcache.refresh_schedule.clone();
-
-        // Spawn the scheduler on a dedicated long-lived runtime thread
-        std::thread::spawn(move || {
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to create scheduler runtime");
-
-            rt.block_on(async {
-                let sched = JobScheduler::new()
-                    .await
-                    .expect("Failed to create job scheduler");
-
-                let job = Job::new_async(schedule.as_str(), move |_uuid, _l| {
-                    let hot_cache = hot_cache_clone.clone();
-                    let index = index_clone.clone();
-                    Box::pin(async move {
-                        tracing::info!("Starting hot cache refresh");
-                        if let Err(err) = hot_cache.refresh_from_index(index.as_ref()).await {
-                            tracing::error!(error = %err, "Hot cache refresh failed");
-                        }
-                    })
-                })
-                .expect("Failed to create refresh job");
-
-                sched
-                    .add(job)
-                    .await
-                    .expect("Failed to add refresh job to scheduler");
-
-                sched.start().await.expect("Failed to start job scheduler");
-
-                tracing::info!(schedule = %schedule, "Hot cache refresh scheduler started");
-
-                // Keep the scheduler runtime alive forever
-                loop {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-                }
-            });
-        });
-    }
-
     // Start quarantine promotion scheduler if enabled
     quarantine::spawn_promotion_scheduler(&config.delay_policy, index.clone(), None);
 
     drop(rt);
 
-    let proxy = VeinProxy::new(config.clone(), storage, index.clone(), hot_cache)
+    let proxy = VeinProxy::new(config.clone(), storage, index.clone())
         .context("creating proxy service")?;
 
     let rt_server = tokio::runtime::Builder::new_multi_thread()
@@ -426,12 +344,6 @@ fn run_stats(config_path: PathBuf) -> Result<()> {
         .block_on(index.stats())
         .context("collecting cache stats")?;
 
-    let hot_cache_path = hot_cache_path(config.as_ref(), &backend_kind);
-    let hot_cache =
-        HotCache::open_with_config(&hot_cache_path, config.hotcache.reliability.clone())
-            .context("opening hot cache")?;
-    let hot_stats = hot_cache.stats().context("collecting hot cache stats")?;
-
     drop(rt);
 
     match backend_kind {
@@ -453,11 +365,6 @@ fn run_stats(config_path: PathBuf) -> Result<()> {
     if let Some(last) = index_stats.last_accessed {
         println!("  last access: {}", last);
     }
-
-    println!("\nHot cache: {}", hot_cache_path.display());
-    println!("  entries: {}", hot_stats.total_entries);
-    println!("  cached gems: {}", hot_stats.cached_gems);
-    println!("  latest markers: {}", hot_stats.latest_versions);
 
     Ok(())
 }
@@ -548,56 +455,6 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
-fn hot_cache_path(config: &Config, backend: &DatabaseBackend) -> PathBuf {
-    match backend {
-        DatabaseBackend::Sqlite { path } => {
-            let mut path = path.clone();
-            path.set_extension("redb");
-            path
-        }
-        DatabaseBackend::Postgres { .. } => {
-            let mut path = config.database.path.clone();
-            path.set_extension("redb");
-            path
-        }
-    }
-}
-
-fn run_cache_refresh(config_path: PathBuf) -> Result<()> {
-    let config = Arc::new(Config::load(Some(config_path)).context("loading configuration")?);
-    init_tracing(&config)?;
-
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .context("constructing refresh runtime")?;
-
-    let (index, backend_kind) = rt
-        .block_on(connect_cache_backend(config.as_ref()))
-        .context("connecting to cache index")?;
-    let hot_cache_path = hot_cache_path(config.as_ref(), &backend_kind);
-    let hot_cache =
-        HotCache::open_with_config(&hot_cache_path, config.hotcache.reliability.clone())
-            .context("opening hot cache")?;
-
-    rt.block_on(hot_cache.refresh_from_index(index.as_ref()))
-        .context("refreshing hot cache")?;
-
-    drop(rt);
-
-    let backend_label = match backend_kind {
-        DatabaseBackend::Sqlite { path } => format!("SQLite ({})", path.display()),
-        DatabaseBackend::Postgres { url, .. } => format!("PostgreSQL ({url})"),
-    };
-
-    println!(
-        "Hot cache refreshed from {backend} (cache: {})",
-        hot_cache_path.display(),
-        backend = backend_label
-    );
-
-    Ok(())
-}
 
 fn run_catalog_sync(config_path: PathBuf) -> Result<()> {
     let config = Arc::new(Config::load(Some(config_path)).context("loading configuration")?);

@@ -11,7 +11,6 @@ use super::utils::sanitize_filename;
 /// Handles health check requests
 pub async fn handle_health(
     index: &dyn CacheBackend,
-    hot_cache: &crate::hotcache::HotCache,
 ) -> Result<(rama::http::Response<rama::http::Body>, CacheStatus)> {
     let mut ok = true;
     let mut checks = Vec::new();
@@ -29,26 +28,6 @@ pub async fn handle_health(
             ok = false;
             checks.push(json!({
                 "component": "cache_index",
-                "status": "error",
-                "error": err.to_string()
-            }));
-        }
-    }
-
-    match hot_cache.stats() {
-        Ok(stats) => {
-            checks.push(json!({
-                "component": "hot_cache",
-                "status": "ok",
-                "entries": stats.total_entries,
-                "cached": stats.cached_gems,
-                "latest": stats.latest_versions,
-            }));
-        }
-        Err(err) => {
-            ok = false;
-            checks.push(json!({
-                "component": "hot_cache",
                 "status": "error",
                 "error": err.to_string()
             }));

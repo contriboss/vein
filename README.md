@@ -48,20 +48,16 @@ Client Request → Vein → Local Cache?
 
 **Permanent Caching**: Once a gem is cached, it's served locally forever. No re-fetching.
 
-**Dual-Database Architecture**:
-- **SQLite** - Persistent metadata store (gem paths, SHA256, size, timestamps)
-- **redb** - Memory-mapped hot cache for microsecond lookups (exists + is_latest flags)
+**Simple Architecture**: SQLite for metadata + filesystem for gem files.
 
 ## Features
 
 - [x] Rama-based HTTP proxy
 - [x] SQLite gem inventory (persistent metadata)
-- [x] redb hot cache (microsecond lookups)
 - [x] Filesystem storage (`./gems/`)
 - [x] Smart cache resolver
 - [x] Stream-through caching (cache while serving)
 - [x] SHA256 verification
-- [x] Automatic hot cache refresh (cron scheduler)
 - [x] Minimal configuration
 - [x] Docker image
 - [x] Gem name/version/platform parsing
@@ -95,9 +91,6 @@ cargo run -- serve --config vein.toml
 
 # Inspect cache statistics
 cargo run -- stats --config vein.toml
-
-# Refresh hot cache
-cargo run -- cache refresh --config vein.toml
 ```
 
 ### CycloneDX SBOM access
@@ -235,39 +228,6 @@ Vein uses a **dual-database architecture** for optimal performance:
 **When Used**:
 - On cache misses to verify if gem needs fetching
 - On gem cache to store metadata
-- For generating hot cache refresh data
-
-#### redb (`vein.redb`) - Memory-Mapped Hot Cache
-**Purpose**: Ultra-fast lookups for frequently accessed data
-
-**Stores**:
-- Gem existence flags (`exists: bool`)
-- Latest version flags (`is_latest: bool`)
-- Key: `"gem_name:version"`
-
-**Performance**: Microsecond lookups (vs millisecond SQLite queries)
-
-**When Used**:
-- First check on every request
-- Updated automatically when gems are cached
-- Refreshed periodically from SQLite (configurable cron schedule)
-
-#### Why Both?
-
-| Aspect | SQLite | redb |
-|--------|--------|------|
-| **Speed** | ~1-5ms queries | ~1μs lookups (1000x faster) |
-| **Storage** | Complete metadata | Minimal flags only |
-| **Persistence** | Durable, ACID | Memory-mapped, fast |
-| **Use Case** | Source of truth | Hot path optimization |
-| **Size** | ~100KB per 1000 gems | ~1MB per 1000 gems |
-
-**Refresh Flow**:
-```
-Cron Trigger (hourly) → SQLite (get all gems) → Determine latest versions → Bulk update redb
-```
-
-This architecture ensures both correctness (SQLite) and performance (redb) without compromise.
 
 ## Development
 

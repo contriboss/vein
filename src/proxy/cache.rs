@@ -9,7 +9,6 @@ use tracing::{debug, warn};
 use vein_adapter::{AssetKind, CacheBackend, CachedAsset, FilesystemStorage, TempFile};
 
 use super::types::CacheableRequest;
-use crate::hotcache::HotCache;
 
 /// Serves a cached file to the client
 pub async fn serve_cached(
@@ -64,15 +63,13 @@ fn build_cached_response(
 }
 
 /// Runs the cache miss flow: fetch body, persist to cache, return response
-#[allow(clippy::too_many_arguments)]
 pub async fn run_cache_miss_flow(
     cacheable: &CacheableRequest,
     index: Arc<dyn CacheBackend>,
     storage: Arc<FilesystemStorage>,
-    hot_cache: &HotCache,
     response: rama::http::Response<rama::http::Body>,
     mut temp_file: TempFile,
-    treating_as_revalidation: bool,
+    _treating_as_revalidation: bool,
 ) -> Result<Response<Body>> {
     let status = response.status();
     let headers = response.headers().clone();
@@ -160,15 +157,6 @@ pub async fn run_cache_miss_flow(
                 );
             }
         }
-    }
-
-    if let Err(err) = hot_cache.set(
-        &cacheable.name,
-        &cacheable.version,
-        true,
-        treating_as_revalidation,
-    ) {
-        warn!(error = %err, "failed to update hot cache");
     }
 
     // Build client response using upstream headers with our cache headers

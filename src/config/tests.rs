@@ -1,7 +1,7 @@
 use super::*;
 use std::fs;
 use std::io::Write;
-use tempfile::{NamedTempFile, tempdir};
+use tempfile::{tempdir, NamedTempFile};
 
 // === DEFAULT VALUE TESTS ===
 
@@ -18,7 +18,6 @@ fn test_default_config() {
     assert_eq!(config.database.max_connections, 16);
     assert_eq!(config.logging.level, "info");
     assert!(!config.logging.json);
-    assert_eq!(config.hotcache.refresh_schedule, "0 0 * * * *");
 }
 
 #[test]
@@ -58,12 +57,6 @@ fn test_default_logging_config() {
     assert!(!logging.json);
 }
 
-#[test]
-fn test_default_hotcache_config() {
-    let hotcache = HotCacheConfig::default();
-    assert_eq!(hotcache.refresh_schedule, "0 0 * * * *");
-}
-
 // === TOML PARSING TESTS ===
 
 #[test]
@@ -101,9 +94,6 @@ fn test_parse_full_config() {
         [logging]
         level = "debug"
         json = true
-
-        [hotcache]
-        refresh_schedule = "0 0 */2 * * *"
     "#;
     let config: Config = toml::from_str(toml).unwrap();
 
@@ -126,8 +116,6 @@ fn test_parse_full_config() {
 
     assert_eq!(config.logging.level, "debug");
     assert!(config.logging.json);
-
-    assert_eq!(config.hotcache.refresh_schedule, "0 0 */2 * * *");
 }
 
 #[test]
@@ -428,12 +416,10 @@ fn test_validate_invalid_scheme() {
     };
     let result = config.validate();
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("unsupported upstream scheme")
-    );
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("unsupported upstream scheme"));
 }
 
 #[test]
@@ -484,26 +470,6 @@ fn test_config_debug() {
     let config = Config::default();
     let debug_str = format!("{:?}", config);
     assert!(debug_str.contains("Config"));
-}
-
-#[test]
-fn test_empty_refresh_schedule() {
-    let toml = r#"
-        [hotcache]
-        refresh_schedule = ""
-    "#;
-    let config: Config = toml::from_str(toml).unwrap();
-    assert_eq!(config.hotcache.refresh_schedule, "");
-}
-
-#[test]
-fn test_custom_cron_schedule() {
-    let toml = r#"
-        [hotcache]
-        refresh_schedule = "0 0 0 * * *"
-    "#;
-    let config: Config = toml::from_str(toml).unwrap();
-    assert_eq!(config.hotcache.refresh_schedule, "0 0 0 * * *");
 }
 
 #[test]
@@ -665,9 +631,6 @@ fn test_full_workflow_load_validate() {
         [logging]
         level = "info"
         json = false
-
-        [hotcache]
-        refresh_schedule = "0 0 * * * *"
     "#;
 
     fs::write(&config_path, toml).unwrap();

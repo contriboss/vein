@@ -20,7 +20,7 @@ use rama::{
 use tokio::io::AsyncWriteExt;
 use tracing::{error, info, warn};
 
-use crate::{config::Config, hotcache::HotCache, upstream::UpstreamClient};
+use crate::{config::Config, upstream::UpstreamClient};
 use vein_adapter::{CacheBackend, FilesystemStorage};
 
 // Re-export public types
@@ -102,7 +102,6 @@ pub struct VeinProxy {
     config: Arc<Config>,
     storage: Arc<FilesystemStorage>,
     index: Arc<dyn CacheBackend>,
-    hot_cache: HotCache,
     upstreams: Vec<UpstreamTarget>,
     upstream_client: Option<UpstreamClient>,
 }
@@ -112,7 +111,6 @@ impl VeinProxy {
         config: Arc<Config>,
         storage: Arc<FilesystemStorage>,
         index: Arc<dyn CacheBackend>,
-        hot_cache: HotCache,
     ) -> Result<Self> {
         let (upstreams, upstream_client) = if let Some(ref upstream_config) = config.upstream {
             let mut upstreams = Vec::new();
@@ -132,7 +130,6 @@ impl VeinProxy {
             config,
             storage,
             index,
-            hot_cache,
             upstreams,
             upstream_client,
         })
@@ -146,7 +143,7 @@ impl VeinProxy {
             match path.as_str() {
                 "/up" => {
                     let (resp, status) =
-                        handlers::handle_health(self.index.as_ref(), &self.hot_cache).await?;
+                        handlers::handle_health(self.index.as_ref()).await?;
                     ctx.cache = status;
                     return Ok(resp);
                 }
@@ -238,18 +235,6 @@ impl VeinProxy {
         let Some(cacheable) = CacheableRequest::from_request(req) else {
             return Ok(None);
         };
-
-        let hot_cache_state = self
-            .hot_cache
-            .get(&cacheable.name, &cacheable.version)
-            .inspect_err(|err| warn!(error = %err, "failed to read from hot cache"))
-            .unwrap_or(None);
-
-        if hot_cache_state.is_some_and(|(exists, _)| !exists) {
-            ctx.cache = CacheStatus::Miss;
-            let resp = response::respond_text(StatusCode::NOT_FOUND, "not found")?;
-            return Ok(Some((CacheStatus::Miss, resp)));
-        }
 
         match self.index.get(&cacheable.asset_key()).await? {
             Some(entry) => {
@@ -445,17 +430,6 @@ impl VeinProxy {
             .context("requesting upstream")?;
 
         if !response.status().is_success() {
-            match response.status() {
-                StatusCode::NOT_FOUND | StatusCode::GONE => {
-                    if let Err(err) =
-                        self.hot_cache
-                            .set(&cacheable.name, &cacheable.version, false, false)
-                    {
-                        warn!(error = %err, "failed to update negative hot cache entry");
-                    }
-                }
-                _ => {}
-            }
             warn!(
                 status = %response.status(),
                 path = %req.uri().path(),
@@ -474,7 +448,6 @@ impl VeinProxy {
             cacheable,
             self.index.clone(),
             self.storage.clone(),
-            &self.hot_cache,
             response,
             temp_file,
             treating_as_revalidation,

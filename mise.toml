@@ -1,3 +1,4 @@
 [tools]
+java = "latest"
 ruby = "3.4.7"
 rust = "1.92.0"
