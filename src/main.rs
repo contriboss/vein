@@ -26,7 +26,13 @@ use opentelemetry_sdk::{resource::Resource, trace as sdktrace};
 use rama::{
     Layer as RamaLayer,
     graceful::Shutdown,
-    http::{layer::trace::TraceLayer, server::HttpServer},
+    http::{
+        layer::{
+            request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+            trace::TraceLayer,
+        },
+        server::HttpServer,
+    },
     layer::ConsumeErrLayer,
     rt::Executor,
     tcp::server::TcpListener,
@@ -308,7 +314,13 @@ fn run_server(config_path: PathBuf) -> Result<()> {
 
                 let exec = Executor::graceful(guard.clone());
                 let http_service = HttpServer::auto(exec).service(
-                    (TraceLayer::new_for_http(), ConsumeErrLayer::default()).into_layer(proxy),
+                    (
+                        SetRequestIdLayer::x_request_id(MakeRequestUuid),
+                        PropagateRequestIdLayer::x_request_id(),
+                        TraceLayer::new_for_http(),
+                        ConsumeErrLayer::default(),
+                    )
+                        .into_layer(proxy),
                 );
 
                 tcp_service.serve_graceful(guard, http_service).await;
