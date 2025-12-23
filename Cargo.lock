@@ -2018,7 +2018,6 @@ dependencies = [
  "hyper",
  "hyper-util",
  "rustls",
- "rustls-native-certs",
  "rustls-pki-types",
  "tokio",
  "tokio-rustls",
@@ -2957,7 +2956,6 @@ dependencies = [
  "bytes",
  "http",
  "opentelemetry",
- "reqwest",
 ]
 
 [[package]]
@@ -2972,9 +2970,7 @@ dependencies = [
  "opentelemetry-proto",
  "opentelemetry_sdk",
  "prost",
- "reqwest",
  "thiserror 2.0.17",
- "tonic",
  "tracing",
 ]
 
@@ -4171,7 +4167,6 @@ checksum = "3b4c14b2d9afca6a60277086b0cc6a6ae0b568f6f7916c943a8cdc79f8be240f"
 dependencies = [
  "base64 0.22.1",
  "bytes",
- "futures-channel",
  "futures-core",
  "futures-util",
  "http",
@@ -4186,7 +4181,6 @@ dependencies = [
  "pin-project-lite",
  "quinn",
  "rustls",
- "rustls-native-certs",
  "rustls-pki-types",
  "serde",
  "serde_json",
@@ -5749,8 +5743,6 @@ dependencies = [
  "percent-encoding",
  "pin-project",
  "sync_wrapper",
- "tokio",
- "tokio-rustls",
  "tokio-stream",
  "tower-layer",
  "tower-service",
@@ -6130,17 +6122,12 @@ dependencies = [
  "flate2",
  "futures-util",
  "hex",
- "http",
  "num_cpus",
  "once_cell",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
  "parking_lot",
  "path-clean",
  "percent-encoding",
  "rama",
- "reqwest",
  "semver",
  "serde",
  "serde_json",
@@ -6156,10 +6143,6 @@ dependencies = [
  "tokio-test",
  "tokio-util",
  "toml 0.9.10+spec-1.1.0",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "url",
  "vein-adapter",
 ]
 

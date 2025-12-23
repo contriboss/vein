@@ -9,6 +9,9 @@ publish = false
 [dependencies]
 anyhow = "1.0.95"
 async-trait = "0.1"
+# note: rama has good server support included,
+# but as you are using loco-rs you are bound to axum for now..
+# however pretty certain you can ditch both loco-rs and axum and go with rama + something for your config
 axum = "0.8.6"
 chrono = { version = "0.4.38", default-features = false, features = ["clock"] }
 clap = { version = "4.5.23", features = ["derive"] }

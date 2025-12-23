@@ -1,8 +1,10 @@
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use rama::http::{Body, Method, Request};
-use reqwest::Url;
+use rama::{
+    http::{Body, Method, Request, Uri},
+    telemetry::tracing,
+};
 use vein_adapter::{AssetKey, AssetKind};
 
 /// Cache status for request tracking
@@ -159,23 +161,28 @@ impl CacheableRequest {
 /// Upstream target configuration
 #[derive(Clone)]
 pub struct UpstreamTarget {
-    pub base: Url,
+    pub base: Uri,
 }
 
 impl UpstreamTarget {
-    pub fn from_url(url: &Url) -> Result<Self> {
+    pub fn from_url(url: &Uri) -> Result<Self> {
         Ok(Self { base: url.clone() })
     }
 
-    pub fn join(&self, req: &Request<rama::http::Body>) -> Result<Url> {
+    pub fn join(&self, req: &Request<rama::http::Body>) -> Result<Uri> {
         let path_and_query = req
             .uri()
             .path_and_query()
             .map(|pq| pq.as_str())
             .unwrap_or("/");
         let cleaned = path_and_query.trim_start_matches('/');
-        self.base
-            .join(cleaned)
-            .with_context(|| format!("joining upstream path {path_and_query}"))
+        let mut parts = self.base.clone().into_parts();
+        parts.path_and_query = Some(
+            cleaned
+                .parse()
+                .with_context(|| format!("parse cleaned path and query '{cleaned}'"))?,
+        );
+        // NOTE: before 0.3 release Uri's will be cleaned up and be nicer
+        Uri::from_parts(parts).with_context(|| format!("joining upstream path {path_and_query}"))
     }
 }

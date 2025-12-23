@@ -1,7 +1,10 @@
+use std::borrow::Cow;
+
 use anyhow::{Context, Result};
+use rama::http::service::web::extract::Query;
 use rama::http::{Request, StatusCode};
+use serde::Deserialize;
 use serde_json::{json, to_string_pretty};
-use url::form_urlencoded;
 use vein_adapter::CacheBackend;
 
 use super::response::{respond_json, respond_json_download, respond_text};
@@ -62,22 +65,22 @@ pub async fn handle_sbom_request(
     index: &dyn CacheBackend,
 ) -> Result<(rama::http::Response<rama::http::Body>, CacheStatus)> {
     let query = req.uri().query().unwrap_or("");
-    let mut name: Option<String> = None;
-    let mut version: Option<String> = None;
-    let mut platform: Option<String> = None;
 
-    for (key, value) in form_urlencoded::parse(query.as_bytes()) {
-        let trimmed = value.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        match key.as_ref() {
-            "name" => name = Some(trimmed.to_string()),
-            "version" => version = Some(trimmed.to_string()),
-            "platform" => platform = Some(trimmed.to_string()),
-            _ => {}
-        }
+    #[derive(Deserialize, Default)]
+    struct Parameters<'a> {
+        name: Option<Cow<'a, str>>,
+        version: Option<Cow<'a, str>>,
+        platform: Option<Cow<'a, str>>,
     }
+
+    // or instead of default return error, which IMHO is probably better?
+    let Parameters {
+        name,
+        version,
+        platform,
+    } = Query::parse_query_str(query)
+        .map(|q| q.0)
+        .unwrap_or_default();
 
     let Some(name) = name else {
         let resp = respond_text(

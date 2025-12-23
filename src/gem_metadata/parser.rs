@@ -2,9 +2,9 @@ use std::{collections::BTreeSet, fs::File, io::Read, path::Path};
 
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
+use rama::telemetry::tracing::warn;
 use serde_yaml::{self, Mapping, Value as YamlValue};
 use tar::Archive;
-use tracing::warn;
 use vein_adapter::{DependencyKind, GemDependency, GemMetadata};
 
 use crate::gem_metadata::{

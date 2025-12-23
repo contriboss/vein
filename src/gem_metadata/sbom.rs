@@ -10,8 +10,8 @@ use cyclonedx_bom::{
     },
     prelude::{Bom, NormalizedString, Purl, SpecVersion, Validate},
 };
+use rama::telemetry::tracing::{info, warn};
 use state_machines::state_machine;
-use tracing::{info, warn};
 use vein_adapter::{DependencyKind, GemMetadata};
 
 state_machine! {

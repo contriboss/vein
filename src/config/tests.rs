@@ -1,7 +1,8 @@
 use super::*;
-use std::fs;
+use rama::http::Uri;
 use std::io::Write;
-use tempfile::{tempdir, NamedTempFile};
+use std::{fs, str::FromStr};
+use tempfile::{NamedTempFile, tempdir};
 
 // === DEFAULT VALUE TESTS ===
 
@@ -379,7 +380,7 @@ fn test_config_sqlite_url_sets_path() {
 fn test_validate_https_upstream() {
     let config = Config {
         upstream: Some(UpstreamConfig {
-            url: url::Url::parse("https://rubygems.org/").unwrap(),
+            url: Uri::from_str("https://rubygems.org/").unwrap(),
             timeout_secs: 30,
             connection_pool_size: 128,
             ..UpstreamConfig::default()
@@ -393,7 +394,7 @@ fn test_validate_https_upstream() {
 fn test_validate_http_upstream() {
     let config = Config {
         upstream: Some(UpstreamConfig {
-            url: url::Url::parse("http://localhost:8346/").unwrap(),
+            url: Uri::from_str("http://localhost:8346/").unwrap(),
             timeout_secs: 30,
             connection_pool_size: 128,
             ..UpstreamConfig::default()
@@ -407,7 +408,7 @@ fn test_validate_http_upstream() {
 fn test_validate_invalid_scheme() {
     let config = Config {
         upstream: Some(UpstreamConfig {
-            url: url::Url::parse("ftp://example.com/").unwrap(),
+            url: Uri::from_str("ftp://example.com/").unwrap(),
             timeout_secs: 30,
             connection_pool_size: 128,
             ..UpstreamConfig::default()
@@ -416,10 +417,12 @@ fn test_validate_invalid_scheme() {
     };
     let result = config.validate();
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("unsupported upstream scheme"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported upstream scheme")
+    );
 }
 
 #[test]
@@ -441,7 +444,7 @@ fn test_deserialize_valid_url() {
     "#;
     let config: Config = toml::from_str(toml).unwrap();
     assert_eq!(
-        config.upstream.unwrap().url.as_str(),
+        config.upstream.unwrap().url.to_string(),
         "https://rubygems.org/"
     );
 }
@@ -547,7 +550,7 @@ fn test_url_with_path() {
     "#;
     let config: Config = toml::from_str(toml).unwrap();
     assert_eq!(
-        config.upstream.unwrap().url.as_str(),
+        config.upstream.unwrap().url.to_string(),
         "https://example.com/rubygems/"
     );
 }
@@ -560,7 +563,7 @@ fn test_url_with_port() {
     "#;
     let config: Config = toml::from_str(toml).unwrap();
     assert_eq!(
-        config.upstream.unwrap().url.as_str(),
+        config.upstream.unwrap().url.to_string(),
         "https://example.com:8443/"
     );
 }
@@ -641,7 +644,7 @@ fn test_full_workflow_load_validate() {
     assert_eq!(config.server.host, "0.0.0.0");
     assert_eq!(config.server.port, 8346);
     assert_eq!(
-        config.upstream.as_ref().unwrap().url.as_str(),
+        config.upstream.as_ref().unwrap().url.to_string(),
         "https://rubygems.org/"
     );
 

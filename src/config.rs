@@ -4,6 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
+use rama::http::Scheme;
 use serde::Deserialize;
 
 // Re-export all submodules
@@ -60,9 +61,11 @@ impl Config {
             Ok(config)
         } else {
             if let Some(path) = candidate.to_str() {
-                tracing::warn!("configuration file {path} not found, using defaults");
+                rama::telemetry::tracing::warn!(
+                    "configuration file {path} not found, using defaults"
+                );
             } else {
-                tracing::warn!("configuration file not found, using defaults");
+                rama::telemetry::tracing::warn!("configuration file not found, using defaults");
             }
             let mut config = Config::default();
             let cwd = std::env::current_dir().context("reading current directory")?;
@@ -73,11 +76,10 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
-        if let Some(upstream) = self
-            .upstream
-            .as_ref()
-            .filter(|upstream| upstream.url.scheme() != "https" && upstream.url.scheme() != "http")
-        {
+        if let Some(upstream) = self.upstream.as_ref().filter(|upstream| {
+            upstream.url.scheme() != Some(&Scheme::HTTPS)
+                && upstream.url.scheme() != Some(&Scheme::HTTP)
+        }) {
             bail!("unsupported upstream scheme {}", upstream.url);
         }
         self.database.backend()?;

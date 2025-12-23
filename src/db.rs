@@ -1,12 +1,12 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
-use tracing::{debug, error, info, warn};
+use rama::telemetry::tracing::{debug, error, info, warn};
 
 use crate::config::{BackoffStrategy, Config, DatabaseBackend};
-use vein_adapter::{CacheBackend, SqliteCacheBackend};
 #[cfg(feature = "postgres")]
 use vein_adapter::PostgresCacheBackend;
+use vein_adapter::{CacheBackend, SqliteCacheBackend};
 
 pub async fn connect_cache_backend(
     config: &Config,

@@ -8,8 +8,9 @@ mod utils;
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use http::header;
 use percent_encoding::percent_decode_str;
+use rama::http::header;
+use rama::telemetry::tracing::{error, info, warn};
 use rama::{
     Service,
     error::BoxError,
@@ -18,7 +19,6 @@ use rama::{
     },
 };
 use tokio::io::AsyncWriteExt;
-use tracing::{error, info, warn};
 
 use crate::{config::Config, upstream::UpstreamClient};
 use vein_adapter::{CacheBackend, FilesystemStorage};
@@ -82,14 +82,14 @@ pub struct CompactEntryMeta {
 }
 
 impl CompactEntryMeta {
-    fn from_headers(headers: &reqwest::header::HeaderMap) -> Self {
+    fn from_headers(headers: &header::HeaderMap) -> Self {
         Self {
             etag: headers
-                .get(reqwest::header::ETAG)
+                .get(header::ETAG)
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_string()),
             last_modified: headers
-                .get(reqwest::header::LAST_MODIFIED)
+                .get(header::LAST_MODIFIED)
                 .and_then(|v| v.to_str().ok())
                 .map(|s| s.to_string()),
         }
@@ -122,7 +122,7 @@ impl VeinProxy {
                 UpstreamClient::new(upstream_config).context("building upstream client")?;
             (upstreams, Some(client))
         } else {
-            tracing::info!("No upstream configured - running in cache-only mode");
+            info!("No upstream configured - running in cache-only mode");
             (Vec::new(), None)
         };
 
@@ -142,8 +142,7 @@ impl VeinProxy {
         if method == Method::GET {
             match path.as_str() {
                 "/up" => {
-                    let (resp, status) =
-                        handlers::handle_health(self.index.as_ref()).await?;
+                    let (resp, status) = handlers::handle_health(self.index.as_ref()).await?;
                     ctx.cache = status;
                     return Ok(resp);
                 }
@@ -298,29 +297,28 @@ impl VeinProxy {
 
         let status = response.status();
 
-        if status == reqwest::StatusCode::NOT_MODIFIED && cached_bytes.is_some() {
+        if status == StatusCode::NOT_MODIFIED && cached_bytes.is_some() {
             let meta = cached_meta.unwrap_or_default();
             let body = cached_bytes.as_deref().unwrap_or_default();
 
             // Apply quarantine filtering for /info/{gem} requests
             let filtered_body = match &compact {
-                CompactRequest::Info { name } => {
-                    quarantine::filter_compact_info(
-                        &self.config.delay_policy,
-                        self.index.as_ref(),
-                        name,
-                        body,
-                    )
-                    .await
-                    .unwrap_or_else(|err| {
-                        warn!(error = %err, gem = %name, "Failed to filter quarantined versions");
-                        body.to_vec()
-                    })
-                }
+                CompactRequest::Info { name } => quarantine::filter_compact_info(
+                    &self.config.delay_policy,
+                    self.index.as_ref(),
+                    name,
+                    body,
+                )
+                .await
+                .unwrap_or_else(|err| {
+                    warn!(error = %err, gem = %name, "Failed to filter quarantined versions");
+                    body.to_vec()
+                }),
                 _ => body.to_vec(),
             };
 
-            let resp = self.write_compact_response(&filtered_body, &meta, compact.content_type())?;
+            let resp =
+                self.write_compact_response(&filtered_body, &meta, compact.content_type())?;
             ctx.cache = CacheStatus::Revalidated;
             return Ok(Some((resp, CacheStatus::Revalidated)));
             // If we got a 304 but have no cache, fall through to refetch below
@@ -357,23 +355,22 @@ impl VeinProxy {
 
             // Apply quarantine filtering for /info/{gem} requests
             let filtered_body = match &compact {
-                CompactRequest::Info { name } => {
-                    quarantine::filter_compact_info(
-                        &self.config.delay_policy,
-                        self.index.as_ref(),
-                        name,
-                        &body,
-                    )
-                    .await
-                    .unwrap_or_else(|err| {
-                        warn!(error = %err, gem = %name, "Failed to filter quarantined versions");
-                        body.to_vec()
-                    })
-                }
+                CompactRequest::Info { name } => quarantine::filter_compact_info(
+                    &self.config.delay_policy,
+                    self.index.as_ref(),
+                    name,
+                    &body,
+                )
+                .await
+                .unwrap_or_else(|err| {
+                    warn!(error = %err, gem = %name, "Failed to filter quarantined versions");
+                    body.to_vec()
+                }),
                 _ => body.to_vec(),
             };
 
-            let resp = self.write_compact_response(&filtered_body, &meta, compact.content_type())?;
+            let resp =
+                self.write_compact_response(&filtered_body, &meta, compact.content_type())?;
             let cache_status = if cached_bytes.is_some() {
                 CacheStatus::Revalidated
             } else {
@@ -455,7 +452,8 @@ impl VeinProxy {
         .await;
 
         // Record new version in quarantine system (only for gems, not specs)
-        if result.is_ok() && cacheable.kind == vein_adapter::AssetKind::Gem
+        if result.is_ok()
+            && cacheable.kind == vein_adapter::AssetKind::Gem
             && let Err(err) = quarantine::record_new_version(
                 &self.config.delay_policy,
                 self.index.as_ref(),
@@ -465,14 +463,14 @@ impl VeinProxy {
                 "", // SHA256 is computed in run_cache_miss_flow, not available here
             )
             .await
-            {
-                warn!(
-                    error = %err,
-                    gem = %cacheable.name,
-                    version = %cacheable.version,
-                    "Failed to record version in quarantine system"
-                );
-            }
+        {
+            warn!(
+                error = %err,
+                gem = %cacheable.name,
+                version = %cacheable.version,
+                "Failed to record version in quarantine system"
+            );
+        }
 
         result
     }
@@ -537,7 +535,7 @@ impl VeinProxy {
                 .with_context(|| format!("constructing upstream url for {}", upstream.base))?;
 
             let resp = client
-                .get_with_headers(upstream_url.as_str(), headers.unwrap_or(&HeaderMap::new()))
+                .get_with_headers(upstream_url.clone(), headers.unwrap_or(&HeaderMap::new()))
                 .await;
 
             match resp {
@@ -599,6 +597,7 @@ impl Service<Request<Body>> for VeinProxy {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rama::http::{Scheme, Uri};
     use types::{CacheStatus, CacheableRequest, UpstreamTarget};
     use vein_adapter::AssetKind;
 
@@ -778,91 +777,103 @@ mod tests {
 
     #[test]
     fn upstream_from_url_https_default_port() {
-        let url = reqwest::Url::parse("https://rubygems.org").unwrap();
+        let url = Uri::from_static("https://rubygems.org");
         let upstream = UpstreamTarget::from_url(&url).unwrap();
-        assert_eq!(upstream.base.host_str().unwrap(), "rubygems.org");
-        assert_eq!(upstream.base.port_or_known_default(), Some(443));
-        assert_eq!(upstream.base.scheme(), "https");
+        assert_eq!(upstream.base.host().unwrap(), "rubygems.org");
+        // for getting port or default for protocol
+        // use RequestContext (see rama usage) ; also that will be replaced
+        // by a more minimal trait in next weeks
+        // assert_eq!(upstream.base.port_or_known_default(), Some(443));
+        assert_eq!(upstream.base.scheme(), Some(&Scheme::HTTPS));
     }
 
     #[test]
     fn upstream_from_url_https_custom_port() {
-        let url = reqwest::Url::parse("https://example.com:8443").unwrap();
+        let url = Uri::from_static("https://example.com:8443");
         let upstream = UpstreamTarget::from_url(&url).unwrap();
-        assert_eq!(upstream.base.host_str().unwrap(), "example.com");
-        assert_eq!(upstream.base.port_or_known_default(), Some(8443));
+        assert_eq!(upstream.base.host().unwrap(), "example.com");
+        // for getting port or default for protocol
+        // use RequestContext (see rama usage) ; also that will be replaced
+        // by a more minimal trait in next weeks
+        // assert_eq!(upstream.base.port_or_known_default(), Some(8443));
     }
 
     #[test]
     fn upstream_from_url_http_default_port() {
-        let url = reqwest::Url::parse("http://localhost").unwrap();
+        let url = Uri::from_static("http://localhost");
         let upstream = UpstreamTarget::from_url(&url).unwrap();
-        assert_eq!(upstream.base.host_str().unwrap(), "localhost");
-        assert_eq!(upstream.base.port_or_known_default(), Some(80));
-        assert_eq!(upstream.base.scheme(), "http");
+        assert_eq!(upstream.base.host().unwrap(), "localhost");
+        // for getting port or default for protocol
+        // use RequestContext (see rama usage) ; also that will be replaced
+        // by a more minimal trait in next weeks
+        // assert_eq!(upstream.base.port_or_known_default(), Some(80));
+        assert_eq!(upstream.base.scheme(), Some(&Scheme::HTTP));
     }
 
     #[test]
     fn upstream_from_url_http_custom_port() {
-        let url = reqwest::Url::parse("http://localhost:3000").unwrap();
+        let url = Uri::from_static("http://localhost:3000");
         let upstream = UpstreamTarget::from_url(&url).unwrap();
-        assert_eq!(upstream.base.port_or_known_default(), Some(3000));
-        assert_eq!(upstream.base.scheme(), "http");
+        assert_eq!(upstream.base.port_u16(), Some(3000));
+        assert_eq!(upstream.base.scheme(), Some(&Scheme::HTTP));
     }
 
     #[test]
     fn upstream_from_url_with_path() {
-        let url = reqwest::Url::parse("https://rubygems.org/api").unwrap();
+        let url = Uri::from_static("https://rubygems.org/api");
         let upstream = UpstreamTarget::from_url(&url).unwrap();
-        assert_eq!(upstream.base.as_str(), "https://rubygems.org/api");
+        assert_eq!(upstream.base.to_string(), "https://rubygems.org/api");
     }
 
     #[test]
     fn upstream_join_simple_path() {
-        let url = reqwest::Url::parse("https://rubygems.org").unwrap();
+        let url = Uri::from_static("https://rubygems.org");
         let upstream = UpstreamTarget::from_url(&url).unwrap();
         let result = upstream.join(&req("/gems/rack-3.0.0.gem")).unwrap();
-        assert_eq!(result.as_str(), "https://rubygems.org/gems/rack-3.0.0.gem");
+        assert_eq!(
+            result.to_string(),
+            "https://rubygems.org/gems/rack-3.0.0.gem"
+        );
     }
 
     #[test]
     fn upstream_join_with_base_path() {
-        let url = reqwest::Url::parse("https://example.com/api/v1/").unwrap();
+        let url = Uri::from_static("https://example.com/api/v1/");
         let upstream = UpstreamTarget::from_url(&url).unwrap();
         let result = upstream.join(&req("/gems/rack-3.0.0.gem")).unwrap();
         assert_eq!(
-            result.as_str(),
+            result.to_string(),
             "https://example.com/api/v1/gems/rack-3.0.0.gem"
         );
     }
 
     #[test]
     fn upstream_join_root_path() {
-        let url = reqwest::Url::parse("https://rubygems.org").unwrap();
+        let url = Uri::from_static("https://rubygems.org");
         let upstream = UpstreamTarget::from_url(&url).unwrap();
         let result = upstream.join(&req("/")).unwrap();
-        assert_eq!(result.as_str(), "https://rubygems.org/");
+        assert_eq!(result.to_string(), "https://rubygems.org/");
     }
 
     #[test]
     fn upstream_join_with_query_string() {
-        let url = reqwest::Url::parse("https://rubygems.org").unwrap();
+        let url = Uri::from_static("https://rubygems.org");
         let upstream = UpstreamTarget::from_url(&url).unwrap();
         let result = upstream
             .join(&req("/api/v1/dependencies?gems=rack"))
             .unwrap();
         assert_eq!(
-            result.as_str(),
+            result.to_string(),
             "https://rubygems.org/api/v1/dependencies?gems=rack"
         );
     }
 
     #[test]
     fn upstream_join_no_leading_slash_still_works() {
-        let url = reqwest::Url::parse("https://rubygems.org/").unwrap();
+        let url = Uri::from_static("https://rubygems.org/");
         let upstream = UpstreamTarget::from_url(&url).unwrap();
         let result = upstream.join(&req("/gems/rack-3.0.0.gem")).unwrap();
-        assert!(result.as_str().contains("/gems/rack-3.0.0.gem"));
+        assert!(result.to_string().contains("/gems/rack-3.0.0.gem"));
     }
 
     // ============================================================================
@@ -939,10 +950,10 @@ mod tests {
 
     #[test]
     fn upstream_join_handles_special_chars() {
-        let url = reqwest::Url::parse("https://rubygems.org").unwrap();
+        let url = Uri::from_static("https://rubygems.org");
         let upstream = UpstreamTarget::from_url(&url).unwrap();
         let result = upstream.join(&req("/info/my%2Dgem")).unwrap();
-        assert!(result.as_str().contains("my%2Dgem"));
+        assert!(result.to_string().contains("my%2Dgem"));
     }
 
     #[test]

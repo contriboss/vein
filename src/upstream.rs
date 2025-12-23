@@ -4,13 +4,14 @@ use parking_lot::Mutex;
 use rama::{
     Service,
     http::{
-        Body, Method, Request, Response,
+        Body, Method, Request, Response, Uri,
         body::util::BodyExt as _,
         client::EasyHttpWebClient,
         header::{HeaderMap, HeaderValue, USER_AGENT},
         layer::trace::TraceLayer,
     },
     layer::Layer,
+    telemetry::tracing,
 };
 use std::sync::Arc;
 use tracing::{info, warn};
@@ -61,7 +62,7 @@ impl UpstreamClient {
         })
     }
 
-    pub async fn get_with_headers(&self, url: &str, headers: &HeaderMap) -> Result<Response<Body>> {
+    pub async fn get_with_headers(&self, url: Uri, headers: &HeaderMap) -> Result<Response<Body>> {
         // Check if circuit is open before attempting request
         if self.breaker.lock().is_open() {
             return Err(anyhow!(
@@ -77,7 +78,7 @@ impl UpstreamClient {
         loop {
             attempt += 1;
 
-            let mut builder = Request::builder().method(Method::GET).uri(url);
+            let mut builder = Request::builder().method(Method::GET).uri(url.clone());
             {
                 let h = builder
                     .headers_mut()

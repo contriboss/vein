@@ -1,11 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use http::header;
-use rama::http::{Body, Response, StatusCode, body::util::BodyExt};
+use rama::http::{Body, Response, StatusCode, body::util::BodyExt, header};
+use rama::telemetry::tracing::{debug, warn};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
-use tracing::{debug, warn};
 use vein_adapter::{AssetKind, CacheBackend, CachedAsset, FilesystemStorage, TempFile};
 
 use super::types::CacheableRequest;
@@ -190,14 +189,12 @@ pub async fn run_cache_miss_flow(
         );
     }
 
-    builder
-        .body(Body::from(body_bytes))
-        .map_err(Into::into)
+    builder.body(Body::from(body_bytes)).map_err(Into::into)
 }
 
 fn copy_header_if_present(
-    source: &reqwest::header::HeaderMap,
-    target: &mut http::HeaderMap,
+    source: &header::HeaderMap,
+    target: &mut header::HeaderMap,
     name: header::HeaderName,
 ) -> Result<()> {
     if let Some(value) = source.get(&name) {
