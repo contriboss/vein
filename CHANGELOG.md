@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/contriboss/vein/compare/v0.2.0...v0.3.0) (2025-12-23)
+
+
+### Features
+
+* add FreeBSD build and switch Linux to musl ([52f4f12](https://github.com/contriboss/vein/commit/52f4f1205f4b5a299cfd7bdee5dd719ba949dc97))
+
+
+### Bug Fixes
+
+* resolve PR compatibility issues ([ebfcdce](https://github.com/contriboss/vein/commit/ebfcdcef32c6d8943f9a9586bfa51d81d1f55663))
+
 ## [0.2.0](https://github.com/contriboss/vein/compare/v0.1.0...v0.2.0) (2025-12-16)
 
 
