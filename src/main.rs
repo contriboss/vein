@@ -406,27 +406,32 @@ fn run_stats(config_path: PathBuf) -> Result<()> {
 }
 
 fn run_health(url: String, timeout: u64) -> Result<()> {
-    // NOTE: I would not do this blocking? If you are ok with async, also this
-    // you can just do with rama...
+    use rama::http::client::EasyHttpWebClient;
+    use rama::http::layer::timeout::TimeoutLayer;
+    use rama::http::service::client::HttpClientExt;
 
-    todo!()
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("building health check runtime")?;
 
-    // let client = reqwest::blocking::Client::builder()
-    //     .timeout(Duration::from_secs(timeout))
-    //     .build()
-    //     .context("building health check client")?;
+    rt.block_on(async {
+        let client =
+            TimeoutLayer::new(Duration::from_secs(timeout)).into_layer(EasyHttpWebClient::default());
 
-    // let response = client
-    //     .get(&url)
-    //     .send()
-    //     .context("sending health check request")?;
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .context("sending health check request")?;
 
-    // if response.status().is_success() {
-    //     println!("Vein healthy: {}", response.status());
-    //     Ok(())
-    // } else {
-    //     bail!("health endpoint returned status {}", response.status());
-    // }
+        if response.status().is_success() {
+            println!("Vein healthy: {}", response.status());
+            Ok(())
+        } else {
+            bail!("health endpoint returned status {}", response.status());
+        }
+    })
 }
 
 fn init_tracing(config: &Config) -> Result<()> {

@@ -2,7 +2,7 @@ use super::*;
 use rama::http::Uri;
 use std::io::Write;
 use std::{fs, str::FromStr};
-use tempfile::{NamedTempFile, tempdir};
+use tempfile::{tempdir, NamedTempFile};
 
 // === DEFAULT VALUE TESTS ===
 
@@ -32,7 +32,7 @@ fn test_default_server_config() {
 #[test]
 fn test_default_upstream_config() {
     let upstream = UpstreamConfig::default();
-    assert_eq!(upstream.url.as_str(), "https://rubygems.org/");
+    assert_eq!(upstream.url.to_string(), "https://rubygems.org/");
     assert_eq!(upstream.timeout_secs, 30);
     assert_eq!(upstream.connection_pool_size, 128);
 }
@@ -103,7 +103,7 @@ fn test_parse_full_config() {
     assert_eq!(config.server.workers, 4);
 
     let upstream = config.upstream.unwrap();
-    assert_eq!(upstream.url.as_str(), "https://example.com/");
+    assert_eq!(upstream.url.to_string(), "https://example.com/");
     assert_eq!(upstream.timeout_secs, 60);
     assert_eq!(upstream.connection_pool_size, 256);
 
@@ -417,12 +417,10 @@ fn test_validate_invalid_scheme() {
     };
     let result = config.validate();
     assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("unsupported upstream scheme")
-    );
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("unsupported upstream scheme"));
 }
 
 #[test]

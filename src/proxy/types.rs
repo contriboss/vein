@@ -170,19 +170,47 @@ impl UpstreamTarget {
     }
 
     pub fn join(&self, req: &Request<rama::http::Body>) -> Result<Uri> {
-        let path_and_query = req
+        let req_path_and_query = req
             .uri()
             .path_and_query()
             .map(|pq| pq.as_str())
             .unwrap_or("/");
-        let cleaned = path_and_query.trim_start_matches('/');
+
+        // Get base path, stripping trailing slash
+        let base_path = self
+            .base
+            .path_and_query()
+            .map(|pq| pq.path())
+            .unwrap_or("/")
+            .trim_end_matches('/');
+
+        // Split request into path and query
+        let (req_path, query) = match req_path_and_query.find('?') {
+            Some(idx) => (&req_path_and_query[..idx], Some(&req_path_and_query[idx..])),
+            None => (req_path_and_query, None),
+        };
+
+        // Build combined path
+        let combined = if base_path.is_empty() || base_path == "/" {
+            req_path.to_string()
+        } else {
+            format!("{}{}", base_path, req_path)
+        };
+
+        // Add query string if present
+        let full_path = match query {
+            Some(q) => format!("{}{}", combined, q),
+            None => combined,
+        };
+
         let mut parts = self.base.clone().into_parts();
         parts.path_and_query = Some(
-            cleaned
+            full_path
                 .parse()
-                .with_context(|| format!("parse cleaned path and query '{cleaned}'"))?,
+                .with_context(|| format!("parse combined path '{full_path}'"))?,
         );
-        // NOTE: before 0.3 release Uri's will be cleaned up and be nicer
-        Uri::from_parts(parts).with_context(|| format!("joining upstream path {path_and_query}"))
+
+        Uri::from_parts(parts)
+            .with_context(|| format!("joining upstream path {req_path_and_query}"))
     }
 }
