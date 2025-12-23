@@ -4,6 +4,14 @@ on:
   push:
     branches: [master]
   workflow_dispatch:
+    inputs:
+      force_build:
+        description: 'Force build and upload artifacts'
+        type: boolean
+        default: false
+      tag:
+        description: 'Tag to release (e.g. v0.3.0)'
+        type: string
 
 permissions:
   contents: write
@@ -14,17 +22,18 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
+      release_created: ${{ steps.release.outputs.release_created || inputs.force_build }}
+      tag_name: ${{ steps.release.outputs.tag_name || inputs.tag }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
+        if: ${{ !inputs.force_build }}
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
   build:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: ${{ needs.release-please.outputs.release_created || inputs.force_build }}
     strategy:
       matrix:
         include:
@@ -69,7 +78,7 @@ jobs:
 
   build-freebsd:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: ${{ needs.release-please.outputs.release_created || inputs.force_build }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -95,7 +104,7 @@ jobs:
 
   upload-assets:
     needs: [release-please, build, build-freebsd]
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: ${{ needs.release-please.outputs.release_created || inputs.force_build }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -115,7 +124,7 @@ jobs:
 
   build-docker:
     needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
+    if: ${{ needs.release-please.outputs.release_created || inputs.force_build }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
