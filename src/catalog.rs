@@ -1,9 +1,18 @@
 use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
-use reqwest::{Client, StatusCode, header};
+use rama::{
+    Layer, Service,
+    error::OpaqueError,
+    http::{
+        BodyExtractExt, HeaderValue, Request, Response, StatusCode, client::EasyHttpWebClient,
+        header, layer::required_header::AddRequiredRequestHeadersLayer,
+        service::client::HttpClientExt as _,
+    },
+    layer::{MapErrLayer, TimeoutLayer},
+    telemetry::tracing::{error, info},
+};
 use tokio::time::sleep;
-use tracing::{error, info};
 use vein_adapter::CacheBackend;
 
 const NAMES_URL: &str = "https://rubygems.org/names.gz";
@@ -21,7 +30,10 @@ pub fn spawn_background_sync(index: Arc<dyn CacheBackend>) -> Result<()> {
     Ok(())
 }
 
-async fn sync_loop(index: Arc<dyn CacheBackend>, client: Client) -> Result<()> {
+async fn sync_loop(
+    index: Arc<dyn CacheBackend>,
+    client: impl Service<Request, Output = Response, Error = OpaqueError>,
+) -> Result<()> {
     if let Err(err) = sync_names_with_client(index.as_ref(), &client).await {
         error!(error = %err, "initial catalog sync failed");
     }
@@ -38,20 +50,25 @@ pub async fn sync_names_once(index: &dyn CacheBackend) -> Result<Option<usize>> 
     sync_names_with_client(index, &client).await
 }
 
-fn build_client() -> Result<Client> {
-    Client::builder()
-        .user_agent("vein-catalog/0.1.0")
-        .no_gzip()
-        .no_deflate()
-        .no_brotli()
-        .timeout(Duration::from_secs(60))
-        .build()
-        .context("building catalog HTTP client")
+fn build_client() -> Result<impl Service<Request, Output = Response, Error = OpaqueError>> {
+    // NOTE if you want pooling you'll have to
+    // use build_connector to also include the pool desired
+    let inner = EasyHttpWebClient::default();
+
+    // decompression support would be added as layer on top
+
+    Ok((
+        MapErrLayer::new(OpaqueError::from_boxed),
+        TimeoutLayer::new(Duration::from_secs(60)),
+        AddRequiredRequestHeadersLayer::new()
+            .with_user_agent_header_value(HeaderValue::from_static("vein-catalog/0.1.0")),
+    )
+        .into_layer(inner))
 }
 
 async fn sync_names_with_client(
     index: &dyn CacheBackend,
-    client: &Client,
+    client: &impl Service<Request, Output = Response, Error = OpaqueError>,
 ) -> Result<Option<usize>> {
     let mut request = client.get(NAMES_URL);
 
@@ -73,9 +90,9 @@ async fn sync_names_with_client(
         return Ok(None);
     }
 
-    let response = response
-        .error_for_status()
-        .context("fetching rubygems names list")?;
+    if !response.status().is_success() {
+        return Err(anyhow::anyhow!("fetching rubygems names list"));
+    };
 
     let etag = response
         .headers()
@@ -88,8 +105,11 @@ async fn sync_names_with_client(
         .and_then(|value| value.to_str().ok())
         .map(ToOwned::to_owned);
 
-    let bytes = response.bytes().await?.to_vec();
-    let text = String::from_utf8(bytes).context("decoding names list")?;
+    let text = response
+        .try_into_string()
+        .await
+        .context("decoding names list")?;
+
     let names: Vec<String> = text
         .lines()
         .map(str::trim)

@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
+use rama::telemetry::tracing;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use vein_adapter::CacheBackend;
 

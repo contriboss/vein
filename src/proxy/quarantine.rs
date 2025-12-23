@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use chrono::Utc;
-use tracing::{debug, warn};
+use rama::telemetry::tracing::{debug, warn};
 use vein_adapter::{
     CacheBackend, GemVersion, VersionStatus, calculate_availability, is_version_available,
 };

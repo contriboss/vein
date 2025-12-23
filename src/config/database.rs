@@ -1,7 +1,11 @@
 use crate::config::reliability::{ReliabilityConfig, RetryConfig};
 use anyhow::{Context, Result, bail};
+use rama::http::Uri;
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DatabaseConfig {
@@ -30,8 +34,8 @@ impl DatabaseConfig {
     pub fn normalize_paths(&mut self, base_dir: &Path) {
         if let Some(raw_url) = &self.url {
             let trimmed = raw_url.trim();
-            if let Ok(parsed) = url::Url::parse(trimmed)
-                && parsed.scheme() == "sqlite"
+            if let Ok(parsed) = Uri::from_str(trimmed)
+                && parsed.scheme().map(|s| s.as_str()) == Some("sqlite")
                 && let Ok(path) = Self::sqlite_path_from_url(&parsed)
             {
                 self.path = path;
@@ -56,10 +60,10 @@ impl DatabaseConfig {
     pub fn backend(&self) -> Result<DatabaseBackend> {
         if let Some(raw_url) = &self.url {
             let trimmed = raw_url.trim();
-            let parsed = url::Url::parse(trimmed)
+            let parsed = Uri::from_str(trimmed)
                 .with_context(|| format!("parsing database url '{trimmed}'"))?;
 
-            match parsed.scheme() {
+            match parsed.scheme().map(|s| s.as_str()).unwrap_or_default() {
                 "postgres" | "postgresql" => Ok(DatabaseBackend::Postgres {
                     url: trimmed.to_string(),
                     max_connections: self.max_connections.max(1),
@@ -82,8 +86,8 @@ impl DatabaseConfig {
         }
     }
 
-    fn sqlite_path_from_url(url: &url::Url) -> Result<PathBuf> {
-        let host_opt = url.host_str();
+    fn sqlite_path_from_url(url: &Uri) -> Result<PathBuf> {
+        let host_opt = url.host();
         if let Some(host) = host_opt
             && !host.is_empty()
             && host != "localhost"

@@ -247,14 +247,15 @@ mod tests {
     use http_body_util::BodyExt;
     use loco_rs::{
         app::{AppContext, SharedStore},
-        cache, config as loco_config,
+        cache,
+        config::{self as loco_config, Database},
         controller::middleware,
         environment::Environment,
         storage::{self, Storage},
     };
     use serde_json::json;
     use std::sync::Arc;
-    use vein::config::Config as VeinConfig;
+    use vein::{GemMetadata, config::Config as VeinConfig};
     use vein_adapter::{
         AssetKey, AssetKind, CacheBackend, DependencyKind, GemDependency, SqliteCacheBackend,
     };
@@ -447,6 +448,7 @@ mod tests {
                 initializers: None,
                 settings: None,
                 scheduler: None,
+                database: todo!(), // was already broken?,
             },
             mailer: None,
             storage: Storage::single(storage::drivers::null::new()).into(),

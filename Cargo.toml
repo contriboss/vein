@@ -16,12 +16,12 @@ categories = ["development-tools", "caching", "network-programming"]
 
 [features]
 default = ["tls", "postgres"]
-tls = ["rama/rustls", "reqwest/rustls-tls-native-roots", "vein-adapter/tls"]
+tls = ["rama/rustls", "vein-adapter/tls"]
 postgres = ["vein-adapter/postgres"]
 android = []
 
 [dependencies]
-# Rama proxy framework (conditional TLS via feature)
+# Rama network framework (conditional TLS via feature)
 rama = { git = "https://github.com/plabayo/rama.git", features = ["http-full", "tcp", "opentelemetry"] }
 
 # Async runtime
@@ -30,11 +30,6 @@ async-trait = "0.1.85"
 
 # Database (features controlled by workspace features)
 sqlx = { version = "0.8.2", features = ["sqlite", "chrono"] }
-
-# HTTP client (for upstream proxy, conditional TLS)
-reqwest = { version = "0.12.12", default-features = false, features = ["json", "stream", "blocking"] }
-http = "1.1.0"
-url = "2.5.4"
 
 # Serialization
 serde = { version = "1.0.217", features = ["derive"] }
@@ -59,14 +54,6 @@ cyclonedx-bom = "0.8.0"
 # Error handling
 anyhow = "1.0.95"
 thiserror = "2.0.9"
-
-# Logging/tracing
-tracing = "0.1.43"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
-tracing-opentelemetry = "0.32"
-opentelemetry = { version = "0.31", features = ["trace"] }
-opentelemetry_sdk = { version = "0.31", features = ["rt-tokio", "trace"] }
-opentelemetry-otlp = { version = "0.31", features = ["http-proto", "tls"] }
 
 # CLI
 clap = { version = "4.5.53", features = ["derive"] }
