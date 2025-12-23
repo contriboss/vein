@@ -1,11 +1,7 @@
 use crate::config::reliability::{ReliabilityConfig, RetryConfig};
-use anyhow::{Context, Result, bail};
-use rama::http::Uri;
+use anyhow::{Result, bail};
 use serde::Deserialize;
-use std::{
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DatabaseConfig {
@@ -34,9 +30,9 @@ impl DatabaseConfig {
     pub fn normalize_paths(&mut self, base_dir: &Path) {
         if let Some(raw_url) = &self.url {
             let trimmed = raw_url.trim();
-            if let Ok(parsed) = Uri::from_str(trimmed)
-                && parsed.scheme().map(|s| s.as_str()) == Some("sqlite")
-                && let Ok(path) = Self::sqlite_path_from_url(&parsed)
+            if let Some(scheme) = Self::parse_scheme(trimmed)
+                && scheme == "sqlite"
+                && let Ok(path) = Self::sqlite_path_from_url(trimmed)
             {
                 self.path = path;
             }
@@ -60,16 +56,15 @@ impl DatabaseConfig {
     pub fn backend(&self) -> Result<DatabaseBackend> {
         if let Some(raw_url) = &self.url {
             let trimmed = raw_url.trim();
-            let parsed = Uri::from_str(trimmed)
-                .with_context(|| format!("parsing database url '{trimmed}'"))?;
+            let scheme = Self::parse_scheme(trimmed).unwrap_or_default();
 
-            match parsed.scheme().map(|s| s.as_str()).unwrap_or_default() {
+            match scheme {
                 "postgres" | "postgresql" => Ok(DatabaseBackend::Postgres {
                     url: trimmed.to_string(),
                     max_connections: self.max_connections.max(1),
                 }),
                 "sqlite" => {
-                    let parsed_path = Self::sqlite_path_from_url(&parsed)?;
+                    let parsed_path = Self::sqlite_path_from_url(trimmed)?;
                     let path = if self.path.is_absolute() {
                         self.path.clone()
                     } else {
@@ -86,26 +81,38 @@ impl DatabaseConfig {
         }
     }
 
-    fn sqlite_path_from_url(url: &Uri) -> Result<PathBuf> {
-        let host_opt = url.host();
-        if let Some(host) = host_opt
-            && !host.is_empty()
-            && host != "localhost"
-            && host != "."
-        {
+    fn parse_scheme(url: &str) -> Option<&str> {
+        url.find("://").map(|idx| &url[..idx])
+    }
+
+    fn sqlite_path_from_url(url: &str) -> Result<PathBuf> {
+        // Format: sqlite://[host]/path or sqlite:///path
+        let after_scheme = url
+            .strip_prefix("sqlite://")
+            .ok_or_else(|| anyhow::anyhow!("invalid sqlite url"))?;
+
+        // Check for host part
+        let (host, path_part) = if let Some(slash_idx) = after_scheme.find('/') {
+            (&after_scheme[..slash_idx], &after_scheme[slash_idx..])
+        } else {
+            ("", after_scheme)
+        };
+
+        if !host.is_empty() && host != "localhost" && host != "." {
             bail!("sqlite url must not specify host (got {host})");
         }
-        let path_str = url.path();
-        if path_str.is_empty() || path_str == "/" {
+
+        if path_part.is_empty() || path_part == "/" {
             bail!("sqlite url must include database path");
         }
 
-        let path = if matches!(host_opt, Some(host) if host == ".") {
-            PathBuf::from(path_str.trim_start_matches('/'))
-        } else if path_str.starts_with('/') {
-            PathBuf::from(path_str)
+        let path = if host == "." {
+            // sqlite://./relative/path -> relative/path
+            PathBuf::from(path_part.trim_start_matches('/'))
         } else {
-            PathBuf::from(path_str.trim_start_matches('/'))
+            // sqlite:///absolute/path -> /absolute/path
+            // sqlite://localhost/path -> /path
+            PathBuf::from(path_part)
         };
 
         Ok(path)
