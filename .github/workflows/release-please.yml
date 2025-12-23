@@ -43,7 +43,7 @@ jobs:
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
             name: vein-linux-arm64
-          - runner: macos-13
+          - runner: macos-15-intel
             target: x86_64-apple-darwin
             name: vein-darwin-amd64
           - runner: macos-latest
