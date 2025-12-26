@@ -7,7 +7,7 @@ use anyhow::Result;
 use chrono::Utc;
 use rama::telemetry::tracing::{debug, warn};
 use vein_adapter::{
-    CacheBackend, GemVersion, VersionStatus, calculate_availability, is_version_available,
+    CacheBackendKind, GemVersion, VersionStatus, calculate_availability, is_version_available,
 };
 
 use crate::config::DelayPolicyConfig;
@@ -17,7 +17,7 @@ use crate::config::DelayPolicyConfig;
 /// Called when a gem is fetched from upstream for the first time.
 pub async fn record_new_version(
     config: &DelayPolicyConfig,
-    index: &dyn CacheBackend,
+    index: &CacheBackendKind,
     name: &str,
     version: &str,
     platform: Option<&str>,
@@ -92,7 +92,7 @@ pub async fn record_new_version(
 /// Returns the filtered response body.
 pub async fn filter_compact_info(
     config: &DelayPolicyConfig,
-    index: &dyn CacheBackend,
+    index: &CacheBackendKind,
     gem_name: &str,
     body: &[u8],
 ) -> Result<Vec<u8>> {
@@ -204,7 +204,7 @@ fn format_version_key(version: &str, platform: Option<&str>) -> String {
 #[allow(dead_code, clippy::unused_async)]
 pub async fn filter_compact_versions(
     config: &DelayPolicyConfig,
-    _index: &dyn CacheBackend,
+    _index: &CacheBackendKind,
     body: &[u8],
 ) -> Result<Vec<u8>> {
     if !config.enabled {

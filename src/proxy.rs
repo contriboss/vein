@@ -21,7 +21,7 @@ use rama::{
 use tokio::io::AsyncWriteExt;
 
 use crate::{config::Config, upstream::UpstreamClient};
-use vein_adapter::{CacheBackend, FilesystemStorage};
+use vein_adapter::{CacheBackendKind, FilesystemStorage};
 
 // Re-export public types
 pub use types::{CacheStatus, RequestContext, UpstreamTarget};
@@ -101,7 +101,7 @@ impl CompactEntryMeta {
 pub struct VeinProxy {
     config: Arc<Config>,
     storage: Arc<FilesystemStorage>,
-    index: Arc<dyn CacheBackend>,
+    index: Arc<CacheBackendKind>,
     upstreams: Vec<UpstreamTarget>,
     upstream_client: Option<UpstreamClient>,
 }
@@ -110,7 +110,7 @@ impl VeinProxy {
     pub fn new(
         config: Arc<Config>,
         storage: Arc<FilesystemStorage>,
-        index: Arc<dyn CacheBackend>,
+        index: Arc<CacheBackendKind>,
     ) -> Result<Self> {
         let (upstreams, upstream_client) = if let Some(ref upstream_config) = config.upstream {
             let mut upstreams = Vec::new();

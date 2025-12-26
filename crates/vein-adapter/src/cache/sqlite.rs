@@ -1,7 +1,6 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 
@@ -348,7 +347,6 @@ impl SqliteCacheBackend {
     }
 }
 
-#[async_trait]
 impl CacheBackend for SqliteCacheBackend {
     async fn get(&self, key: &AssetKey<'_>) -> Result<Option<CachedAsset>> {
         let record = sqlx::query_as::<_, CachedAssetRow>(

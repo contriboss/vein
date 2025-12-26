@@ -257,7 +257,7 @@ mod tests {
     use std::sync::Arc;
     use vein::{GemMetadata, config::Config as VeinConfig};
     use vein_adapter::{
-        AssetKey, AssetKind, CacheBackend, DependencyKind, GemDependency, SqliteCacheBackend,
+        AssetKey, AssetKind, CacheBackendKind, DependencyKind, GemDependency, SqliteCacheBackend,
     };
 
     use crate::{ruby::RubyStatus, state::AdminResources};
@@ -265,7 +265,7 @@ mod tests {
     #[tokio::test]
     async fn sbom_endpoint_serves_cyclonedx_json() {
         let backend = build_in_memory_cache().await;
-        let cache: Arc<dyn CacheBackend> = Arc::new(backend);
+        let cache: Arc<CacheBackendKind> = Arc::new(backend.into());
         let config = Arc::new(VeinConfig::default());
         let ruby_status = Arc::new(RubyStatus::default());
         let resources = AdminResources::new(config, cache, ruby_status);

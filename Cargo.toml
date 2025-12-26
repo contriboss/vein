@@ -26,7 +26,6 @@ rama = { git = "https://github.com/plabayo/rama.git", features = ["http-full", "
 
 # Async runtime
 tokio = { version = "1.43", features = ["full"] }
-async-trait = "0.1.85"
 
 # Database (features controlled by workspace features)
 sqlx = { version = "0.8.2", features = ["sqlite", "chrono"] }

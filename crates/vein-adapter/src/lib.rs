@@ -2,8 +2,8 @@ mod cache;
 mod storage;
 
 pub use cache::{
-    AssetKey, AssetKind, CacheBackend, CachedAsset, DependencyKind, GemDependency, GemMetadata,
-    IndexStats, SbomCoverage, SqliteCacheBackend,
+    AssetKey, AssetKind, CacheBackendKind, CachedAsset, DependencyKind, GemDependency,
+    GemMetadata, IndexStats, SbomCoverage, SqliteCacheBackend,
 };
 #[cfg(feature = "postgres")]
 pub use cache::PostgresCacheBackend;

@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use sqlx::{
     PgPool, Transaction,
@@ -260,7 +259,6 @@ impl PostgresCacheBackend {
     }
 }
 
-#[async_trait]
 impl CacheBackend for PostgresCacheBackend {
     async fn get(&self, key: &AssetKey<'_>) -> Result<Option<CachedAsset>> {
         let record = sqlx::query_as::<_, PostgresCachedAssetRow>(

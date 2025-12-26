@@ -6,11 +6,11 @@ use rama::telemetry::tracing::{debug, error, info, warn};
 use crate::config::{BackoffStrategy, Config, DatabaseBackend};
 #[cfg(feature = "postgres")]
 use vein_adapter::PostgresCacheBackend;
-use vein_adapter::{CacheBackend, SqliteCacheBackend};
+use vein_adapter::{CacheBackendKind, SqliteCacheBackend};
 
 pub async fn connect_cache_backend(
     config: &Config,
-) -> Result<(Arc<dyn CacheBackend>, DatabaseBackend)> {
+) -> Result<(Arc<CacheBackendKind>, DatabaseBackend)> {
     let backend = config.database.backend()?;
     let retry_config = &config.database.reliability.retry;
 
@@ -23,7 +23,7 @@ pub async fn connect_cache_backend(
         );
     }
 
-    let cache: Arc<dyn CacheBackend> = match &backend {
+    let cache: CacheBackendKind = match &backend {
         DatabaseBackend::Sqlite { path } => {
             let backend = connect_with_retry(
                 || async { SqliteCacheBackend::connect(path).await },
@@ -32,7 +32,7 @@ pub async fn connect_cache_backend(
             )
             .await
             .context("connecting sqlite cache")?;
-            Arc::new(backend)
+            backend.into()
         }
         #[cfg(feature = "postgres")]
         DatabaseBackend::Postgres {
@@ -46,14 +46,14 @@ pub async fn connect_cache_backend(
             )
             .await
             .context("connecting postgres cache")?;
-            Arc::new(backend)
+            backend.into()
         }
         #[cfg(not(feature = "postgres"))]
         DatabaseBackend::Postgres { .. } => {
             anyhow::bail!("PostgreSQL support not compiled in. Rebuild with --features postgres");
         }
     };
-    Ok((cache, backend))
+    Ok((Arc::new(cache), backend))
 }
 
 /// Execute a database connection with retry logic

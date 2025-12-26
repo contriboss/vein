@@ -13,14 +13,14 @@ use rama::{
     telemetry::tracing::{error, info},
 };
 use tokio::time::sleep;
-use vein_adapter::CacheBackend;
+use vein_adapter::CacheBackendKind;
 
 const NAMES_URL: &str = "https://rubygems.org/names.gz";
 const META_ETAG: &str = "catalog_names_etag";
 const META_LAST_MODIFIED: &str = "catalog_names_last_modified";
 const SYNC_INTERVAL: Duration = Duration::from_secs(30 * 60);
 
-pub fn spawn_background_sync(index: Arc<dyn CacheBackend>) -> Result<()> {
+pub fn spawn_background_sync(index: Arc<CacheBackendKind>) -> Result<()> {
     let client = build_client()?;
     tokio::spawn(async move {
         if let Err(err) = sync_loop(index, client).await {
@@ -31,21 +31,21 @@ pub fn spawn_background_sync(index: Arc<dyn CacheBackend>) -> Result<()> {
 }
 
 async fn sync_loop(
-    index: Arc<dyn CacheBackend>,
+    index: Arc<CacheBackendKind>,
     client: impl Service<Request, Output = Response, Error = OpaqueError>,
 ) -> Result<()> {
-    if let Err(err) = sync_names_with_client(index.as_ref(), &client).await {
+    if let Err(err) = sync_names_with_client(&index, &client).await {
         error!(error = %err, "initial catalog sync failed");
     }
     loop {
         sleep(SYNC_INTERVAL).await;
-        if let Err(err) = sync_names_with_client(index.as_ref(), &client).await {
+        if let Err(err) = sync_names_with_client(&index, &client).await {
             error!(error = %err, "catalog sync failed");
         }
     }
 }
 
-pub async fn sync_names_once(index: &dyn CacheBackend) -> Result<Option<usize>> {
+pub async fn sync_names_once(index: &CacheBackendKind) -> Result<Option<usize>> {
     let client = build_client()?;
     sync_names_with_client(index, &client).await
 }
@@ -67,7 +67,7 @@ fn build_client() -> Result<impl Service<Request, Output = Response, Error = Opa
 }
 
 async fn sync_names_with_client(
-    index: &dyn CacheBackend,
+    index: &CacheBackendKind,
     client: &impl Service<Request, Output = Response, Error = OpaqueError>,
 ) -> Result<Option<usize>> {
     let mut request = client.get(NAMES_URL);

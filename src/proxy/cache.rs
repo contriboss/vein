@@ -5,7 +5,7 @@ use rama::http::{Body, Response, StatusCode, body::util::BodyExt, header};
 use rama::telemetry::tracing::{debug, warn};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
-use vein_adapter::{AssetKind, CacheBackend, CachedAsset, FilesystemStorage, TempFile};
+use vein_adapter::{AssetKind, CacheBackendKind, CachedAsset, FilesystemStorage, TempFile};
 
 use super::types::CacheableRequest;
 
@@ -64,7 +64,7 @@ fn build_cached_response(
 /// Runs the cache miss flow: fetch body, persist to cache, return response
 pub async fn run_cache_miss_flow(
     cacheable: &CacheableRequest,
-    index: Arc<dyn CacheBackend>,
+    index: Arc<CacheBackendKind>,
     storage: Arc<FilesystemStorage>,
     response: rama::http::Response<rama::http::Body>,
     mut temp_file: TempFile,

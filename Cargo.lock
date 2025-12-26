@@ -6112,7 +6112,6 @@ name = "vein"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "breaker-machines",
  "bytes",
  "chrono",
@@ -6151,7 +6150,6 @@ name = "vein-adapter"
 version = "0.3.0"
 dependencies = [
  "anyhow",
- "async-trait",
  "chrono",
  "semver",
  "serde",

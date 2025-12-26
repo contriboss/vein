@@ -10,7 +10,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use rama::telemetry::tracing;
 use tokio_cron_scheduler::{Job, JobScheduler};
-use vein_adapter::CacheBackend;
+use vein_adapter::CacheBackendKind;
 
 use crate::config::DelayPolicyConfig;
 
@@ -22,7 +22,7 @@ pub const DEFAULT_PROMOTION_SCHEDULE: &str = "0 5 * * * *";
 /// This job runs periodically to promote versions whose quarantine period has expired.
 pub fn spawn_promotion_scheduler(
     config: &DelayPolicyConfig,
-    index: Arc<dyn CacheBackend>,
+    index: Arc<CacheBackendKind>,
     schedule: Option<&str>,
 ) {
     if !config.enabled {
@@ -93,7 +93,7 @@ pub fn spawn_promotion_scheduler(
 /// Ensures quarantine database tables exist.
 ///
 /// Should be called during startup before using quarantine features.
-pub async fn ensure_tables(index: &dyn CacheBackend, config: &DelayPolicyConfig) -> Result<()> {
+pub async fn ensure_tables(index: &CacheBackendKind, config: &DelayPolicyConfig) -> Result<()> {
     if !config.enabled {
         return Ok(());
     }
@@ -117,7 +117,7 @@ pub async fn ensure_tables(index: &dyn CacheBackend, config: &DelayPolicyConfig)
 /// Manually triggers promotion of expired quarantines.
 ///
 /// Useful for CLI commands.
-pub async fn promote_now(index: &dyn CacheBackend) -> Result<u64> {
+pub async fn promote_now(index: &CacheBackendKind) -> Result<u64> {
     let now = Utc::now();
     let count = index
         .promote_expired_quarantines(now)

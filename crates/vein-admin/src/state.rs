@@ -5,21 +5,21 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use vein::config::Config as VeinConfig;
 use vein_adapter::{
-    CacheBackend, GemMetadata, GemVersion, IndexStats, QuarantineStats, SbomCoverage,
+    CacheBackendKind, GemMetadata, GemVersion, IndexStats, QuarantineStats, SbomCoverage,
     VersionStatus,
 };
 
 #[derive(Clone)]
 pub struct AdminResources {
     config: Arc<VeinConfig>,
-    cache: Arc<dyn CacheBackend>,
+    cache: Arc<CacheBackendKind>,
     ruby_status: Arc<RubyStatus>,
 }
 
 impl AdminResources {
     pub fn new(
         config: Arc<VeinConfig>,
-        cache: Arc<dyn CacheBackend>,
+        cache: Arc<CacheBackendKind>,
         ruby_status: Arc<RubyStatus>,
     ) -> Self {
         Self {
