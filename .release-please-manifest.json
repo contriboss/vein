@@ -1,6 +1,6 @@
 {
   ".": "0.4.0",
-  "crates/vein-adapter": "0.2.1",
-  "crates/vein-admin": "0.2.1",
+  "crates/vein-adapter": "0.3.0",
+  "crates/vein-admin": "0.3.0",
   "crates/vein-admin/migration": "0.1.0"
 }
