@@ -1,6 +1,6 @@
 [package]
 name = "vein-admin"
-version = "0.3.0"
+version = "0.2.1"
 edition = "2024"
 license = "AGPL-3.0-only"
 authors = ["Abdelkader Boudih <oss@seuros.com>"]
