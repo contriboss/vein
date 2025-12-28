@@ -21,9 +21,9 @@ mod tests;
 
 // Re-export types from submodules for convenience
 pub use database::{DatabaseBackend, DatabaseConfig};
-pub use delay_policy::{DelayPolicyConfig, GemDelayOverride, PinnedVersion};
+pub use delay_policy::DelayPolicyConfig;
 pub use logging::LoggingConfig;
-pub use reliability::{BackoffStrategy, ReliabilityConfig, RetryConfig};
+pub use reliability::{BackoffStrategy, RetryConfig};
 pub use server::ServerConfig;
 pub use storage::StorageConfig;
 pub use upstream::UpstreamConfig;

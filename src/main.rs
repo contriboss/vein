@@ -7,13 +7,13 @@
     clippy::unused_async
 )]
 
+mod catalog;
+mod config;
 mod db;
 mod gem_metadata;
 mod proxy;
+mod quarantine;
 mod upstream;
-
-// Use config from library to avoid type conflicts with quarantine module
-use vein::config;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -53,10 +53,9 @@ use rama::{
 };
 use vein_adapter::FilesystemStorage;
 
+use crate::config::{Config, DatabaseBackend};
 use crate::db::connect_cache_backend;
 use crate::proxy::VeinProxy;
-use config::{Config, DatabaseBackend};
-use vein::{catalog, quarantine};
 
 #[derive(Debug, Parser)]
 #[command(author, version, about = "Vein RubyGems mirror server")]

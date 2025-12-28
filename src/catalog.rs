@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use rama::{
@@ -10,40 +10,13 @@ use rama::{
         service::client::HttpClientExt as _,
     },
     layer::{MapErrLayer, TimeoutLayer},
-    telemetry::tracing::{error, info},
+    telemetry::tracing::info,
 };
-use tokio::time::sleep;
 use vein_adapter::CacheBackendKind;
 
 const NAMES_URL: &str = "https://rubygems.org/names.gz";
 const META_ETAG: &str = "catalog_names_etag";
 const META_LAST_MODIFIED: &str = "catalog_names_last_modified";
-const SYNC_INTERVAL: Duration = Duration::from_secs(30 * 60);
-
-pub fn spawn_background_sync(index: Arc<CacheBackendKind>) -> Result<()> {
-    let client = build_client()?;
-    tokio::spawn(async move {
-        if let Err(err) = sync_loop(index, client).await {
-            error!(error = %err, "catalog sync loop terminated");
-        }
-    });
-    Ok(())
-}
-
-async fn sync_loop(
-    index: Arc<CacheBackendKind>,
-    client: impl Service<Request, Output = Response, Error = OpaqueError>,
-) -> Result<()> {
-    if let Err(err) = sync_names_with_client(&index, &client).await {
-        error!(error = %err, "initial catalog sync failed");
-    }
-    loop {
-        sleep(SYNC_INTERVAL).await;
-        if let Err(err) = sync_names_with_client(&index, &client).await {
-            error!(error = %err, "catalog sync failed");
-        }
-    }
-}
 
 pub async fn sync_names_once(index: &CacheBackendKind) -> Result<Option<usize>> {
     let client = build_client()?;

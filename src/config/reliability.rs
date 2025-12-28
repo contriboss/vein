@@ -28,6 +28,9 @@ pub struct RetryConfig {
     /// Backoff strategy
     #[serde(default)]
     pub backoff_strategy: BackoffStrategy,
+    /// Jitter factor (0.0 = no jitter, 1.0 = full jitter)
+    #[serde(default = "RetryConfig::default_jitter_factor")]
+    pub jitter_factor: f64,
 }
 
 impl RetryConfig {
@@ -46,6 +49,10 @@ impl RetryConfig {
     fn default_max_backoff_secs() -> u64 {
         2
     }
+
+    fn default_jitter_factor() -> f64 {
+        1.0 // Full jitter by default (prevents thundering herd)
+    }
 }
 
 impl Default for RetryConfig {
@@ -56,6 +63,7 @@ impl Default for RetryConfig {
             initial_backoff_ms: Self::default_initial_backoff_ms(),
             max_backoff_secs: Self::default_max_backoff_secs(),
             backoff_strategy: BackoffStrategy::default(),
+            jitter_factor: Self::default_jitter_factor(),
         }
     }
 }

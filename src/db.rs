@@ -243,6 +243,7 @@ mod tests {
             initial_backoff_ms: 100,
             max_backoff_secs: 2,
             backoff_strategy: BackoffStrategy::Exponential,
+            jitter_factor: 1.0,
         };
 
         let call_count = Arc::new(AtomicU32::new(0));
@@ -274,6 +275,7 @@ mod tests {
             initial_backoff_ms: 10,
             max_backoff_secs: 1,
             backoff_strategy: BackoffStrategy::Exponential,
+            jitter_factor: 1.0,
         };
 
         let call_count = Arc::new(AtomicU32::new(0));
@@ -306,6 +308,7 @@ mod tests {
             initial_backoff_ms: 10,
             max_backoff_secs: 1,
             backoff_strategy: BackoffStrategy::Exponential,
+            jitter_factor: 1.0,
         };
 
         let call_count = Arc::new(AtomicU32::new(0));
@@ -342,6 +345,7 @@ mod tests {
             initial_backoff_ms: 10,
             max_backoff_secs: 1,
             backoff_strategy: BackoffStrategy::Exponential,
+            jitter_factor: 1.0,
         };
 
         let call_count = Arc::new(AtomicU32::new(0));
@@ -373,6 +377,7 @@ mod tests {
             initial_backoff_ms: 10,
             max_backoff_secs: 1,
             backoff_strategy: BackoffStrategy::Exponential,
+            jitter_factor: 1.0,
         };
 
         let call_count = Arc::new(AtomicU32::new(0));

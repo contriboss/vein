@@ -22,7 +22,7 @@ android = []
 
 [dependencies]
 # Rama network framework (conditional TLS via feature)
-rama = { git = "https://github.com/plabayo/rama.git", features = ["http-full", "tcp", "opentelemetry"] }
+rama = { version = "0.3.0-alpha.4", features = ["http-full", "tcp", "opentelemetry"] }
 
 # Async runtime
 tokio = { version = "1.43", features = ["full"] }
@@ -64,14 +64,15 @@ path-clean = "1.0.1"
 once_cell = "1.20.2"
 parking_lot = "0.12.3"
 percent-encoding = "2.3"
+rand = "0.9"
 
 # Scheduling
 tokio-cron-scheduler = "0.15.1"
 
 # State machines
 state-machines = { version = "0.7.0", features = ["typestate"] }
-breaker-machines = "0.7.1"
-chrono-machines = "0.2.1"
+breaker-machines = "0.7.2"
+chrono-machines = "0.3.0"
 
 # Time handling
 chrono = { version = "0.4.38", features = ["serde"] }

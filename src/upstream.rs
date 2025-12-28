@@ -1,5 +1,6 @@
 use anyhow::{Result, anyhow};
 use breaker_machines::CircuitBreaker;
+use chrono_machines::{BackoffPolicy, BackoffStrategy, ConstantBackoff, ExponentialBackoff, FibonacciBackoff};
 use parking_lot::Mutex;
 use rama::{
     Service,
@@ -13,18 +14,19 @@ use rama::{
     layer::Layer,
     telemetry::tracing,
 };
+use rand::SeedableRng;
+use rand::rngs::SmallRng;
 use std::sync::Arc;
 use tracing::{info, warn};
 
-use crate::config::UpstreamConfig;
+use crate::config::{BackoffStrategy as ConfigBackoffStrategy, UpstreamConfig};
 
 const UA: &str = concat!("vein/", env!("CARGO_PKG_VERSION"));
 
 /// Rama-based upstream HTTP client with retry, circuit breaker, and tracing.
 #[derive(Clone)]
 pub struct UpstreamClient {
-    pub max_attempts: u32,
-    pub initial_backoff_ms: u64,
+    pub backoff: BackoffPolicy,
     pub breaker: Arc<Mutex<CircuitBreaker>>,
 }
 
@@ -49,15 +51,41 @@ impl UpstreamClient {
             })
             .build();
 
+        let retry = &config.reliability.retry;
+        let max_delay_ms = retry.max_backoff_secs * 1000;
+        let jitter = retry.jitter_factor;
+        let max_attempts = retry.max_attempts as u8;
+
+        let backoff: BackoffPolicy = match retry.backoff_strategy {
+            ConfigBackoffStrategy::Exponential => ExponentialBackoff::new()
+                .base_delay_ms(retry.initial_backoff_ms)
+                .max_delay_ms(max_delay_ms)
+                .max_attempts(max_attempts)
+                .jitter_factor(jitter)
+                .into(),
+            ConfigBackoffStrategy::Fibonacci => FibonacciBackoff::new()
+                .base_delay_ms(retry.initial_backoff_ms)
+                .max_delay_ms(max_delay_ms)
+                .max_attempts(max_attempts)
+                .jitter_factor(jitter)
+                .into(),
+            ConfigBackoffStrategy::Constant => ConstantBackoff::new()
+                .delay_ms(retry.initial_backoff_ms)
+                .max_attempts(max_attempts)
+                .jitter_factor(jitter)
+                .into(),
+        };
+
         info!(
             timeout_secs = config.timeout_secs,
             pool = config.connection_pool_size,
-            "Upstream client initialized (rama + rustls + circuit breaker)",
+            strategy = ?retry.backoff_strategy,
+            max_attempts = max_attempts,
+            "Upstream client initialized (rama + rustls + circuit breaker + chrono-machines)",
         );
 
         Ok(Self {
-            max_attempts: config.reliability.retry.max_attempts,
-            initial_backoff_ms: config.reliability.retry.initial_backoff_ms,
+            backoff,
             breaker: Arc::new(Mutex::new(breaker)),
         })
     }
@@ -71,9 +99,10 @@ impl UpstreamClient {
         }
 
         let client = (TraceLayer::new_for_http(),).into_layer(EasyHttpWebClient::default());
-        let mut attempt = 0;
-        let mut backoff = self.initial_backoff_ms;
+        let mut attempt: u8 = 0;
+        let mut rng = SmallRng::from_os_rng();
         let start_time = std::time::Instant::now();
+        let max_attempts = self.backoff.max_attempts();
 
         loop {
             attempt += 1;
@@ -94,12 +123,11 @@ impl UpstreamClient {
                 .map_err(|e| anyhow!("building upstream request: {e}"))?;
 
             match client.serve(request).await {
-                Ok(response)
-                    if response.status().is_server_error() && attempt < self.max_attempts =>
-                {
-                    // Server error but we have retries left
-                    tokio::time::sleep(std::time::Duration::from_millis(backoff)).await;
-                    backoff = (backoff * 2).min(30_000);
+                Ok(response) if response.status().is_server_error() && attempt < max_attempts => {
+                    // Server error but we have retries left - use chrono-machines backoff
+                    if let Some(delay_ms) = self.backoff.delay(attempt, &mut rng) {
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    }
                     continue;
                 }
                 Ok(response) => {
@@ -137,7 +165,7 @@ impl UpstreamClient {
                 Err(err) => {
                     let duration = start_time.elapsed().as_secs_f64();
 
-                    if attempt >= self.max_attempts {
+                    if attempt >= max_attempts {
                         // All retries exhausted - record failure and try to trip
                         let mut breaker = self.breaker.lock();
                         breaker.record_failure(duration);
@@ -145,8 +173,10 @@ impl UpstreamClient {
                         return Err(anyhow!("upstream request failed: {err}"));
                     }
 
-                    tokio::time::sleep(std::time::Duration::from_millis(backoff)).await;
-                    backoff = (backoff * 2).min(30_000);
+                    // Use chrono-machines backoff with jitter
+                    if let Some(delay_ms) = self.backoff.delay(attempt, &mut rng) {
+                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+                    }
                 }
             }
         }
