@@ -5,7 +5,10 @@ edition = "2024"
 license = "AGPL-3.0-only"
 authors = ["Abdelkader Boudih <oss@seuros.com>"]
 description = "Shared storage adapters for Vein services"
-publish = false
+repository = "https://github.com/contriboss/vein"
+homepage = "https://github.com/contriboss/vein"
+keywords = ["rubygems", "storage", "adapter"]
+categories = ["database"]
 
 [features]
 default = ["postgres", "tls"]

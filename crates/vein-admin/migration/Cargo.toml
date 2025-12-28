@@ -1,8 +1,14 @@
 [package]
-name = "migration"
-version = "0.4.0"
+name = "vein-admin-migration"
+version = "0.3.0"
 edition = "2024"
-publish = false
+license = "AGPL-3.0-only"
+authors = ["Abdelkader Boudih <oss@seuros.com>"]
+description = "Database migrations for Vein admin service"
+repository = "https://github.com/contriboss/vein"
+homepage = "https://github.com/contriboss/vein"
+keywords = ["rubygems", "migration", "database"]
+categories = ["database"]
 
 [lib]
 name = "migration"

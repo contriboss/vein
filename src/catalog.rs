@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
@@ -10,7 +11,7 @@ use rama::{
         service::client::HttpClientExt as _,
     },
     layer::{MapErrLayer, TimeoutLayer},
-    telemetry::tracing::info,
+    telemetry::tracing::{error, info},
 };
 use vein_adapter::CacheBackendKind;
 
@@ -107,4 +108,24 @@ async fn sync_names_with_client(
     info!(total, "catalog names synced");
 
     Ok(Some(total))
+}
+
+/// Spawns a background task that periodically syncs the catalog names.
+/// Syncs every 6 hours.
+pub fn spawn_background_sync(backend: Arc<CacheBackendKind>) -> Result<()> {
+    tokio::spawn(async move {
+        let sync_interval = Duration::from_secs(6 * 60 * 60); // 6 hours
+
+        loop {
+            match sync_names_once(backend.as_ref()).await {
+                Ok(Some(count)) => info!(count, "background catalog sync completed"),
+                Ok(None) => info!("background catalog sync: already up to date"),
+                Err(e) => error!(error = %e, "background catalog sync failed"),
+            }
+
+            tokio::time::sleep(sync_interval).await;
+        }
+    });
+
+    Ok(())
 }

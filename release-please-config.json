@@ -11,14 +11,14 @@
       "package-name": "vein-admin"
     },
     "crates/vein-admin/migration": {
-      "package-name": "migration"
+      "package-name": "vein-admin-migration"
     }
   },
   "plugins": [
     {
       "type": "linked-versions",
       "groupName": "vein",
-      "components": ["vein", "vein-adapter", "vein-admin", "migration"]
+      "components": ["vein", "vein-adapter", "vein-admin", "vein-admin-migration"]
     }
   ],
   "include-component-in-tag": false,

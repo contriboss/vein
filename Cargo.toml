@@ -14,6 +14,14 @@ readme = "README.md"
 keywords = ["rubygems", "proxy", "cache", "mirror", "ruby"]
 categories = ["development-tools", "caching", "network-programming"]
 
+[lib]
+name = "vein"
+path = "src/lib.rs"
+
+[[bin]]
+name = "vein"
+path = "src/main.rs"
+
 [features]
 default = ["tls", "postgres"]
 tls = ["rama/rustls", "vein-adapter/tls"]
@@ -77,7 +85,7 @@ chrono-machines = "0.3.0"
 # Time handling
 chrono = { version = "0.4.38", features = ["serde"] }
 
-vein-adapter = { path = "crates/vein-adapter", default-features = false }
+vein-adapter = { version = "0.3.0", path = "crates/vein-adapter", default-features = false }
 
 [dev-dependencies]
 tokio-test = "0.4.4"
