@@ -1,0 +1,52 @@
+<section class="grid">
+  <article class="card">
+    <h2>Total Assets</h2>
+    <div class="metric">{{ total_assets }}</div>
+    <p class="detail">Includes gems and gemspecs cached locally.</p>
+  </article>
+
+  <article class="card">
+    <h2>Cached Gems</h2>
+    <div class="metric">{{ gems }}</div>
+    <p class="detail">Unique gem files stored on disk.</p>
+  </article>
+
+  <article class="card">
+    <h2>Unique Packages</h2>
+    <div class="metric">{{ unique }}</div>
+    <p class="detail">Distinct gem names currently cached.</p>
+  </article>
+
+  <article class="card">
+    <h2>Storage Footprint</h2>
+    <div class="metric">{{ size }}</div>
+    <p class="detail">Approximate disk usage of cached assets.</p>
+  </article>
+
+  <article class="card">
+    <h2>Catalogue Size</h2>
+    <div class="metric">{{ catalog_total }}</div>
+    <p class="detail">Upstream gem names synced. <a href="/catalog">Browse catalogue</a>.</p>
+  </article>
+
+  <article class="card">
+    <h2>SBOM Coverage</h2>
+    <div class="metric">{{ sbom_metric }}</div>
+    <p class="detail">{{ sbom_detail }}</p>
+  </article>
+
+  <article class="card">
+    <h2>Ruby Lifecycle</h2>
+    <p><strong>Latest:</strong> {{ ruby_latest }}</p>
+    <p><strong>Security maintenance:</strong> {{ ruby_security }}</p>
+    <p><strong>Recent EOL:</strong> {{ ruby_eol }}</p>
+    <p class="detail">Fetched {{ ruby_updated }}</p>
+  </article>
+
+  <article class="card">
+    <h2>Access Control</h2>
+    <p><strong>Status:</strong> Entitlements design draft</p>
+    <p>SSH-signed tokens will gate premium gems and version ranges.</p>
+    <p class="detail"><a href="/permissions">Review entitlement plan</a></p>
+  </article>
+</section>
