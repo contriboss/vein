@@ -41,6 +41,21 @@ h1 {
   border-color: #4f8cff;
   font-weight: 600;
 }
+.search {
+  margin-bottom: 1.5rem;
+}
+.search input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  background: rgba(17, 23, 34, 0.6);
+  color: #f4f7ff;
+  font-size: 1rem;
+}
+.search input::placeholder {
+  color: rgba(240, 246, 255, 0.4);
+}
 ul {
   list-style: none;
   padding: 0;
@@ -74,6 +89,14 @@ li {
   <a href="/permissions">Entitlements</a>
   <a href="/security">Security</a>
 </nav>
+<div class="search">
+  <input
+    type="text"
+    placeholder="Search gems by name..."
+    data-model="searchQuery"
+    data-on-input.debounce_500ms="if ($searchQuery.length > 2) { window.location.href = '/catalog?q=' + encodeURIComponent($searchQuery); }"
+  />
+</div>
 <div class="filters">
   <a class="{% if not selected_language %}active{% endif %}" href="/catalog">All languages</a>
   {% for language in languages %}

@@ -24,6 +24,8 @@ struct CatalogQuery {
     page: Option<i64>,
     #[serde(default)]
     lang: Option<String>,
+    #[serde(default)]
+    q: Option<String>,
 }
 
 #[debug_handler]
