@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.0](https://github.com/contriboss/vein/compare/v0.3.0...v0.4.0) (2025-12-31)
+
+
+### Features
+
+* prepare vein-adapter, vein-admin, and vein-admin-migration for crates.io publishing ([495af02](https://github.com/contriboss/vein/commit/495af02a3e1c56b473414c2cde609fb67382caff))
+
+
+### Bug Fixes
+
+* update syntax to rust 2024. ([0779d2e](https://github.com/contriboss/vein/commit/0779d2e9b7563e19a7e24589383a898c4d8da185))
+
 ## [0.3.0](https://github.com/contriboss/vein/compare/v0.2.1...v0.3.0) (2025-12-28)
 
 
