@@ -98,8 +98,6 @@ pub async fn handle_sbom_request(
         return Ok((resp, CacheStatus::Pass));
     };
 
-    let platform = platform;
-
     let mut metadata = index
         .gem_metadata(&name, &version, platform.as_deref())
         .await

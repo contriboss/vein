@@ -112,6 +112,7 @@ async fn sync_names_with_client(
 
 /// Spawns a background task that periodically syncs the catalog names.
 /// Syncs every 6 hours.
+#[allow(dead_code)]
 pub fn spawn_background_sync(backend: Arc<CacheBackendKind>) -> Result<()> {
     tokio::spawn(async move {
         let sync_interval = Duration::from_secs(6 * 60 * 60); // 6 hours

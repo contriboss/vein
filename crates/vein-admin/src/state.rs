@@ -58,6 +58,7 @@ impl AdminResources {
         self.cache.catalog_page(offset, limit).await
     }
 
+    #[allow(dead_code)]
     pub async fn catalog_languages(&self) -> Result<Vec<String>> {
         self.cache.catalog_languages().await
     }
@@ -150,6 +151,7 @@ impl AdminResources {
             .await
     }
 
+    #[allow(dead_code)]
     pub async fn get_gem_version(
         &self,
         name: &str,

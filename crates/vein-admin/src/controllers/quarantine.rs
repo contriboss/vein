@@ -63,7 +63,7 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
   <td class="gem">{name}</td>
   <td>{version}</td>
   <td>{platform}</td>
-  <td class="status">{status}</td>
+  <td class="status">{status:?}</td>
   <td>{hours}h remaining</td>
   <td class="actions">
     <form method="post" action="/quarantine/{name}/{version}/approve" style="display:inline">
@@ -82,7 +82,7 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
                 version = gem.version,
                 platform = platform_display,
                 platform_raw = gem.platform.as_deref().unwrap_or(""),
-                status = format!("{:?}", gem.status),
+                status = gem.status,
                 status_class = status_class,
                 hours = hours_remaining,
             )
