@@ -13,7 +13,9 @@ struct DashboardQuery {
 }
 
 pub fn routes() -> Routes {
-    Routes::new().add("/", get(index))
+    Routes::new()
+        .add("/", get(index))
+        .add("/stats", get(stats))
 }
 
 #[debug_handler]
@@ -36,4 +38,22 @@ async fn index(
     let data = views::dashboard::DashboardData::from_snapshot(&snapshot, show_upstream);
 
     views::dashboard::index(&tera, data)
+}
+
+#[debug_handler]
+async fn stats(State(ctx): State<AppContext>) -> Result<Response> {
+    let tera = ctx
+        .shared_store
+        .get::<Arc<Tera>>()
+        .ok_or_else(|| Error::Message("Tera not available".into()))?;
+
+    let resources = resources(&ctx)?;
+    let snapshot = resources
+        .snapshot()
+        .await
+        .map_err(|err| Error::Message(err.to_string()))?;
+
+    let data = views::dashboard::DashboardData::from_snapshot(&snapshot, false);
+
+    views::dashboard::stats(&tera, data)
 }

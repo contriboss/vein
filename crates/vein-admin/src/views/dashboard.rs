@@ -177,6 +177,27 @@ pub fn index(tera: &Tera, data: DashboardData) -> Result<Response> {
     Ok(Html(html).into_response())
 }
 
+pub fn stats(tera: &Tera, data: DashboardData) -> Result<Response> {
+    let mut context = Context::new();
+    context.insert("total_assets", &data.total_assets);
+    context.insert("gems", &data.gems);
+    context.insert("unique", &data.unique);
+    context.insert("size", &data.size);
+    context.insert("catalog_total", &data.catalog_total);
+    context.insert("sbom_metric", &data.sbom_metric);
+    context.insert("sbom_detail", &data.sbom_detail);
+    context.insert("ruby_latest", &data.ruby_latest);
+    context.insert("ruby_security", &data.ruby_security);
+    context.insert("ruby_eol", &data.ruby_eol);
+    context.insert("ruby_updated", &data.ruby_updated);
+
+    let html = tera
+        .render("dashboard/_partials/stats.html", &context)
+        .map_err(|err| Error::Message(err.to_string()))?;
+
+    Ok(Html(html).into_response())
+}
+
 fn format_bytes(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
     if bytes == 0 {

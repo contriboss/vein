@@ -193,8 +193,17 @@ nav.links a {
     <h1>Vein Admin Console</h1>
     <p>Live cache insight and node configuration snapshot</p>
   </div>
-  <div class="pill">
-    <span>Generated {{ generated_at }}</span>
+  <div style="display: flex; align-items: center; gap: 1rem;">
+    <div class="pill">
+      <span>Generated {{ generated_at }}</span>
+    </div>
+    <button
+      data-on-click="$get('/stats')"
+      data-swap="innerHTML"
+      data-target="#stats-grid"
+      style="padding: 0.5rem 1rem; border-radius: 999px; border: 1px solid var(--border); background: var(--accent); color: white; cursor: pointer; font-weight: 600; font-size: 0.9rem;">
+      ↻ Refresh Stats
+    </button>
   </div>
 </header>
 
