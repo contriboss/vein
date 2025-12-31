@@ -2,6 +2,7 @@ use loco_rs::prelude::*;
 
 use crate::state::AdminResources;
 
+pub mod assets;
 pub mod catalog;
 pub mod changelog;
 pub mod dashboard;

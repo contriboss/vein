@@ -6195,6 +6195,7 @@ dependencies = [
  "serde_yaml",
  "tera",
  "tokio",
+ "tower-http",
  "tracing",
  "urlencoding",
  "vein",
