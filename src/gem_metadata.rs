@@ -6,6 +6,8 @@ use vein_adapter::GemMetadata;
 mod analyzer;
 mod parser;
 mod sbom;
+pub mod indexer;
+pub mod symbols;
 
 #[cfg(test)]
 mod tests;

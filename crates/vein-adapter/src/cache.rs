@@ -194,6 +194,44 @@ impl CacheBackendKind {
     pub async fn run_quarantine_migrations(&self) -> Result<()> {
         delegate!(self, run_quarantine_migrations)
     }
+
+    pub async fn run_symbols_migrations(&self) -> Result<()> {
+        delegate!(self, run_symbols_migrations)
+    }
+
+    pub async fn insert_symbols(
+        &self,
+        gem_name: &str,
+        gem_version: &str,
+        gem_platform: Option<&str>,
+        file_path: &str,
+        symbol_type: &str,
+        symbol_name: &str,
+        parent_name: Option<&str>,
+        line_number: Option<i32>,
+    ) -> Result<()> {
+        delegate!(
+            self,
+            insert_symbols,
+            gem_name,
+            gem_version,
+            gem_platform,
+            file_path,
+            symbol_type,
+            symbol_name,
+            parent_name,
+            line_number
+        )
+    }
+
+    pub async fn clear_symbols(
+        &self,
+        gem_name: &str,
+        gem_version: &str,
+        gem_platform: Option<&str>,
+    ) -> Result<()> {
+        delegate!(self, clear_symbols, gem_name, gem_version, gem_platform)
+    }
 }
 
 #[cfg(feature = "postgres")]
@@ -306,4 +344,27 @@ pub(crate) trait CacheBackend: Send + Sync {
     fn quarantine_table_exists(&self) -> impl Future<Output = Result<bool>> + Send;
 
     fn run_quarantine_migrations(&self) -> impl Future<Output = Result<()>> + Send;
+
+    // ==================== Symbol Indexing Methods ====================
+
+    fn run_symbols_migrations(&self) -> impl Future<Output = Result<()>> + Send;
+
+    fn insert_symbols(
+        &self,
+        gem_name: &str,
+        gem_version: &str,
+        gem_platform: Option<&str>,
+        file_path: &str,
+        symbol_type: &str,
+        symbol_name: &str,
+        parent_name: Option<&str>,
+        line_number: Option<i32>,
+    ) -> impl Future<Output = Result<()>> + Send;
+
+    fn clear_symbols(
+        &self,
+        gem_name: &str,
+        gem_version: &str,
+        gem_platform: Option<&str>,
+    ) -> impl Future<Output = Result<()>> + Send;
 }
