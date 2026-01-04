@@ -65,6 +65,15 @@ enum Commands {
         #[arg(short, long)]
         version: Option<String>,
     },
+    /// Validate binary architecture matches gem platform
+    Validate {
+        /// Gem name to validate
+        name: String,
+
+        /// Specific version to validate (validates all cached if not provided)
+        #[arg(short, long)]
+        version: Option<String>,
+    },
 }
 
 #[tokio::main]
@@ -120,6 +129,11 @@ async fn main() -> loco_rs::Result<()> {
         }
         Some(Commands::Index { name, version }) => {
             commands::index::run(name, version)
+                .await
+                .map_err(|e| loco_rs::Error::Message(e.to_string()))?;
+        }
+        Some(Commands::Validate { name, version }) => {
+            commands::validate::run(name, version)
                 .await
                 .map_err(|e| loco_rs::Error::Message(e.to_string()))?;
         }

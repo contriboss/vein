@@ -6,12 +6,14 @@ use vein_adapter::GemMetadata;
 mod analyzer;
 mod parser;
 mod sbom;
+pub mod binary_arch;
 pub mod indexer;
 pub mod symbols;
 
 #[cfg(test)]
 mod tests;
 
+pub use analyzer::{validate_binary_architectures, ArchValidation};
 pub use parser::parse_gem_metadata;
 
 /// Extract structured metadata from a cached gem archive.
