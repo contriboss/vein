@@ -134,6 +134,37 @@ impl SqliteCacheBackend {
         .await
         .context("creating gem_metadata table (sqlite)")?;
 
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS gem_symbols (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                gem_name TEXT NOT NULL,
+                gem_version TEXT NOT NULL,
+                gem_platform TEXT,
+                file_path TEXT NOT NULL,
+                symbol_type TEXT NOT NULL,
+                symbol_name TEXT NOT NULL,
+                parent_name TEXT,
+                line_number INTEGER,
+                created_at TIMESTAMP DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+                UNIQUE(gem_name, gem_version, gem_platform, file_path, symbol_name)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .context("creating gem_symbols table (sqlite)")?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_gem_symbols_name ON gem_symbols(symbol_name)")
+            .execute(&self.pool)
+            .await
+            .context("creating idx_gem_symbols_name index (sqlite)")?;
+
+        sqlx::query("CREATE INDEX IF NOT EXISTS idx_gem_symbols_gem ON gem_symbols(gem_name, gem_version)")
+            .execute(&self.pool)
+            .await
+            .context("creating idx_gem_symbols_gem index (sqlite)")?;
+
         Ok(())
     }
 
@@ -995,6 +1026,79 @@ impl CacheBackend for SqliteCacheBackend {
         .execute(&self.pool)
         .await
         .context("creating available_after index (sqlite)")?;
+
+        Ok(())
+    }
+
+    async fn run_symbols_migrations(&self) -> Result<()> {
+        // Symbols migrations are already in init_schema
+        Ok(())
+    }
+
+    async fn insert_symbols(
+        &self,
+        gem_name: &str,
+        gem_version: &str,
+        gem_platform: Option<&str>,
+        file_path: &str,
+        symbol_type: &str,
+        symbol_name: &str,
+        parent_name: Option<&str>,
+        line_number: Option<i32>,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO gem_symbols (
+                gem_name,
+                gem_version,
+                gem_platform,
+                file_path,
+                symbol_type,
+                symbol_name,
+                parent_name,
+                line_number
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+            "#,
+        )
+        .bind(gem_name)
+        .bind(gem_version)
+        .bind(gem_platform)
+        .bind(file_path)
+        .bind(symbol_type)
+        .bind(symbol_name)
+        .bind(parent_name)
+        .bind(line_number)
+        .execute(&self.pool)
+        .await
+        .context("inserting gem symbol (sqlite)")?;
+
+        Ok(())
+    }
+
+    async fn clear_symbols(
+        &self,
+        gem_name: &str,
+        gem_version: &str,
+        gem_platform: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            DELETE FROM gem_symbols
+            WHERE gem_name = ?1
+              AND gem_version = ?2
+              AND (
+                    (?3 IS NULL AND gem_platform IS NULL)
+                    OR
+                    (?3 IS NOT NULL AND gem_platform = ?3)
+                  )
+            "#,
+        )
+        .bind(gem_name)
+        .bind(gem_version)
+        .bind(gem_platform)
+        .execute(&self.pool)
+        .await
+        .context("clearing gem symbols (sqlite)")?;
 
         Ok(())
     }

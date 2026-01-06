@@ -864,6 +864,116 @@ impl CacheBackend for PostgresCacheBackend {
 
         Ok(())
     }
+
+    async fn run_symbols_migrations(&self) -> Result<()> {
+        // Create gem_symbols table
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS gem_symbols (
+                id BIGSERIAL PRIMARY KEY,
+                gem_name TEXT NOT NULL,
+                gem_version TEXT NOT NULL,
+                gem_platform TEXT,
+                file_path TEXT NOT NULL,
+                symbol_type TEXT NOT NULL,
+                symbol_name TEXT NOT NULL,
+                parent_name TEXT,
+                line_number INTEGER,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                CONSTRAINT gem_symbols_unique UNIQUE (gem_name, gem_version, gem_platform, file_path, symbol_name)
+            )
+            "#,
+        )
+        .execute(&self.pool)
+        .await
+        .context("creating gem_symbols table (postgres)")?;
+
+        // Create indexes
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_gem_symbols_name ON gem_symbols(symbol_name)",
+        )
+        .execute(&self.pool)
+        .await
+        .context("creating symbol_name index (postgres)")?;
+
+        sqlx::query(
+            "CREATE INDEX IF NOT EXISTS idx_gem_symbols_gem ON gem_symbols(gem_name, gem_version)",
+        )
+        .execute(&self.pool)
+        .await
+        .context("creating gem index (postgres)")?;
+
+        Ok(())
+    }
+
+    async fn insert_symbols(
+        &self,
+        gem_name: &str,
+        gem_version: &str,
+        gem_platform: Option<&str>,
+        file_path: &str,
+        symbol_type: &str,
+        symbol_name: &str,
+        parent_name: Option<&str>,
+        line_number: Option<i32>,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO gem_symbols (
+                gem_name,
+                gem_version,
+                gem_platform,
+                file_path,
+                symbol_type,
+                symbol_name,
+                parent_name,
+                line_number
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (gem_name, gem_version, gem_platform, file_path, symbol_name)
+            DO UPDATE SET
+                symbol_type = EXCLUDED.symbol_type,
+                parent_name = EXCLUDED.parent_name,
+                line_number = EXCLUDED.line_number
+            "#,
+        )
+        .bind(gem_name)
+        .bind(gem_version)
+        .bind(gem_platform)
+        .bind(file_path)
+        .bind(symbol_type)
+        .bind(symbol_name)
+        .bind(parent_name)
+        .bind(line_number)
+        .execute(&self.pool)
+        .await
+        .context("inserting gem symbol (postgres)")?;
+
+        Ok(())
+    }
+
+    async fn clear_symbols(
+        &self,
+        gem_name: &str,
+        gem_version: &str,
+        gem_platform: Option<&str>,
+    ) -> Result<()> {
+        sqlx::query(
+            r#"
+            DELETE FROM gem_symbols
+            WHERE gem_name = $1
+              AND gem_version = $2
+              AND gem_platform IS NOT DISTINCT FROM $3
+            "#,
+        )
+        .bind(gem_name)
+        .bind(gem_version)
+        .bind(gem_platform)
+        .execute(&self.pool)
+        .await
+        .context("clearing gem symbols (postgres)")?;
+
+        Ok(())
+    }
 }
 
 /// Compare two version strings using semver when possible.
