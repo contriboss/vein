@@ -5,21 +5,11 @@
 //! - Approve versions for early release
 //! - Block malicious versions
 
-use axum::extract::Path;
-use loco_rs::prelude::*;
+use rama::http::service::web::extract::{Form, Path, Query, State};
+use rama::http::service::web::response::{Html, IntoResponse, Json, Redirect};
 use serde::Deserialize;
 
-use super::resources;
-
-pub fn routes() -> Routes {
-    Routes::new()
-        .prefix("quarantine")
-        .add("/", get(index))
-        .add("/api/stats", get(api_stats))
-        .add("/api/pending", get(api_pending))
-        .add("/{gem}/{version}/approve", post(approve))
-        .add("/{gem}/{version}/block", post(block))
-}
+use crate::state::AdminState;
 
 #[derive(Debug, Deserialize)]
 pub struct ActionForm {
@@ -27,23 +17,26 @@ pub struct ActionForm {
     platform: Option<String>,
 }
 
-#[debug_handler]
-async fn index(State(ctx): State<AppContext>) -> Result<Response> {
-    let resources = resources(&ctx)?;
+#[derive(Debug, Deserialize)]
+pub struct PendingQuery {
+    limit: Option<u32>,
+    offset: Option<u32>,
+}
 
-    if !resources.quarantine_enabled() {
-        return format::html(disabled_html());
+pub async fn index(State(state): State<AdminState>) -> impl IntoResponse {
+    if !state.resources.quarantine_enabled() {
+        return Html(disabled_html().to_string());
     }
 
-    let stats = resources
-        .quarantine_stats()
-        .await
-        .map_err(|e| Error::Message(e.to_string()))?;
+    let stats = match state.resources.quarantine_stats().await {
+        Ok(s) => s,
+        Err(e) => return Html(format!("<h1>Error: {}</h1>", e)),
+    };
 
-    let pending = resources
-        .quarantine_pending(50, 0)
-        .await
-        .map_err(|e| Error::Message(e.to_string()))?;
+    let pending = match state.resources.quarantine_pending(50, 0).await {
+        Ok(p) => p,
+        Err(e) => return Html(format!("<h1>Error: {}</h1>", e)),
+    };
 
     let rows = pending
         .into_iter()
@@ -288,51 +281,40 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
         rows = rows,
     );
 
-    format::html(&html)
+    Html(html)
 }
 
-#[debug_handler]
-async fn api_stats(State(ctx): State<AppContext>) -> Result<Response> {
-    let resources = resources(&ctx)?;
-
-    if !resources.quarantine_enabled() {
-        return format::json(serde_json::json!({
+pub async fn api_stats(State(state): State<AdminState>) -> impl IntoResponse {
+    if !state.resources.quarantine_enabled() {
+        return Json(serde_json::json!({
             "enabled": false,
             "error": "Quarantine feature is disabled"
         }));
     }
 
-    let stats = resources
-        .quarantine_stats()
-        .await
-        .map_err(|e| Error::Message(e.to_string()))?;
-
-    format::json(serde_json::json!({
-        "enabled": true,
-        "quarantined": stats.total_quarantined,
-        "available": stats.total_available,
-        "pinned": stats.total_pinned,
-        "yanked": stats.total_yanked,
-        "releasing_today": stats.versions_releasing_today,
-        "releasing_this_week": stats.versions_releasing_this_week,
-    }))
+    match state.resources.quarantine_stats().await {
+        Ok(stats) => Json(serde_json::json!({
+            "enabled": true,
+            "quarantined": stats.total_quarantined,
+            "available": stats.total_available,
+            "pinned": stats.total_pinned,
+            "yanked": stats.total_yanked,
+            "releasing_today": stats.versions_releasing_today,
+            "releasing_this_week": stats.versions_releasing_this_week,
+        })),
+        Err(e) => Json(serde_json::json!({
+            "enabled": true,
+            "error": e.to_string()
+        })),
+    }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct PendingQuery {
-    limit: Option<u32>,
-    offset: Option<u32>,
-}
-
-#[debug_handler]
-async fn api_pending(
-    State(ctx): State<AppContext>,
+pub async fn api_pending(
+    State(state): State<AdminState>,
     Query(query): Query<PendingQuery>,
-) -> Result<Response> {
-    let resources = resources(&ctx)?;
-
-    if !resources.quarantine_enabled() {
-        return format::json(serde_json::json!({
+) -> impl IntoResponse {
+    if !state.resources.quarantine_enabled() {
+        return Json(serde_json::json!({
             "enabled": false,
             "error": "Quarantine feature is disabled"
         }));
@@ -341,79 +323,88 @@ async fn api_pending(
     let limit = query.limit.unwrap_or(50).min(100);
     let offset = query.offset.unwrap_or(0);
 
-    let pending = resources
-        .quarantine_pending(limit, offset)
-        .await
-        .map_err(|e| Error::Message(e.to_string()))?;
+    match state.resources.quarantine_pending(limit, offset).await {
+        Ok(pending) => {
+            let versions: Vec<_> = pending
+                .into_iter()
+                .map(|v| {
+                    serde_json::json!({
+                        "name": v.name,
+                        "version": v.version,
+                        "platform": v.platform,
+                        "status": format!("{:?}", v.status),
+                        "published_at": v.published_at.to_rfc3339(),
+                        "available_after": v.available_after.to_rfc3339(),
+                    })
+                })
+                .collect();
 
-    let versions: Vec<_> = pending
-        .into_iter()
-        .map(|v| {
-            serde_json::json!({
-                "name": v.name,
-                "version": v.version,
-                "platform": v.platform,
-                "status": format!("{:?}", v.status),
-                "published_at": v.published_at.to_rfc3339(),
-                "available_after": v.available_after.to_rfc3339(),
-            })
-        })
-        .collect();
-
-    format::json(serde_json::json!({
-        "enabled": true,
-        "versions": versions,
-    }))
+            Json(serde_json::json!({
+                "enabled": true,
+                "versions": versions,
+            }))
+        }
+        Err(e) => Json(serde_json::json!({
+            "enabled": true,
+            "error": e.to_string()
+        })),
+    }
 }
 
-#[debug_handler]
-async fn approve(
-    State(ctx): State<AppContext>,
+pub async fn approve(
+    State(state): State<AdminState>,
     Path((gem, version)): Path<(String, String)>,
     Form(form): Form<ActionForm>,
-) -> Result<Response> {
-    let resources = resources(&ctx)?;
-
-    if !resources.quarantine_enabled() {
-        return format::redirect("/quarantine");
+) -> impl IntoResponse {
+    if !state.resources.quarantine_enabled() {
+        return Redirect::to("/quarantine");
     }
 
     let platform = form.platform.as_deref().filter(|p| !p.is_empty());
     let reason = form.reason.as_deref().unwrap_or("admin approval");
 
-    resources
+    match state
+        .resources
         .approve_version(&gem, &version, platform, reason)
         .await
-        .map_err(|e| Error::Message(e.to_string()))?;
+    {
+        Ok(()) => {
+            tracing::info!(gem = %gem, version = %version, reason = %reason, "Version approved");
+        }
+        Err(e) => {
+            tracing::error!(error = %e, gem = %gem, version = %version, "Failed to approve version");
+        }
+    }
 
-    tracing::info!(gem = %gem, version = %version, reason = %reason, "Version approved");
-
-    format::redirect("/quarantine")
+    Redirect::to("/quarantine")
 }
 
-#[debug_handler]
-async fn block(
-    State(ctx): State<AppContext>,
+pub async fn block(
+    State(state): State<AdminState>,
     Path((gem, version)): Path<(String, String)>,
     Form(form): Form<ActionForm>,
-) -> Result<Response> {
-    let resources = resources(&ctx)?;
-
-    if !resources.quarantine_enabled() {
-        return format::redirect("/quarantine");
+) -> impl IntoResponse {
+    if !state.resources.quarantine_enabled() {
+        return Redirect::to("/quarantine");
     }
 
     let platform = form.platform.as_deref().filter(|p| !p.is_empty());
     let reason = form.reason.as_deref().unwrap_or("admin blocked");
 
-    resources
+    match state
+        .resources
         .block_version(&gem, &version, platform, reason)
         .await
-        .map_err(|e| Error::Message(e.to_string()))?;
+    {
+        Ok(()) => {
+            tracing::warn!(gem = %gem, version = %version, reason = %reason, "Version blocked");
+        }
+        Err(e) => {
+            tracing::error!(error = %e, gem = %gem, version = %version, "Failed to block version");
+        }
+    }
 
-    tracing::warn!(gem = %gem, version = %version, reason = %reason, "Version blocked");
-
-    format::redirect("/quarantine")
+    Redirect::to("/quarantine")
 }
 
 fn disabled_html() -> &'static str {

@@ -1,13 +1,35 @@
+//! Application state for vein-admin.
+
 use std::{path::PathBuf, sync::Arc};
 
 use crate::ruby::RubyStatus;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use sqlx::SqlitePool;
+use tera::Tera;
 use vein::config::Config as VeinConfig;
 use vein_adapter::{
     CacheBackendKind, GemMetadata, GemVersion, IndexStats, QuarantineStats, SbomCoverage,
     VersionStatus,
 };
+
+/// Main application state, passed to all handlers.
+#[derive(Clone)]
+pub struct AdminState {
+    pub resources: AdminResources,
+    pub tera: Arc<Tera>,
+    pub db: SqlitePool,
+}
+
+impl AdminState {
+    pub fn new(resources: AdminResources, tera: Arc<Tera>, db: SqlitePool) -> Self {
+        Self {
+            resources,
+            tera,
+            db,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct AdminResources {

@@ -1,6 +1,6 @@
-use axum::response::{Html, IntoResponse, Response};
+//! Dashboard view helpers.
+
 use chrono::Local;
-use loco_rs::prelude::*;
 use serde::Serialize;
 use tera::{Context, Tera};
 
@@ -149,7 +149,7 @@ impl DashboardData {
     }
 }
 
-pub fn index(tera: &Tera, data: DashboardData) -> Result<Response> {
+pub fn index(tera: &Tera, data: DashboardData) -> anyhow::Result<String> {
     let mut context = Context::new();
     context.insert("generated_at", &data.generated_at);
     context.insert("total_assets", &data.total_assets);
@@ -170,19 +170,14 @@ pub fn index(tera: &Tera, data: DashboardData) -> Result<Response> {
     context.insert("endpoint", &data.endpoint);
     context.insert("workers", &data.workers);
 
-    let html = tera
-        .render("dashboard/index.html", &context)
-        .map_err(|err| Error::Message(err.to_string()))?;
-
-    Ok(Html(html).into_response())
+    Ok(tera.render("dashboard/index.html", &context)?)
 }
 
-pub fn stats(tera: &Tera, data: DashboardData) -> Result<Response> {
-    let html = stats_fragment(tera, data)?;
-    Ok(Html(html).into_response())
+pub fn stats(tera: &Tera, data: DashboardData) -> anyhow::Result<String> {
+    stats_fragment(tera, data)
 }
 
-pub fn stats_fragment(tera: &Tera, data: DashboardData) -> Result<String> {
+pub fn stats_fragment(tera: &Tera, data: DashboardData) -> anyhow::Result<String> {
     let mut context = Context::new();
     context.insert("total_assets", &data.total_assets);
     context.insert("gems", &data.gems);
@@ -196,8 +191,7 @@ pub fn stats_fragment(tera: &Tera, data: DashboardData) -> Result<String> {
     context.insert("ruby_eol", &data.ruby_eol);
     context.insert("ruby_updated", &data.ruby_updated);
 
-    tera.render("dashboard/_partials/stats.html", &context)
-        .map_err(|err| Error::Message(err.to_string()))
+    Ok(tera.render("dashboard/_partials/stats.html", &context)?)
 }
 
 fn format_bytes(bytes: u64) -> String {

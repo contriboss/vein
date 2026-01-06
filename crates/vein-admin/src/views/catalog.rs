@@ -1,5 +1,5 @@
-use axum::response::{Html, IntoResponse, Response};
-use loco_rs::prelude::*;
+//! Catalog view helpers.
+
 use serde::Serialize;
 use tera::{Context, Tera};
 use vein_adapter::{DependencyKind, GemMetadata};
@@ -189,7 +189,7 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
-pub fn list(tera: &Tera, data: CatalogListData) -> Result<Response> {
+pub fn list(tera: &Tera, data: CatalogListData) -> anyhow::Result<String> {
     let mut context = Context::new();
     context.insert("entries", &data.entries);
     context.insert("page", &data.page);
@@ -198,14 +198,10 @@ pub fn list(tera: &Tera, data: CatalogListData) -> Result<Response> {
     context.insert("selected_language", &data.selected_language);
     context.insert("languages", &data.languages);
 
-    let html = tera
-        .render("catalog/list.html", &context)
-        .map_err(|e| Error::Message(format!("Template error: {}", e)))?;
-
-    Ok(Html(html).into_response())
+    Ok(tera.render("catalog/list.html", &context)?)
 }
 
-pub fn detail(tera: &Tera, data: GemDetailData) -> Result<Response> {
+pub fn detail(tera: &Tera, data: GemDetailData) -> anyhow::Result<String> {
     let mut context = Context::new();
     context.insert("name", &data.name);
     context.insert("versions", &data.versions);
@@ -214,11 +210,7 @@ pub fn detail(tera: &Tera, data: GemDetailData) -> Result<Response> {
     context.insert("platform_query", &data.platform_query);
     context.insert("metadata", &data.metadata);
 
-    let html = tera
-        .render("catalog/detail.html", &context)
-        .map_err(|e| Error::Message(format!("Template error: {}", e)))?;
-
-    Ok(Html(html).into_response())
+    Ok(tera.render("catalog/detail.html", &context)?)
 }
 
 pub fn search_results_html(results: &[String]) -> String {

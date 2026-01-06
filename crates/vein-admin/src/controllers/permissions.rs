@@ -1,16 +1,11 @@
-use loco_rs::prelude::*;
+//! Permissions/Entitlements page.
 
-use super::resources;
+use rama::http::service::web::extract::State;
+use rama::http::service::web::response::{Html, IntoResponse};
 
-pub fn routes() -> Routes {
-    Routes::new().prefix("permissions").add("/", get(index))
-}
+use crate::state::AdminState;
 
-#[debug_handler]
-async fn index(State(ctx): State<AppContext>) -> Result<Response> {
-    // Fetch shared resources so we stay consistent with other controllers once we wire real data.
-    let _resources = resources(&ctx)?;
-
+pub async fn index(State(_state): State<AdminState>) -> impl IntoResponse {
     let html = r#"<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -192,7 +187,7 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
       <div class="panel summary">
         <span class="pill">Design draft</span>
         <p>
-          Enterprise instances of Vein will mint short‑lived download grants that describe
+          Enterprise instances of Vein will mint short-lived download grants that describe
           exactly which gems (and versions) a customer is entitled to. Grants are issued
           through an SSH-signed request pipeline so that organisations can reuse existing
           host keys without new credential stores.
@@ -271,5 +266,5 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
 </html>
 "#;
 
-    format::html(html)
+    Html(html)
 }

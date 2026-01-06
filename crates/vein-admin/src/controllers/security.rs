@@ -1,6 +1,9 @@
-use loco_rs::prelude::*;
+//! Security vulnerabilities page.
 
-use super::resources;
+use rama::http::service::web::extract::State;
+use rama::http::service::web::response::{Html, IntoResponse};
+
+use crate::state::AdminState;
 
 #[derive(Debug)]
 struct VulnerableGem {
@@ -13,50 +16,19 @@ struct VulnerableGem {
 }
 
 fn sample_vulnerabilities() -> Vec<VulnerableGem> {
-    vec![
-        VulnerableGem {
-            name: "nokogiri",
-            version: "1.15.4",
-            cve: "CVE-2025-12345",
-            severity: "critical",
-            patched_in: "1.15.6",
-            note: "XML entity expansion allows DoS on crafted payloads.",
-        },
-        VulnerableGem {
-            name: "rack",
-            version: "2.2.6",
-            cve: "CVE-2025-22334",
-            severity: "high",
-            patched_in: "2.2.8",
-            note: "Improper header validation enables request smuggling.",
-        },
-        VulnerableGem {
-            name: "devise",
-            version: "4.9.0",
-            cve: "CVE-2025-9876",
-            severity: "medium",
-            patched_in: "4.9.2",
-            note: "Token leakage through password reset logs.",
-        },
-    ]
+    vec![]
 }
 
-pub fn routes() -> Routes {
-    Routes::new().prefix("security").add("/", get(index))
-}
-
-#[debug_handler]
-async fn index(State(ctx): State<AppContext>) -> Result<Response> {
-    let _resources = resources(&ctx)?;
+pub async fn index(State(_state): State<AdminState>) -> impl IntoResponse {
     let rows = sample_vulnerabilities()
         .into_iter()
         .map(|gem| {
             format!(
-                r#"<tr class=\"severity-{sev}\">
-  <td class=\"gem\">{name}</td>
+                r#"<tr class="severity-{sev}">
+  <td class="gem">{name}</td>
   <td>{version}</td>
   <td><span>{cve}</span></td>
-  <td class=\"severity\">{severity}</td>
+  <td class="severity">{severity}</td>
   <td>{patched}</td>
   <td>{note}</td>
 </tr>"#,
@@ -74,9 +46,9 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
 
     let html = format!(
         r#"<!DOCTYPE html>
-<html lang=\"en\">
+<html lang="en">
   <head>
-    <meta charset=\"utf-8\" />
+    <meta charset="utf-8" />
     <title>Vein Admin · Security</title>
     <style>
       :root {{
@@ -178,18 +150,18 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
   </head>
   <body>
     <main>
-      <header class=\"top\">
+      <header class="top">
         <h1>Security Centre</h1>
-        <a href=\"/\">Back to dashboard</a>
+        <a href="/">Back to dashboard</a>
       </header>
-      <nav class=\"links\">
-        <a href=\"/\">Dashboard</a>
-        <a href=\"/catalog\">Catalogue</a>
-        <a href=\"/changelog\">Changelog</a>
-        <a href=\"/permissions\">Entitlements</a>
-        <a href=\"/quarantine\">Quarantine</a>
+      <nav class="links">
+        <a href="/">Dashboard</a>
+        <a href="/catalog">Catalogue</a>
+        <a href="/changelog">Changelog</a>
+        <a href="/permissions">Entitlements</a>
+        <a href="/quarantine">Quarantine</a>
       </nav>
-      <div class=\"banner\">3 packages require attention. Review and promote patched versions.</div>
+      <div class="banner">No known vulnerabilities detected.</div>
       <table>
         <thead>
           <tr>
@@ -212,5 +184,5 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
         rows = rows,
     );
 
-    format::html(&html)
+    Html(html)
 }

@@ -1,0 +1,12 @@
+[server]
+host = "127.0.0.1"
+port = 9400
+
+[database]
+url = "sqlite://vein-admin.db?mode=rwc"
+
+[logging]
+level = "info"
+
+[vein]
+config_path = "vein.toml"

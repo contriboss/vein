@@ -1,11 +1,10 @@
+//! Changelog page.
+
 use chrono::NaiveDate;
-use loco_rs::prelude::*;
+use rama::http::service::web::extract::State;
+use rama::http::service::web::response::{Html, IntoResponse};
 
-use super::resources;
-
-pub fn routes() -> Routes {
-    Routes::new().prefix("changelog").add("/", get(index))
-}
+use crate::state::AdminState;
 
 #[derive(Debug)]
 struct ChangeLogEntry {
@@ -17,53 +16,20 @@ struct ChangeLogEntry {
 }
 
 fn sample_entries() -> Vec<ChangeLogEntry> {
-    vec![
-        ChangeLogEntry {
-            date: NaiveDate::from_ymd_opt(2025, 10, 28).unwrap(),
-            title: "Ruby 3.4.7 Available",
-            category: "Ruby Release",
-            details: "New security and performance update. \
-                      Ruby 3.3.x enters maintenance mode on Dec 01.",
-            highlight: true,
-        },
-        ChangeLogEntry {
-            date: NaiveDate::from_ymd_opt(2025, 10, 25).unwrap(),
-            title: "New Gem: turbo-latest",
-            category: "New Gem",
-            details: "turbo-latest 1.0.0 published with native Apple Silicon builds.",
-            highlight: false,
-        },
-        ChangeLogEntry {
-            date: NaiveDate::from_ymd_opt(2025, 10, 19).unwrap(),
-            title: "EOL Reminder: Rails 6.1",
-            category: "EOL Notice",
-            details: "Rails 6.1 will exit support on Nov 15. Upgrade paths to 7.2+.",
-            highlight: true,
-        },
-        ChangeLogEntry {
-            date: NaiveDate::from_ymd_opt(2025, 10, 12).unwrap(),
-            title: "Maintenance Pause: elasticsearch-ruby",
-            category: "Maintenance",
-            details: "Upstream maintainers announced limited maintenance while API stabilises.",
-            highlight: false,
-        },
-    ]
+    vec![]
 }
 
-#[debug_handler]
-async fn index(State(ctx): State<AppContext>) -> Result<Response> {
-    // Touch shared resources to keep consistent with other pages (may carry stats later).
-    let _resources = resources(&ctx)?;
+pub async fn index(State(_state): State<AdminState>) -> impl IntoResponse {
     let entries = sample_entries();
 
     let list = entries
         .iter()
         .map(|entry| {
             format!(
-                r#"<article class=\"entry {highlight}\">
+                r#"<article class="entry {highlight}">
   <header>
-    <span class=\"date\">{date}</span>
-    <span class=\"category\">{category}</span>
+    <span class="date">{date}</span>
+    <span class="category">{category}</span>
     <h2>{title}</h2>
   </header>
   <p>{details}</p>
@@ -80,9 +46,9 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
 
     let html = format!(
         r#"<!DOCTYPE html>
-<html lang=\"en\">
+<html lang="en">
   <head>
-    <meta charset=\"utf-8\" />
+    <meta charset="utf-8" />
     <title>Vein Admin · Changelog</title>
     <style>
       :root {{
@@ -177,16 +143,16 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
   </head>
   <body>
     <main>
-      <header class=\"top\">
+      <header class="top">
         <h1>Vein Changelog</h1>
-        <a href=\"/\">Back to dashboard</a>
+        <a href="/">Back to dashboard</a>
       </header>
-      <nav class=\"links\">
-        <a href=\"/\">Dashboard</a>
-        <a href=\"/catalog\">Catalogue</a>
-        <a href=\"/permissions\">Entitlements</a>
-        <a href=\"/security\">Security</a>
-        <a href=\"/quarantine\">Quarantine</a>
+      <nav class="links">
+        <a href="/">Dashboard</a>
+        <a href="/catalog">Catalogue</a>
+        <a href="/permissions">Entitlements</a>
+        <a href="/security">Security</a>
+        <a href="/quarantine">Quarantine</a>
       </nav>
       {entries}
     </main>
@@ -196,5 +162,5 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
         entries = list,
     );
 
-    format::html(&html)
+    Html(html)
 }

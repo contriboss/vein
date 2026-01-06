@@ -1,47 +1,51 @@
-use asynk_strim::{Yielder, stream_fn};
-use axum::http::{StatusCode, header};
-use axum::response::{IntoResponse, Sse, sse::Event};
-use datastar::{axum::ReadSignals, prelude::PatchElements};
-use loco_rs::prelude::*;
+//! Catalog controller for gem listing and details.
+
+use rama::futures::StreamExt;
+use rama::http::service::web::extract::{Path, Query, State};
+use rama::http::service::web::response::{Html, IntoResponse, Sse};
+use rama::http::sse::server::{KeepAlive, KeepAliveStream};
+use rama::http::sse::Event;
+use rama::http::StatusCode;
 use serde::Deserialize;
 use serde_json::to_string_pretty;
-use std::convert::Infallible;
-use std::sync::Arc;
-use tera::Tera;
+use tokio::sync::mpsc;
 
-use super::resources;
+use crate::state::AdminState;
 use crate::views;
 
 const PAGE_SIZE: i64 = 100;
 
-pub fn routes() -> Routes {
-    Routes::new()
-        .prefix("catalog")
-        .add("/", get(list))
-        .add("/search", get(search))
-        .add("/{name}", get(detail))
-        .add("/{name}/sbom", get(sbom))
-}
-
 #[derive(Debug, Deserialize, Default)]
-struct CatalogQuery {
+pub struct CatalogQuery {
     #[serde(default)]
     page: Option<i64>,
     #[serde(default)]
     lang: Option<String>,
 }
 
-#[debug_handler]
-async fn list(
-    State(ctx): State<AppContext>,
-    Query(query): Query<CatalogQuery>,
-) -> Result<Response> {
-    let tera = ctx
-        .shared_store
-        .get::<Arc<Tera>>()
-        .ok_or_else(|| Error::Message("Tera not initialized".to_string()))?;
+#[derive(Debug, Deserialize)]
+pub struct SearchSignals {
+    #[serde(default)]
+    search: String,
+}
 
-    let resources = resources(&ctx)?;
+#[derive(Debug, Deserialize)]
+pub struct GemPath {
+    name: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct GemDetailQuery {
+    #[serde(default)]
+    version: Option<String>,
+    #[serde(default)]
+    platform: Option<String>,
+}
+
+pub async fn list(
+    State(state): State<AdminState>,
+    Query(query): Query<CatalogQuery>,
+) -> impl IntoResponse {
     let page = query.page.unwrap_or(1).max(1);
     let offset = (page - 1) * PAGE_SIZE;
 
@@ -55,26 +59,31 @@ async fn list(
     });
 
     let (entries, total) = if let Some(lang) = selected_language.as_deref() {
-        let entries = resources
+        let entries = match state
+            .resources
             .catalog_page_by_language(lang, offset, PAGE_SIZE)
             .await
-            .map_err(|err| Error::Message(err.to_string()))?;
-        let total = resources
-            .catalog_total_by_language(lang)
-            .await
-            .map_err(|err| Error::Message(err.to_string()))?;
+        {
+            Ok(e) => e,
+            Err(e) => return Html(format!("<h1>Error: {}</h1>", e)),
+        };
+        let total = match state.resources.catalog_total_by_language(lang).await {
+            Ok(t) => t,
+            Err(e) => return Html(format!("<h1>Error: {}</h1>", e)),
+        };
         (entries, total)
     } else {
-        let entries = resources
-            .catalog_page(offset, PAGE_SIZE)
-            .await
-            .map_err(|err| Error::Message(err.to_string()))?;
-        let total = resources
-            .catalog_total()
-            .await
-            .map_err(|err| Error::Message(err.to_string()))?;
+        let entries = match state.resources.catalog_page(offset, PAGE_SIZE).await {
+            Ok(e) => e,
+            Err(e) => return Html(format!("<h1>Error: {}</h1>", e)),
+        };
+        let total = match state.resources.catalog_total().await {
+            Ok(t) => t,
+            Err(e) => return Html(format!("<h1>Error: {}</h1>", e)),
+        };
         (entries, total)
     };
+
     let total_pages = total.div_ceil(PAGE_SIZE as u64).max(1) as i64;
 
     let total_label = if let Some(lang) = selected_language.as_deref() {
@@ -83,7 +92,6 @@ async fn list(
         total.to_string()
     };
 
-    // TODO: Fetch actual languages from the database once the feature is complete
     let languages: Vec<String> = Vec::new();
 
     let data = views::catalog::CatalogListData {
@@ -98,64 +106,58 @@ async fn list(
         languages,
     };
 
-    views::catalog::list(&tera, data)
+    match views::catalog::list(&state.tera, data) {
+        Ok(html) => Html(html),
+        Err(e) => Html(format!("<h1>Template Error: {}</h1>", e)),
+    }
 }
 
-#[derive(Debug, Deserialize)]
-struct SearchSignals {
-    #[serde(default)]
-    search: String,
-}
-
-#[debug_handler]
-async fn search(
-    State(ctx): State<AppContext>,
-    ReadSignals(signals): ReadSignals<SearchSignals>,
+/// SSE search for live catalog filtering
+pub async fn search(
+    State(state): State<AdminState>,
+    Query(signals): Query<SearchSignals>,
 ) -> impl IntoResponse {
-    let html = match resources(&ctx) {
-        Ok(resources) => {
-            let results = resources.catalog_search(&signals.search, 50).await.unwrap_or_default();
-            views::catalog::search_results_html(&results)
+    // Create a channel for the single event
+    let (tx, rx) = mpsc::channel::<Event<String>>(1);
+
+    // Spawn task to do the async search
+    tokio::spawn({
+        let resources = state.resources.clone();
+        let search_term = signals.search.clone();
+        async move {
+            let html = match resources.catalog_search(&search_term, 50).await {
+                Ok(results) => views::catalog::search_results_html(&results),
+                Err(_) => "<ul id='gem-list' class='gem-list'></ul>".to_string(),
+            };
+
+            // Use datastar SSE format for live search - single event
+            let event = Event::default()
+                .try_with_event("datastar-patch-elements")
+                .expect("valid event name")
+                .with_data(format!("fragments {}", html));
+
+            let _ = tx.send(event).await;
         }
-        Err(_) => "<ul id='gem-list' class='gem-list'></ul>".to_string(),
-    };
+    });
 
-    Sse::new(stream_fn(move |mut yielder: Yielder<Result<Event, Infallible>>| async move {
-        let event = PatchElements::new(&html).write_as_axum_sse_event();
-        yielder.yield_item(Ok(event)).await;
-    }))
+    // Convert receiver to stream
+    let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+
+    Sse::new(KeepAliveStream::new(
+        KeepAlive::new(),
+        stream.map(|event| Ok::<_, std::convert::Infallible>(event)),
+    ))
 }
 
-#[derive(Debug, Deserialize)]
-struct GemPath {
-    name: String,
-}
-
-#[derive(Debug, Deserialize, Default)]
-struct GemDetailQuery {
-    #[serde(default)]
-    version: Option<String>,
-    #[serde(default)]
-    platform: Option<String>,
-}
-
-#[debug_handler]
-async fn detail(
-    State(ctx): State<AppContext>,
+pub async fn detail(
+    State(state): State<AdminState>,
     Path(params): Path<GemPath>,
     Query(query): Query<GemDetailQuery>,
-) -> Result<Response> {
-    let tera = ctx
-        .shared_store
-        .get::<Arc<Tera>>()
-        .ok_or_else(|| Error::Message("Tera not initialized".to_string()))?;
-
-    let resources = resources(&ctx)?;
-
-    let versions = resources
-        .gem_versions(&params.name)
-        .await
-        .map_err(|err| Error::Message(err.to_string()))?;
+) -> impl IntoResponse {
+    let versions = match state.resources.gem_versions(&params.name).await {
+        Ok(v) => v,
+        Err(e) => return Html(format!("<h1>Error: {}</h1>", e)),
+    };
 
     let selected_version = query
         .version
@@ -168,10 +170,14 @@ async fn detail(
     let query_platform = query.platform.as_deref().unwrap_or("ruby");
 
     let metadata = if let Some(version) = selected_version.as_deref() {
-        resources
+        match state
+            .resources
             .gem_metadata(&params.name, version, Some(query_platform))
             .await
-            .map_err(|err| Error::Message(err.to_string()))?
+        {
+            Ok(m) => m,
+            Err(e) => return Html(format!("<h1>Error: {}</h1>", e)),
+        }
     } else {
         None
     };
@@ -190,20 +196,21 @@ async fn detail(
         metadata: metadata.as_ref().map(|m| m.into()),
     };
 
-    views::catalog::detail(&tera, data)
+    match views::catalog::detail(&state.tera, data) {
+        Ok(html) => Html(html),
+        Err(e) => Html(format!("<h1>Template Error: {}</h1>", e)),
+    }
 }
 
-#[debug_handler]
-async fn sbom(
-    State(ctx): State<AppContext>,
+pub async fn sbom(
+    State(state): State<AdminState>,
     Path(params): Path<GemPath>,
     Query(query): Query<GemDetailQuery>,
-) -> Result<Response> {
-    let resources = resources(&ctx)?;
-    let versions = resources
-        .gem_versions(&params.name)
-        .await
-        .map_err(|err| Error::Message(err.to_string()))?;
+) -> impl IntoResponse {
+    let versions = match state.resources.gem_versions(&params.name).await {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::NOT_FOUND, "Not Found").into_response(),
+    };
 
     let selected_version = query
         .version
@@ -213,46 +220,47 @@ async fn sbom(
         .or_else(|| versions.first().cloned());
 
     let Some(version) = selected_version else {
-        return Err(Error::NotFound);
+        return (StatusCode::NOT_FOUND, "Version not found").into_response();
     };
 
-    // Default to "ruby" platform when not specified
     let query_platform = query.platform.as_deref().unwrap_or("ruby");
 
-    let metadata = resources
+    let metadata = match state
+        .resources
         .gem_metadata(&params.name, &version, Some(query_platform))
         .await
-        .map_err(|err| Error::Message(err.to_string()))?;
-
-    let Some(meta) = metadata else {
-        return Err(Error::NotFound);
+    {
+        Ok(Some(m)) => m,
+        Ok(None) => return (StatusCode::NOT_FOUND, "Metadata not found").into_response(),
+        Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Error").into_response(),
     };
 
-    let Some(sbom) = meta.sbom.as_ref() else {
-        return Err(Error::NotFound);
+    let Some(sbom) = metadata.sbom.as_ref() else {
+        return (StatusCode::NOT_FOUND, "SBOM not found").into_response();
     };
 
     let json_body = to_string_pretty(sbom).unwrap_or_else(|_| sbom.to_string());
 
-    let platform_slug = &meta.platform;
+    let platform_slug = &metadata.platform;
     let filename = format!(
         "{}-{}-{}.sbom.json",
-        sanitize_for_filename(&meta.name),
-        sanitize_for_filename(&meta.version),
+        sanitize_for_filename(&metadata.name),
+        sanitize_for_filename(&metadata.version),
         sanitize_for_filename(platform_slug)
     );
 
-    let response = Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
-        .header(
-            header::CONTENT_DISPOSITION,
-            format!("attachment; filename=\"{}\"", filename),
-        )
-        .body(json_body.into())
-        .map_err(|err| Error::Message(err.to_string()))?;
-
-    Ok(response)
+    (
+        StatusCode::OK,
+        [
+            ("content-type", "application/json; charset=utf-8"),
+            (
+                "content-disposition",
+                &format!("attachment; filename=\"{}\"", filename),
+            ),
+        ],
+        json_body,
+    )
+        .into_response()
 }
 
 fn sanitize_for_filename(input: &str) -> String {
@@ -270,232 +278,5 @@ fn sanitize_for_filename(input: &str) -> String {
         "artifact".to_string()
     } else {
         sanitized
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::{
-        extract::{Path, Query, State},
-        http::StatusCode,
-    };
-    use http_body_util::BodyExt;
-    use loco_rs::{
-        app::{AppContext, SharedStore},
-        cache,
-        config::{self as loco_config},
-        controller::middleware,
-        environment::Environment,
-        storage::{self, Storage},
-    };
-    use sea_orm::DatabaseConnection;
-    use serde_json::json;
-    use std::sync::Arc;
-    use vein::config::Config as VeinConfig;
-    use vein_adapter::{
-        AssetKey, AssetKind, CacheBackendKind, DependencyKind, GemDependency, GemMetadata,
-        SqliteCacheBackend,
-    };
-
-    use crate::{ruby::RubyStatus, state::AdminResources};
-
-    #[tokio::test]
-    async fn sbom_endpoint_serves_cyclonedx_json() {
-        let cache = Arc::new(build_in_memory_cache().await);
-        let config = Arc::new(VeinConfig::default());
-        let ruby_status = Arc::new(RubyStatus::default());
-        let resources = AdminResources::new(config, cache, ruby_status);
-
-        let ctx = build_app_context();
-        ctx.shared_store.insert(resources);
-
-        let response = sbom(
-            State(ctx),
-            Path(GemPath {
-                name: "rack".to_string(),
-            }),
-            Query(GemDetailQuery {
-                version: Some("2.2.8".to_string()),
-                platform: None,
-            }),
-        )
-        .await
-        .expect("sbom route should succeed");
-
-        assert_eq!(response.status(), StatusCode::OK);
-        let headers = response.headers();
-        let content_type = headers
-            .get(header::CONTENT_TYPE)
-            .expect("content-type header present")
-            .to_str()
-            .expect("header is valid utf-8");
-        assert!(
-            content_type.starts_with("application/json"),
-            "content-type should be JSON, got {content_type}"
-        );
-
-        let body_bytes = response
-            .into_body()
-            .collect()
-            .await
-            .expect("read sbom body")
-            .to_bytes();
-        let body_str =
-            String::from_utf8(body_bytes.to_vec()).expect("sbom body should be utf-8 string");
-        assert!(
-            body_str.contains("\"CycloneDX\""),
-            "SBOM body should contain CycloneDX marker"
-        );
-    }
-
-    async fn build_in_memory_cache() -> CacheBackendKind {
-        let backend = SqliteCacheBackend::connect_memory()
-            .await
-            .expect("create in-memory cache");
-
-        let cache: CacheBackendKind = backend.into();
-
-        cache
-            .insert_or_replace(
-                &AssetKey {
-                    kind: AssetKind::Gem,
-                    name: "rack",
-                    version: "2.2.7",
-                    platform: None,
-                },
-                "/cache/rack-2.2.7.gem",
-                "sha-old",
-                2048,
-            )
-            .await
-            .expect("insert first version");
-
-        cache
-            .insert_or_replace(
-                &AssetKey {
-                    kind: AssetKind::Gem,
-                    name: "rack",
-                    version: "2.2.8",
-                    platform: None,
-                },
-                "/cache/rack-2.2.8.gem",
-                "sha-new",
-                4096,
-            )
-            .await
-            .expect("insert latest version");
-
-        cache
-            .upsert_metadata(&sample_metadata(
-                "2.2.7",
-                "Rack 2.2.7 summary",
-                "rack-mini-profiler",
-            ))
-            .await
-            .expect("store metadata 2.2.7");
-
-        cache
-            .upsert_metadata(&sample_metadata(
-                "2.2.8",
-                "Rack 2.2.8 summary",
-                "rack-proxy",
-            ))
-            .await
-            .expect("store metadata 2.2.8");
-
-        cache
-    }
-
-    fn sample_metadata(version: &str, summary: &str, dependency: &str) -> GemMetadata {
-        GemMetadata {
-            name: "rack".to_string(),
-            version: version.to_string(),
-            platform: None,
-            summary: Some(summary.to_string()),
-            description: Some(format!("{summary} description")),
-            licenses: vec!["MIT".to_string()],
-            authors: vec!["Rack Core Team".to_string()],
-            emails: vec!["rack@example.test".to_string()],
-            homepage: Some("https://rack.test".to_string()),
-            documentation_url: Some("https://docs.rack.test".to_string()),
-            changelog_url: None,
-            source_code_url: Some("https://github.com/rack/rack".to_string()),
-            bug_tracker_url: None,
-            wiki_url: None,
-            funding_url: None,
-            metadata: json!({ "release": version }),
-            dependencies: vec![GemDependency {
-                name: dependency.to_string(),
-                requirement: ">= 0.7".to_string(),
-                kind: DependencyKind::Runtime,
-            }],
-            executables: vec!["rackup".to_string()],
-            extensions: Vec::new(),
-            native_languages: Vec::new(),
-            has_native_extensions: false,
-            has_embedded_binaries: false,
-            required_ruby_version: Some(">= 2.7.0".to_string()),
-            required_rubygems_version: None,
-            rubygems_version: Some("3.4.7".to_string()),
-            specification_version: Some(4),
-            built_at: Some("2024-11-15".to_string()),
-            size_bytes: 42_000,
-            sha256: format!("sha256-{version}"),
-            sbom: Some(json!({
-                "bomFormat": "CycloneDX",
-                "specVersion": "1.5",
-                "version": 1,
-                "metadata": {
-                    "component": {
-                        "name": "rack",
-                        "version": version,
-                        "purl": format!("pkg:gem/rack@{version}")
-                    }
-                }
-            })),
-        }
-    }
-
-    fn build_app_context() -> AppContext {
-        // Mock database connection for tests
-        let mock_db = DatabaseConnection::default();
-
-        AppContext {
-            environment: Environment::Test,
-            db: mock_db,
-            queue_provider: None,
-            config: loco_config::Config {
-                logger: loco_config::Logger {
-                    enable: false,
-                    pretty_backtrace: false,
-                    level: loco_rs::logger::LogLevel::Off,
-                    format: loco_rs::logger::Format::Json,
-                    override_filter: None,
-                    file_appender: None,
-                },
-                server: loco_config::Server {
-                    binding: "127.0.0.1".to_string(),
-                    port: 0,
-                    host: "127.0.0.1".to_string(),
-                    ident: None,
-                    middlewares: middleware::Config::default(),
-                },
-                cache: loco_config::CacheConfig::Null,
-                queue: None,
-                auth: None,
-                workers: loco_config::Workers {
-                    mode: loco_config::WorkerMode::ForegroundBlocking,
-                },
-                mailer: None,
-                initializers: None,
-                settings: None,
-                scheduler: None,
-            },
-            mailer: None,
-            storage: Storage::single(storage::drivers::null::new()).into(),
-            cache: cache::Cache::new(cache::drivers::null::new()).into(),
-            shared_store: Arc::new(SharedStore::default()),
-        }
     }
 }

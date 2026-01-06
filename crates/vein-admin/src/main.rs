@@ -1,31 +1,33 @@
+//! Vein admin dashboard.
+
 mod app;
 mod commands;
+mod config;
 mod controllers;
-mod initializers;
+mod error;
+mod router;
 mod ruby;
 mod state;
 mod views;
 
-use std::path::PathBuf;
+use std::time::Duration;
 
 use clap::{Parser, Subcommand};
-use loco_rs::{
-    boot::{self, ServeParams, StartMode},
-    environment::Environment,
+use rama::{
+    graceful::Shutdown,
+    http::server::HttpServer,
+    layer::ConsumeErrLayer,
+    rt::Executor,
+    tcp::server::TcpListener,
+    Layer,
 };
-
-use crate::app::App;
 
 #[derive(Debug, Parser)]
 #[command(author, version, about = "Vein admin dashboard")]
 struct Cli {
-    /// Environment to run in (development, production, test)
-    #[arg(short, long, default_value = "development")]
-    environment: String,
-
-    /// Path to the Vein configuration file
-    #[arg(long)]
-    config: Option<PathBuf>,
+    /// Path to the admin configuration file
+    #[arg(short, long, default_value = "crates/vein-admin/config.toml")]
+    config: String,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -76,82 +78,70 @@ enum Commands {
     },
 }
 
-async fn start_server(
-    environment: &Environment,
+async fn run_server(
+    cfg: &config::AdminConfig,
     bind: Option<String>,
     port: Option<u16>,
-) -> loco_rs::Result<()> {
-    // Create Loco app using standard boot process
-    let config_path = std::path::Path::new("crates/vein-admin/config");
-    let app = loco_rs::boot::create_app::<App, migration::Migrator>(
-        StartMode::ServerOnly,
-        environment,
-        loco_rs::config::Config::from_folder(environment, config_path)?,
-    )
-    .await?;
+) -> anyhow::Result<()> {
+    let state = app::bootstrap(cfg).await?;
+    let router = router::build(state);
 
-    // Get binding and port from config or CLI overrides
-    let binding = bind.unwrap_or_else(|| app.app_context.config.server.binding.clone());
-    let port = port
-        .map(|p| p as i32)
-        .unwrap_or(app.app_context.config.server.port);
+    let addr = format!(
+        "{}:{}",
+        bind.unwrap_or_else(|| cfg.server.host.clone()),
+        port.unwrap_or(cfg.server.port)
+    );
 
-    let serve_params = ServeParams { port, binding };
+    tracing::info!(%addr, "starting admin server");
 
-    // Start the server
-    boot::start::<App>(app, serve_params, false).await?;
+    let graceful = Shutdown::default();
+    graceful.spawn_task_fn(move |guard| async move {
+        let tcp = TcpListener::build().bind(&addr).await.expect("bind tcp");
+        let exec = Executor::graceful(guard.clone());
+        let service = HttpServer::auto(exec)
+            .service(ConsumeErrLayer::default().into_layer(router));
+        tcp.serve_graceful(guard, service).await;
+    });
+
+    tokio::signal::ctrl_c().await?;
+    graceful
+        .shutdown_with_limit(Duration::from_secs(30))
+        .await?;
 
     Ok(())
 }
 
 #[tokio::main]
-async fn main() -> loco_rs::Result<()> {
+async fn main() -> anyhow::Result<()> {
     // Initialize rustls crypto provider
-    rustls::crypto::aws_lc_rs::default_provider()
-        .install_default()
-        .map_err(|e| loco_rs::Error::Message(format!("Failed to install rustls crypto provider: {e}")))?;
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
 
     let cli = Cli::parse();
+    let cfg = config::AdminConfig::load(&cli.config)?;
 
-    // Parse environment
-    let environment: Environment = cli
-        .environment
-        .parse()
-        .map_err(|_| loco_rs::Error::Message("Invalid environment".to_string()))?;
-
-    // Override vein config path if provided via CLI
-    if let Some(config_path) = cli.config {
-        unsafe {
-            std::env::set_var("VEIN_CONFIG_PATH", config_path.display().to_string());
-        }
-    }
+    tracing_subscriber::fmt()
+        .with_env_filter(&cfg.logging.level)
+        .init();
 
     match cli.command {
         Some(Commands::Serve { bind, port }) => {
-            start_server(&environment, bind, port).await?;
+            run_server(&cfg, bind, port).await?;
+        }
+        None => {
+            run_server(&cfg, None, None).await?;
         }
         Some(Commands::Sync {
             name,
             version,
             platform,
         }) => {
-            commands::sync::run(name, version, platform)
-                .await
-                .map_err(|e| loco_rs::Error::Message(e.to_string()))?;
+            commands::sync::run(name, version, platform).await?;
         }
         Some(Commands::Index { name, version }) => {
-            commands::index::run(name, version)
-                .await
-                .map_err(|e| loco_rs::Error::Message(e.to_string()))?;
+            commands::index::run(name, version).await?;
         }
         Some(Commands::Validate { name, version }) => {
-            commands::validate::run(name, version)
-                .await
-                .map_err(|e| loco_rs::Error::Message(e.to_string()))?;
-        }
-        None => {
-            // Default to serve if no subcommand provided
-            start_server(&environment, None, None).await?;
+            commands::validate::run(name, version).await?;
         }
     }
 

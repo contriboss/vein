@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/vein-adapter", "crates/vein-admin", "crates/vein-admin/migration"]
+members = ["crates/vein-adapter", "crates/vein-admin"]
 
 [package]
 name = "vein"
@@ -30,7 +30,7 @@ android = []
 
 [dependencies]
 # Rama network framework (conditional TLS via feature)
-rama = { version = "0.3.0-alpha.4", features = ["http-full", "tcp", "opentelemetry"] }
+rama = { path = "../rama", features = ["http-full", "tcp", "opentelemetry"] }
 rustls = { version = "0.23", features = ["aws-lc-rs"], default-features = false }
 
 # Async runtime
