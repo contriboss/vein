@@ -15,6 +15,17 @@ server:
     timeout_request:
       enable: false
 
+database:
+  uri: {{ get_env(name="DATABASE_URL", default="sqlite://vein-admin.db?mode=rwc") }}
+  enable_logging: false
+  connect_timeout: 500
+  idle_timeout: 500
+  min_connections: 1
+  max_connections: 1
+  auto_migrate: true
+  dangerously_truncate: false
+  dangerously_recreate: false
+
 workers:
   mode: BackgroundAsync
 

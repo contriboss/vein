@@ -20,6 +20,7 @@ axum = "0.8.6"
 chrono = { version = "0.4.38", default-features = false, features = ["clock"] }
 clap = { version = "4.5.23", features = ["derive"] }
 loco-rs = { version = "0.16.4", default-features = false, features = ["cli", "with-db"] }
+rama = { version = "0.3.0-alpha.4", default-features = false, features = ["http-full", "rustls"] }
 tera = "1"
 urlencoding = "2"
 migration = { version = "0.3.0", package = "vein-admin-migration", path = "migration" }

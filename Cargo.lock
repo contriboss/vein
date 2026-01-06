@@ -6265,6 +6265,7 @@ dependencies = [
  "clap",
  "http-body-util",
  "loco-rs",
+ "rama",
  "reqwest",
  "sea-orm",
  "serde",

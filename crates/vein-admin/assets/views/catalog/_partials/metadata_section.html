@@ -1,3 +1,4 @@
+{% import "catalog/_partials/link.html" as link %}
 {% if metadata %}
 <article>
   <h2>Gem overview</h2>
@@ -7,13 +8,13 @@
       <tr><th>Authors</th><td>{{ metadata.authors | join(sep=", ") | default(value="—") }}</td></tr>
       <tr><th>Emails</th><td>{{ metadata.emails | join(sep=", ") | default(value="—") }}</td></tr>
       <tr><th>Licences</th><td>{{ metadata.licenses | join(sep=", ") | default(value="—") }}</td></tr>
-      <tr><th>Homepage</th><td>{% if metadata.homepage %}{% include "catalog/_partials/link.html" with url=metadata.homepage %}{% else %}—{% endif %}</td></tr>
-      <tr><th>Documentation</th><td>{% if metadata.documentation_url %}{% include "catalog/_partials/link.html" with url=metadata.documentation_url %}{% else %}—{% endif %}</td></tr>
-      <tr><th>Changelog</th><td>{% if metadata.changelog_url %}{% include "catalog/_partials/link.html" with url=metadata.changelog_url %}{% else %}—{% endif %}</td></tr>
-      <tr><th>Source</th><td>{% if metadata.source_code_url %}{% include "catalog/_partials/link.html" with url=metadata.source_code_url %}{% else %}—{% endif %}</td></tr>
-      <tr><th>Bug tracker</th><td>{% if metadata.bug_tracker_url %}{% include "catalog/_partials/link.html" with url=metadata.bug_tracker_url %}{% else %}—{% endif %}</td></tr>
-      <tr><th>Wiki</th><td>{% if metadata.wiki_url %}{% include "catalog/_partials/link.html" with url=metadata.wiki_url %}{% else %}—{% endif %}</td></tr>
-      <tr><th>Funding</th><td>{% if metadata.funding_url %}{% include "catalog/_partials/link.html" with url=metadata.funding_url %}{% else %}—{% endif %}</td></tr>
+      <tr><th>Homepage</th><td>{% if metadata.homepage %}{{ link::render(url=metadata.homepage) }}{% else %}—{% endif %}</td></tr>
+      <tr><th>Documentation</th><td>{% if metadata.documentation_url %}{{ link::render(url=metadata.documentation_url) }}{% else %}—{% endif %}</td></tr>
+      <tr><th>Changelog</th><td>{% if metadata.changelog_url %}{{ link::render(url=metadata.changelog_url) }}{% else %}—{% endif %}</td></tr>
+      <tr><th>Source</th><td>{% if metadata.source_code_url %}{{ link::render(url=metadata.source_code_url) }}{% else %}—{% endif %}</td></tr>
+      <tr><th>Bug tracker</th><td>{% if metadata.bug_tracker_url %}{{ link::render(url=metadata.bug_tracker_url) }}{% else %}—{% endif %}</td></tr>
+      <tr><th>Wiki</th><td>{% if metadata.wiki_url %}{{ link::render(url=metadata.wiki_url) }}{% else %}—{% endif %}</td></tr>
+      <tr><th>Funding</th><td>{% if metadata.funding_url %}{{ link::render(url=metadata.funding_url) }}{% else %}—{% endif %}</td></tr>
       <tr><th>Platform</th><td>{{ metadata.platform | default(value="ruby") }}</td></tr>
       <tr><th>Built at</th><td>{{ metadata.built_at | default(value="—") }}</td></tr>
       <tr><th>Size</th><td>{{ metadata.size_formatted }}</td></tr>

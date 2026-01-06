@@ -1,4 +1,4 @@
-<section id="stats-grid" class="grid">
+<section id="stats-grid" class="grid" data-on-load="@get('/stats/stream')">
   <article class="card">
     <h2>Total Assets</h2>
     <div class="metric">{{ total_assets }}</div>

@@ -16,13 +16,12 @@ impl Initializer for ViewEngineInitializer {
 
     async fn after_routes(&self, router: axum::Router, ctx: &AppContext) -> Result<axum::Router> {
         // Initialize Tera templates
-        let tera = match Tera::new("crates/vein-admin/assets/views/**/*.html") {
-            Ok(t) => Arc::new(t),
-            Err(e) => {
-                tracing::warn!("Failed to load templates: {}", e);
-                Arc::new(Tera::default())
-            }
-        };
+        let tera = Arc::new(
+            Tera::new("crates/vein-admin/assets/views/**/*.html")
+                .map_err(|e| Error::Message(format!("Failed to load templates: {}", e)))?
+        );
+
+        tracing::info!("Loaded {} templates", tera.get_template_names().count());
 
         // Store Tera in the shared context
         ctx.shared_store.insert(tera);

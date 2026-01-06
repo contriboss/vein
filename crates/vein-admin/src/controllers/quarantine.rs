@@ -17,8 +17,8 @@ pub fn routes() -> Routes {
         .add("/", get(index))
         .add("/api/stats", get(api_stats))
         .add("/api/pending", get(api_pending))
-        .add("/:gem/:version/approve", post(approve))
-        .add("/:gem/:version/block", post(block))
+        .add("/{gem}/{version}/approve", post(approve))
+        .add("/{gem}/{version}/block", post(block))
 }
 
 #[derive(Debug, Deserialize)]

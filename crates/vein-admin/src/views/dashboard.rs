@@ -178,6 +178,11 @@ pub fn index(tera: &Tera, data: DashboardData) -> Result<Response> {
 }
 
 pub fn stats(tera: &Tera, data: DashboardData) -> Result<Response> {
+    let html = stats_fragment(tera, data)?;
+    Ok(Html(html).into_response())
+}
+
+pub fn stats_fragment(tera: &Tera, data: DashboardData) -> Result<String> {
     let mut context = Context::new();
     context.insert("total_assets", &data.total_assets);
     context.insert("gems", &data.gems);
@@ -191,11 +196,8 @@ pub fn stats(tera: &Tera, data: DashboardData) -> Result<Response> {
     context.insert("ruby_eol", &data.ruby_eol);
     context.insert("ruby_updated", &data.ruby_updated);
 
-    let html = tera
-        .render("dashboard/_partials/stats.html", &context)
-        .map_err(|err| Error::Message(err.to_string()))?;
-
-    Ok(Html(html).into_response())
+    tera.render("dashboard/_partials/stats.html", &context)
+        .map_err(|err| Error::Message(err.to_string()))
 }
 
 fn format_bytes(bytes: u64) -> String {

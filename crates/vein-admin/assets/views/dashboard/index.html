@@ -197,13 +197,10 @@ nav.links a {
     <div class="pill">
       <span>Generated {{ generated_at }}</span>
     </div>
-    <button
-      data-on-click="$get('/stats')"
-      data-swap="innerHTML"
-      data-target="#stats-grid"
-      style="padding: 0.5rem 1rem; border-radius: 999px; border: 1px solid var(--border); background: var(--accent); color: white; cursor: pointer; font-weight: 600; font-size: 0.9rem;">
-      ↻ Refresh Stats
-    </button>
+    <div class="pill" style="background: var(--accent-soft); color: var(--accent);">
+      <span>🔴</span>
+      <span>Live updating via SSE</span>
+    </div>
   </div>
 </header>
 

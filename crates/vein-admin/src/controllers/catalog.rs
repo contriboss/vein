@@ -14,8 +14,8 @@ pub fn routes() -> Routes {
     Routes::new()
         .prefix("catalog")
         .add("/", get(list))
-        .add("/:name", get(detail))
-        .add("/:name/sbom", get(sbom))
+        .add("/{name}", get(detail))
+        .add("/{name}/sbom", get(sbom))
 }
 
 #[derive(Debug, Deserialize, Default)]
