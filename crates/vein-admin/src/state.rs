@@ -58,6 +58,10 @@ impl AdminResources {
         self.cache.catalog_page(offset, limit).await
     }
 
+    pub async fn catalog_search(&self, query: &str, limit: i64) -> Result<Vec<String>> {
+        self.cache.catalog_search(query, limit).await
+    }
+
     #[allow(dead_code)]
     pub async fn catalog_languages(&self) -> Result<Vec<String>> {
         self.cache.catalog_languages().await

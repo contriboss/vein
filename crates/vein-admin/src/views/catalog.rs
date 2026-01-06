@@ -60,6 +60,7 @@ pub struct GemMetadataView {
     pub sbom: bool,
     pub sbom_json: Option<String>,
     pub sbom_download_url: Option<String>,
+    pub purl: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -67,6 +68,18 @@ pub struct DependencyView {
     pub name: String,
     pub requirement: String,
     pub kind: String,
+}
+
+fn purl_for_gem(name: &str, version: &str, platform: Option<&str>) -> String {
+    let base = format!(
+        "pkg:gem/{}@{}",
+        urlencoding::encode(name),
+        urlencoding::encode(version)
+    );
+    match platform {
+        Some(p) if p != "ruby" => format!("{}?platform={}", base, urlencoding::encode(p)),
+        _ => base,
+    }
 }
 
 impl From<&GemMetadata> for GemMetadataView {
@@ -153,6 +166,7 @@ impl From<&GemMetadata> for GemMetadataView {
             sbom,
             sbom_json,
             sbom_download_url,
+            purl: purl_for_gem(&meta.name, &meta.version, meta.platform.as_deref()),
         }
     }
 }
@@ -205,4 +219,23 @@ pub fn detail(tera: &Tera, data: GemDetailData) -> Result<Response> {
         .map_err(|e| Error::Message(format!("Template error: {}", e)))?;
 
     Ok(Html(html).into_response())
+}
+
+pub fn search_results_html(results: &[String]) -> String {
+    let items: String = results
+        .iter()
+        .map(|name| {
+            let escaped = name
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;");
+            format!(
+                r#"<li><a href="/catalog/{}" class="gem-link">{}</a></li>"#,
+                urlencoding::encode(name),
+                escaped
+            )
+        })
+        .collect();
+
+    format!(r#"<ul id="gem-list" class="gem-list">{}</ul>"#, items)
 }

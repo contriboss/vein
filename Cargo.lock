@@ -247,9 +247,9 @@ dependencies = [
 
 [[package]]
 name = "asynk-strim"
-version = "0.1.4"
+version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2da3ef5171f312f98811bfd1c0d33499e1779e3509a38b53bd47237cbf1056ef"
+checksum = "52697735bdaac441a29391a9e97102c74c6ef0f9b60a40cf109b1b404e29d2f6"
 dependencies = [
  "futures-core",
  "pin-project-lite",
@@ -1161,6 +1161,18 @@ name = "data-encoding"
 version = "2.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2a2330da5de22e8a3cb63252ce2abb30116bf5265e89c0e01bc17015ce30a476"
+
+[[package]]
+name = "datastar"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0805c542838bb4c0769e26e1cdf70ff913e43e146b7e7563241fe95f32606643"
+dependencies = [
+ "axum",
+ "chrono",
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "der"
@@ -6260,14 +6272,17 @@ version = "0.3.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "asynk-strim",
  "axum",
  "chrono",
  "clap",
+ "datastar",
  "hex",
  "http-body-util",
  "loco-rs",
  "rama",
  "reqwest",
+ "rustls",
  "sea-orm",
  "serde",
  "serde_json",

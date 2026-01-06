@@ -76,14 +76,6 @@ impl UpstreamClient {
                 .into(),
         };
 
-        info!(
-            timeout_secs = config.timeout_secs,
-            pool = config.connection_pool_size,
-            strategy = ?retry.backoff_strategy,
-            max_attempts = max_attempts,
-            "Upstream client initialized (rama + rustls + circuit breaker + chrono-machines)",
-        );
-
         Ok(Self {
             backoff,
             breaker: Arc::new(Mutex::new(breaker)),

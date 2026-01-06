@@ -547,6 +547,25 @@ impl CacheBackend for SqliteCacheBackend {
         Ok(rows)
     }
 
+    async fn catalog_search(&self, query: &str, limit: i64) -> Result<Vec<String>> {
+        let pattern = format!("%{}%", query);
+        let rows = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT name
+            FROM catalog_gems
+            WHERE name LIKE ?1
+            ORDER BY name
+            LIMIT ?2
+            "#,
+        )
+        .bind(&pattern)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .context("searching catalog")?;
+        Ok(rows)
+    }
+
     async fn catalog_meta_get(&self, key: &str) -> Result<Option<String>> {
         let value =
             sqlx::query_scalar::<_, String>("SELECT value FROM catalog_meta WHERE key = ?1")

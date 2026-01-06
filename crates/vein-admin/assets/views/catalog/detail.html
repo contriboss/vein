@@ -209,12 +209,51 @@ table.meta-table code {
   color: rgba(240, 246, 255, 0.65);
   font-size: 0.85rem;
 }
+.purl-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: rgba(9, 18, 32, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 999px;
+  padding: 0.5rem 1rem;
+  width: fit-content;
+  margin-top: 0.5rem;
+}
+.purl-badge code {
+  font-family: "JetBrains Mono", "SFMono-Regular", Menlo, monospace;
+  font-size: 0.85rem;
+  color: #cbd5f5;
+  background: transparent;
+  padding: 0;
+  user-select: all;
+}
+.purl-badge button {
+  background: rgba(79, 140, 255, 0.15);
+  border: 1px solid rgba(79, 140, 255, 0.3);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  transition: all 0.15s ease-in-out;
+}
+.purl-badge button:hover {
+  background: rgba(79, 140, 255, 0.25);
+  border-color: rgba(79, 140, 255, 0.5);
+}
 {% endblock %}
 
 {% block content %}
 <header>
   <h1>{{ name }}</h1>
   <span>Version {{ selected_version }} · Platform {{ platform }}</span>
+  {% if metadata %}
+  <div class="purl-badge">
+    <code id="purl-text">{{ metadata.purl }}</code>
+    <button onclick="navigator.clipboard.writeText(document.getElementById('purl-text').innerText)" title="Copy PURL">📋</button>
+  </div>
+  {% endif %}
 </header>
 <nav class="links">
   <a href="/catalog">Back to catalogue</a>

@@ -84,6 +84,10 @@ impl CacheBackendKind {
         delegate!(self, catalog_page, offset, limit)
     }
 
+    pub async fn catalog_search(&self, query: &str, limit: i64) -> Result<Vec<String>> {
+        delegate!(self, catalog_search, query, limit)
+    }
+
     pub async fn catalog_meta_get(&self, key: &str) -> Result<Option<String>> {
         delegate!(self, catalog_meta_get, key)
     }
@@ -263,6 +267,8 @@ pub(crate) trait CacheBackend: Send + Sync {
     fn catalog_upsert_names(&self, names: &[String]) -> impl Future<Output = Result<()>> + Send;
     fn catalog_total(&self) -> impl Future<Output = Result<u64>> + Send;
     fn catalog_page(&self, offset: i64, limit: i64)
+        -> impl Future<Output = Result<Vec<String>>> + Send;
+    fn catalog_search(&self, query: &str, limit: i64)
         -> impl Future<Output = Result<Vec<String>>> + Send;
     fn catalog_meta_get(&self, key: &str)
         -> impl Future<Output = Result<Option<String>>> + Send;

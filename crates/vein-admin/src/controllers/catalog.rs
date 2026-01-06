@@ -1,7 +1,11 @@
+use asynk_strim::{Yielder, stream_fn};
 use axum::http::{StatusCode, header};
+use axum::response::{IntoResponse, Sse, sse::Event};
+use datastar::{axum::ReadSignals, prelude::PatchElements};
 use loco_rs::prelude::*;
 use serde::Deserialize;
 use serde_json::to_string_pretty;
+use std::convert::Infallible;
 use std::sync::Arc;
 use tera::Tera;
 
@@ -14,6 +18,7 @@ pub fn routes() -> Routes {
     Routes::new()
         .prefix("catalog")
         .add("/", get(list))
+        .add("/search", get(search))
         .add("/{name}", get(detail))
         .add("/{name}/sbom", get(sbom))
 }
@@ -24,8 +29,6 @@ struct CatalogQuery {
     page: Option<i64>,
     #[serde(default)]
     lang: Option<String>,
-    #[serde(default)]
-    q: Option<String>,
 }
 
 #[debug_handler]
@@ -96,6 +99,31 @@ async fn list(
     };
 
     views::catalog::list(&tera, data)
+}
+
+#[derive(Debug, Deserialize)]
+struct SearchSignals {
+    #[serde(default)]
+    search: String,
+}
+
+#[debug_handler]
+async fn search(
+    State(ctx): State<AppContext>,
+    ReadSignals(signals): ReadSignals<SearchSignals>,
+) -> impl IntoResponse {
+    let html = match resources(&ctx) {
+        Ok(resources) => {
+            let results = resources.catalog_search(&signals.search, 50).await.unwrap_or_default();
+            views::catalog::search_results_html(&results)
+        }
+        Err(_) => "<ul id='gem-list' class='gem-list'></ul>".to_string(),
+    };
+
+    Sse::new(stream_fn(move |mut yielder: Yielder<Result<Event, Infallible>>| async move {
+        let event = PatchElements::new(&html).write_as_axum_sse_event();
+        yielder.yield_item(Ok(event)).await;
+    }))
 }
 
 #[derive(Debug, Deserialize)]

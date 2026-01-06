@@ -212,9 +212,9 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
           trust grants without central coordination.
         </p>
         <p>
-          Grant checks will happen at the adapter layer so both Pingora and future APIs share the
-          same entitlement logic. Expired or revoked grants fallback to the upstream mirror, but
-          only for packages that the policy allows.
+          Grant checks will happen at the adapter layer so all endpoints share the same entitlement
+          logic. Expired or revoked grants fallback to the upstream mirror, but only for packages
+          that the policy allows.
         </p>
       </section>
 
@@ -247,9 +247,8 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
         <article class="card">
           <h3>Enforcement points</h3>
           <ul>
-            <li>Pingora request filter before cache lookup</li>
-            <li>Future API downloads and pre-signed URLs</li>
-            <li>CLI utilities (bundle install, gem pull)</li>
+            <li>Request filter before cache lookup</li>
+            <li>API downloads and pre-signed URLs</li>
           </ul>
         </article>
         <article class="card">

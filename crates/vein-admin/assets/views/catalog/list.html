@@ -92,9 +92,9 @@ li {
 <div class="search">
   <input
     type="text"
-    placeholder="Search gems by name..."
-    data-model="searchQuery"
-    data-on-input.debounce_500ms="if ($searchQuery.length > 2) { window.location.href = '/catalog?q=' + encodeURIComponent($searchQuery); }"
+    placeholder="Search gems..."
+    data-bind-search
+    data-on-click="@get('/catalog/search')"
   />
 </div>
 <div class="filters">
@@ -103,7 +103,7 @@ li {
   <a class="{% if selected_language == language %}active{% endif %}" href="/catalog?lang={{ language | urlencode }}">{{ language }}</a>
   {% endfor %}
 </div>
-<ul>
+<ul id="gem-list" class="gem-list">
   {% for entry in entries %}
   <li><a href="/catalog/{{ entry.name | urlencode }}{% if selected_language %}?lang={{ selected_language | urlencode }}{% endif %}">{{ entry.name }}</a></li>
   {% endfor %}

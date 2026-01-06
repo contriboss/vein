@@ -30,6 +30,22 @@
   </table>
 </article>
 
+<article>
+  <h2>Install</h2>
+  <table class="meta-table">
+    <tbody>
+      <tr>
+        <th>Command line</th>
+        <td><code>gem install {{ name }} -v {{ selected_version }}</code></td>
+      </tr>
+      <tr>
+        <th>Gemfile</th>
+        <td><code>gem '{{ name }}', '~> {{ selected_version }}'</code></td>
+      </tr>
+    </tbody>
+  </table>
+</article>
+
 {% if metadata.description %}
 <article class="description">
   <h2>Description</h2>
