@@ -20,8 +20,6 @@ async fn up() -> Result<Response> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[tokio::test]
     async fn up_returns_ok() {
         let response = super::up().await.expect("up handler");

@@ -250,24 +250,25 @@ mod tests {
     use loco_rs::{
         app::{AppContext, SharedStore},
         cache,
-        config::{self as loco_config, Database},
+        config::{self as loco_config},
         controller::middleware,
         environment::Environment,
         storage::{self, Storage},
     };
+    use sea_orm::DatabaseConnection;
     use serde_json::json;
     use std::sync::Arc;
-    use vein::{GemMetadata, config::Config as VeinConfig};
+    use vein::config::Config as VeinConfig;
     use vein_adapter::{
-        AssetKey, AssetKind, CacheBackendKind, DependencyKind, GemDependency, SqliteCacheBackend,
+        AssetKey, AssetKind, CacheBackendKind, DependencyKind, GemDependency, GemMetadata,
+        SqliteCacheBackend,
     };
 
     use crate::{ruby::RubyStatus, state::AdminResources};
 
     #[tokio::test]
     async fn sbom_endpoint_serves_cyclonedx_json() {
-        let backend = build_in_memory_cache().await;
-        let cache: Arc<CacheBackendKind> = Arc::new(backend.into());
+        let cache = Arc::new(build_in_memory_cache().await);
         let config = Arc::new(VeinConfig::default());
         let ruby_status = Arc::new(RubyStatus::default());
         let resources = AdminResources::new(config, cache, ruby_status);
@@ -314,12 +315,14 @@ mod tests {
         );
     }
 
-    async fn build_in_memory_cache() -> SqliteCacheBackend {
+    async fn build_in_memory_cache() -> CacheBackendKind {
         let backend = SqliteCacheBackend::connect_memory()
             .await
             .expect("create in-memory cache");
 
-        backend
+        let cache: CacheBackendKind = backend.into();
+
+        cache
             .insert_or_replace(
                 &AssetKey {
                     kind: AssetKind::Gem,
@@ -334,7 +337,7 @@ mod tests {
             .await
             .expect("insert first version");
 
-        backend
+        cache
             .insert_or_replace(
                 &AssetKey {
                     kind: AssetKind::Gem,
@@ -349,8 +352,8 @@ mod tests {
             .await
             .expect("insert latest version");
 
-        backend
-            .upsert_gem_metadata_record(&sample_metadata(
+        cache
+            .upsert_metadata(&sample_metadata(
                 "2.2.7",
                 "Rack 2.2.7 summary",
                 "rack-mini-profiler",
@@ -358,8 +361,8 @@ mod tests {
             .await
             .expect("store metadata 2.2.7");
 
-        backend
-            .upsert_gem_metadata_record(&sample_metadata(
+        cache
+            .upsert_metadata(&sample_metadata(
                 "2.2.8",
                 "Rack 2.2.8 summary",
                 "rack-proxy",
@@ -367,7 +370,7 @@ mod tests {
             .await
             .expect("store metadata 2.2.8");
 
-        backend
+        cache
     }
 
     fn sample_metadata(version: &str, summary: &str, dependency: &str) -> GemMetadata {
@@ -421,8 +424,12 @@ mod tests {
     }
 
     fn build_app_context() -> AppContext {
+        // Mock database connection for tests
+        let mock_db = DatabaseConnection::default();
+
         AppContext {
             environment: Environment::Test,
+            db: mock_db,
             queue_provider: None,
             config: loco_config::Config {
                 logger: loco_config::Logger {
@@ -450,7 +457,6 @@ mod tests {
                 initializers: None,
                 settings: None,
                 scheduler: None,
-                database: todo!(), // was already broken?,
             },
             mailer: None,
             storage: Storage::single(storage::drivers::null::new()).into(),
