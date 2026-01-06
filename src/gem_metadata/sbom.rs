@@ -1,7 +1,10 @@
+//! CycloneDX SBOM generation with recursive dependency resolution.
+
 use anyhow::{anyhow, Context, Result};
 use cyclonedx_bom::{
     models::{
-        component::{Classification, Component},
+        component::{Classification, Component, Components},
+        dependency::{Dependencies, Dependency},
         hash::{Hash, HashAlgorithm, HashValue, Hashes},
         license::{LicenseChoice, Licenses},
         metadata::Metadata as BomMetadata,
@@ -12,7 +15,10 @@ use cyclonedx_bom::{
 };
 use rama::telemetry::tracing::{info, warn};
 use state_machines::state_machine;
-use vein_adapter::{DependencyKind, GemMetadata};
+use std::collections::HashSet;
+use vein_adapter::{CacheBackend, CacheBackendTrait, DependencyKind, GemMetadata};
+
+use super::version_req::find_latest_matching;
 
 state_machine! {
     name: SbomFlow,
@@ -99,6 +105,10 @@ impl SbomFlow<SbomContext, Pending> {
     }
 }
 
+/// Default maximum depth for recursive dependency resolution.
+const DEFAULT_MAX_DEPTH: usize = 10;
+
+/// Generate a CycloneDX SBOM for a gem (non-recursive, for backward compatibility).
 pub fn generate_cyclonedx_sbom(
     metadata: &GemMetadata,
     existing_sbom: Option<serde_json::Value>,
@@ -119,7 +129,7 @@ pub fn generate_cyclonedx_sbom(
         return Ok(result);
     }
 
-    let computed = compute_cyclonedx_sbom(metadata)?;
+    let computed = compute_cyclonedx_sbom(metadata, &[], &[])?;
     let flow = flow.mark_computed(computed)?;
     let (result, reused) = flow.into_ctx().into_result();
     if !reused {
@@ -144,12 +154,266 @@ pub fn generate_cyclonedx_sbom(
     Ok(result)
 }
 
-fn compute_cyclonedx_sbom(metadata: &GemMetadata) -> Result<Option<serde_json::Value>> {
+/// Resolved dependency with its metadata (if available).
+struct ResolvedDep {
+    name: String,
+    version: String,
+    bom_ref: String,
+    /// Full metadata if available, None if only basic info
+    metadata: Option<GemMetadata>,
+}
+
+/// Generate a CycloneDX SBOM with recursive dependency resolution.
+///
+/// Resolves dependencies to their latest matching versions and includes them
+/// as proper CycloneDX components.
+pub async fn generate_cyclonedx_sbom_recursive(
+    metadata: &GemMetadata,
+    existing_sbom: Option<serde_json::Value>,
+    cache: &CacheBackend,
+    max_depth: Option<usize>,
+) -> Result<Option<serde_json::Value>> {
+    let flow = SbomFlow::new(SbomContext::new(existing_sbom));
+    if flow.ctx().has_existing() {
+        let flow = flow.mark_reused()?;
+        let (result, reused) = flow.into_ctx().into_result();
+        if reused {
+            info!(
+                event = "sbom.reuse",
+                gem = %metadata.name,
+                version = %metadata.version,
+                platform = %metadata.platform,
+                "reused cached CycloneDX SBOM"
+            );
+        }
+        return Ok(result);
+    }
+
+    // Resolve all dependencies recursively
+    let mut visited = HashSet::new();
+    let root_ref = format!("pkg:gem/{}@{}", metadata.name, metadata.version);
+    visited.insert(root_ref.clone());
+
+    let resolved = resolve_dependencies_recursive(
+        &metadata.dependencies,
+        cache,
+        &mut visited,
+        0,
+        max_depth.unwrap_or(DEFAULT_MAX_DEPTH),
+    )
+    .await;
+
+    // Build components and dependencies lists
+    let (components, dep_graph) = build_components_and_deps(metadata, &resolved);
+
+    let computed = compute_cyclonedx_sbom(metadata, &components, &dep_graph)?;
+    let flow = flow.mark_computed(computed)?;
+    let (result, reused) = flow.into_ctx().into_result();
+
+    if !reused {
+        if result.is_some() {
+            info!(
+                event = "sbom.compute.recursive",
+                gem = %metadata.name,
+                version = %metadata.version,
+                platform = %metadata.platform,
+                dep_count = resolved.len(),
+                "generated recursive CycloneDX SBOM"
+            );
+        } else {
+            info!(
+                event = "sbom.absent",
+                gem = %metadata.name,
+                version = %metadata.version,
+                platform = %metadata.platform,
+                "gem provided no SBOM-compatible metadata payload"
+            );
+        }
+    }
+    Ok(result)
+}
+
+/// Recursively resolve dependencies to their latest matching versions.
+async fn resolve_dependencies_recursive(
+    deps: &[vein_adapter::GemDependency],
+    cache: &CacheBackend,
+    visited: &mut HashSet<String>,
+    depth: usize,
+    max_depth: usize,
+) -> Vec<ResolvedDep> {
+    if depth >= max_depth {
+        return Vec::new();
+    }
+
+    let mut resolved = Vec::new();
+
+    for dep in deps {
+        // Only resolve runtime dependencies for the SBOM
+        if dep.kind != DependencyKind::Runtime {
+            continue;
+        }
+
+        // Get available versions for this gem
+        let versions = cache
+            .get_gem_versions_for_index(&dep.name)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|v| v.version)
+            .collect::<Vec<_>>();
+
+        // Find latest matching version, or use requirement as version placeholder
+        let resolved_version = find_latest_matching(&versions, &dep.requirement)
+            .unwrap_or_else(|| dep.requirement.clone());
+
+        // Create bom-ref for cycle detection
+        let bom_ref = format!("pkg:gem/{}@{}", dep.name, resolved_version);
+        if visited.contains(&bom_ref) {
+            continue; // Already processed
+        }
+        visited.insert(bom_ref.clone());
+
+        // Try to fetch metadata
+        let dep_metadata = cache
+            .gem_metadata(&dep.name, &resolved_version, Some("ruby"))
+            .await
+            .ok()
+            .flatten();
+
+        // Recursively resolve this dependency's dependencies (if we have metadata)
+        let transitive = if let Some(ref meta) = dep_metadata {
+            Box::pin(resolve_dependencies_recursive(
+                &meta.dependencies,
+                cache,
+                visited,
+                depth + 1,
+                max_depth,
+            ))
+            .await
+        } else {
+            Vec::new()
+        };
+
+        resolved.push(ResolvedDep {
+            name: dep.name.clone(),
+            version: resolved_version,
+            bom_ref,
+            metadata: dep_metadata,
+        });
+
+        resolved.extend(transitive);
+    }
+
+    resolved
+}
+
+/// Build CycloneDX components and dependency graph from resolved deps.
+fn build_components_and_deps(
+    root: &GemMetadata,
+    resolved: &[ResolvedDep],
+) -> (Vec<Component>, Vec<(String, Vec<String>)>) {
+    let mut components = Vec::new();
+    let mut dep_graph = Vec::new();
+
+    // Root component's dependencies
+    let root_ref = format!("pkg:gem/{}@{}", root.name, root.version);
+    let root_deps: Vec<String> = root
+        .dependencies
+        .iter()
+        .filter(|d| d.kind == DependencyKind::Runtime)
+        .filter_map(|d| {
+            // Find the resolved version for this dep
+            resolved
+                .iter()
+                .find(|r| r.name == d.name)
+                .map(|r| r.bom_ref.clone())
+        })
+        .collect();
+    if !root_deps.is_empty() {
+        dep_graph.push((root_ref, root_deps));
+    }
+
+    // Build component for each resolved dependency
+    for resolved_dep in resolved {
+        let mut component = Component::new(
+            Classification::Library,
+            &resolved_dep.name,
+            &resolved_dep.version,
+            Some(resolved_dep.bom_ref.clone()),
+        );
+
+        // Set PURL (always available from name/version)
+        if let Ok(purl) = Purl::new("gem", &resolved_dep.name, &resolved_dep.version) {
+            component.purl = Some(purl);
+        }
+
+        // Add rich metadata if available
+        if let Some(ref meta) = resolved_dep.metadata {
+            if let Some(desc) = meta.description.as_deref().or(meta.summary.as_deref()) {
+                component.description = Some(NormalizedString::new(desc));
+            }
+
+            component.group = Some(NormalizedString::new(&meta.platform));
+
+            if !meta.sha256.is_empty() {
+                component.hashes = Some(Hashes(vec![Hash {
+                    alg: HashAlgorithm::SHA_256,
+                    content: HashValue(meta.sha256.clone()),
+                }]));
+            }
+
+            // Add licenses
+            let license_choices: Vec<LicenseChoice> = meta
+                .licenses
+                .iter()
+                .filter_map(|license| {
+                    let trimmed = license.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(LicenseChoice::license(trimmed))
+                    }
+                })
+                .collect();
+            if !license_choices.is_empty() {
+                component.licenses = Some(Licenses(license_choices));
+            }
+
+            // Add this component's dependencies to the graph
+            let comp_deps: Vec<String> = meta
+                .dependencies
+                .iter()
+                .filter(|d| d.kind == DependencyKind::Runtime)
+                .filter_map(|d| {
+                    resolved
+                        .iter()
+                        .find(|r| r.name == d.name)
+                        .map(|r| r.bom_ref.clone())
+                })
+                .collect();
+            if !comp_deps.is_empty() {
+                dep_graph.push((resolved_dep.bom_ref.clone(), comp_deps));
+            }
+        }
+
+        components.push(component);
+    }
+
+    (components, dep_graph)
+}
+
+fn compute_cyclonedx_sbom(
+    metadata: &GemMetadata,
+    dep_components: &[Component],
+    dep_graph: &[(String, Vec<String>)],
+) -> Result<Option<serde_json::Value>> {
+    let root_ref = format!("pkg:gem/{}@{}", metadata.name, metadata.version);
+
     let mut component = Component::new(
         Classification::Library,
         &metadata.name,
         &metadata.version,
-        None,
+        Some(root_ref.clone()),
     );
 
     if let Some(desc) = metadata
@@ -296,25 +560,6 @@ fn compute_cyclonedx_sbom(metadata: &GemMetadata) -> Result<Option<serde_json::V
         properties.push(Property::new("vein:funding-url", funding));
     }
 
-    if !metadata.dependencies.is_empty() {
-        let deps_summary = metadata
-            .dependencies
-            .iter()
-            .map(|dep| {
-                let kind = match dep.kind {
-                    DependencyKind::Runtime => "runtime",
-                    DependencyKind::Development => "development",
-                    DependencyKind::Optional => "optional",
-                    DependencyKind::Unknown => "unknown",
-                };
-                format!("{} {} [{}]", dep.name, dep.requirement, kind)
-            })
-            .collect::<Vec<_>>()
-            .join("; ");
-
-        properties.push(Property::new("vein:dependencies", &deps_summary));
-    }
-
     if !properties.is_empty() {
         component.properties = Some(Properties(properties));
     }
@@ -331,11 +576,29 @@ fn compute_cyclonedx_sbom(metadata: &GemMetadata) -> Result<Option<serde_json::V
         bom_metadata.licenses = Some(component_licenses);
     }
 
-    let bom = Bom {
+    // Build the BOM with components and dependencies
+    let mut bom = Bom {
         spec_version: SpecVersion::V1_5,
         metadata: Some(bom_metadata),
         ..Bom::default()
     };
+
+    // Add resolved components
+    if !dep_components.is_empty() {
+        bom.components = Some(Components(dep_components.to_vec()));
+    }
+
+    // Add dependency graph
+    if !dep_graph.is_empty() {
+        let deps: Vec<Dependency> = dep_graph
+            .iter()
+            .map(|(ref_id, child_deps)| Dependency {
+                dependency_ref: ref_id.clone(),
+                dependencies: child_deps.clone(),
+            })
+            .collect();
+        bom.dependencies = Some(Dependencies(deps));
+    }
 
     let validation = bom.validate_version(SpecVersion::V1_5);
     if !validation.passed() {

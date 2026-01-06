@@ -151,7 +151,7 @@ date: "2024-11-15"
 
     assert_eq!(metadata.name, "test-gem");
     assert_eq!(metadata.version, "1.2.3");
-    assert_eq!(metadata.platform.as_deref(), Some("ruby"));
+    assert_eq!(metadata.platform, "ruby");
     assert_eq!(metadata.summary.as_deref(), Some("Test gem"));
     assert_eq!(
         metadata.description.as_deref(),
@@ -238,7 +238,7 @@ licenses: []
     .expect("metadata extraction succeeds")
     .expect("metadata is present");
 
-    assert_eq!(metadata.platform.as_deref(), Some("arm64-darwin"));
+    assert_eq!(metadata.platform, "arm64-darwin");
     assert!(
         metadata.has_native_extensions,
         "ext/ directory marks native"
