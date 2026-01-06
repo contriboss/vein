@@ -16,7 +16,7 @@ async-trait = "0.1"
 chrono = { version = "0.4.38", default-features = false, features = ["clock"] }
 clap = { version = "4.5.23", features = ["derive"] }
 hex = "0.4"
-rama = { path = "../../../rama", default-features = false, features = ["http-full", "rustls"] }
+rama = { version = "0.3.0-alpha.4", default-features = false, features = ["http-full", "rustls"] }
 rustls = { version = "0.23", features = ["aws-lc-rs"] }
 sha2 = "0.10"
 sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
