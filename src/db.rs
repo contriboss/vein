@@ -4,18 +4,8 @@ use anyhow::{Context, Result};
 use rama::telemetry::tracing::{debug, error, info, warn};
 
 use crate::config::{BackoffStrategy, Config, DatabaseBackend};
-
-#[cfg(all(feature = "sqlite", not(feature = "postgres")))]
 use vein_adapter::CacheBackend;
-#[cfg(all(feature = "postgres", not(feature = "sqlite")))]
-use vein_adapter::CacheBackend;
-#[cfg(all(feature = "sqlite", feature = "postgres"))]
-use vein_adapter::{PostgresCacheBackend, SqliteCacheBackend};
 
-#[cfg(any(
-    all(feature = "sqlite", not(feature = "postgres")),
-    all(feature = "postgres", not(feature = "sqlite"))
-))]
 pub async fn connect_cache_backend(
     config: &Config,
 ) -> Result<(Arc<CacheBackend>, DatabaseBackend)> {
@@ -62,39 +52,6 @@ pub async fn connect_cache_backend(
         #[cfg(not(feature = "postgres"))]
         DatabaseBackend::Postgres { .. } => {
             anyhow::bail!("PostgreSQL support not compiled in. Rebuild with --features postgres");
-        }
-    };
-    Ok((Arc::new(cache), backend))
-}
-
-#[cfg(all(feature = "sqlite", feature = "postgres"))]
-pub async fn connect_cache_backend(
-    config: &Config,
-) -> Result<(Arc<SqliteCacheBackend>, DatabaseBackend)> {
-    let backend = config.database.backend()?;
-    let retry_config = &config.database.reliability.retry;
-
-    if retry_config.enabled {
-        info!(
-            max_attempts = retry_config.max_attempts,
-            initial_backoff_ms = retry_config.initial_backoff_ms,
-            strategy = ?retry_config.backoff_strategy,
-            "Retry enabled for database connection"
-        );
-    }
-
-    let cache = match &backend {
-        DatabaseBackend::Sqlite { path } => {
-            connect_with_retry(
-                || async { SqliteCacheBackend::connect(path).await },
-                retry_config,
-                "sqlite",
-            )
-            .await
-            .context("connecting sqlite cache")?
-        }
-        DatabaseBackend::Postgres { .. } => {
-            anyhow::bail!("When both features are enabled, only SQLite is supported at runtime. Use --features sqlite or --features postgres to choose one.");
         }
     };
     Ok((Arc::new(cache), backend))
