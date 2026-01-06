@@ -31,7 +31,7 @@ android = []
 
 [dependencies]
 # Rama network framework (conditional TLS via feature)
-rama = { path = "../rama", features = ["http-full", "tcp", "opentelemetry"] }
+rama = { version = "0.3.0-alpha.4", features = ["http-full", "tcp", "opentelemetry"] }
 rustls = { version = "0.23", features = ["aws-lc-rs"], default-features = false }
 
 # Async runtime
