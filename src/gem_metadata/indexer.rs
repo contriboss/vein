@@ -19,8 +19,6 @@ pub fn index_gem(gem_path: &Path) -> Result<Vec<FileSymbols>> {
         File::open(gem_path).with_context(|| format!("opening gem at {}", gem_path.display()))?;
     let mut archive = Archive::new(file);
 
-    let mut results = Vec::new();
-
     // Find and process data.tar.gz
     for entry in archive.entries().context("reading gem archive entries")? {
         let entry = entry.context("accessing gem archive entry")?;
@@ -29,12 +27,15 @@ pub fn index_gem(gem_path: &Path) -> Result<Vec<FileSymbols>> {
         if path.as_os_str().to_string_lossy() == "data.tar.gz" {
             let decoder = GzDecoder::new(entry);
             let symbols = process_data_tar(decoder)?;
-            results = symbols;
-            break;
+            return Ok(symbols);
         }
     }
 
-    Ok(results)
+    // data.tar.gz not found - this indicates a malformed gem
+    anyhow::bail!(
+        "data.tar.gz not found in gem archive at {}",
+        gem_path.display()
+    )
 }
 
 /// Process data.tar.gz and extract symbols from all .rb files

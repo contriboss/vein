@@ -104,10 +104,15 @@ pub fn detect_binary_arch(data: &[u8]) -> Result<BinaryInfo> {
             })
         }
         Object::PE(pe) => {
+            // PE machine type constants
+            const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
+            const IMAGE_FILE_MACHINE_ARM64: u16 = 0xAA64;
+            const IMAGE_FILE_MACHINE_I386: u16 = 0x014c;
+
             let arch = match pe.header.coff_header.machine {
-                0x8664 => DetectedArch::X86_64, // IMAGE_FILE_MACHINE_AMD64
-                0xAA64 => DetectedArch::Arm64,  // IMAGE_FILE_MACHINE_ARM64
-                0x14c => DetectedArch::X86,     // IMAGE_FILE_MACHINE_I386
+                IMAGE_FILE_MACHINE_AMD64 => DetectedArch::X86_64,
+                IMAGE_FILE_MACHINE_ARM64 => DetectedArch::Arm64,
+                IMAGE_FILE_MACHINE_I386 => DetectedArch::X86,
                 other => DetectedArch::Unknown(format!("pe_{:#x}", other)),
             };
 
@@ -174,13 +179,13 @@ pub fn matches_platform(claimed: Option<&str>, detected: &BinaryInfo) -> bool {
     }
 
     // Architecture must match (including aliases like aarch64 == arm64)
-    match (&claimed_arch, &detected.arch) {
-        (DetectedArch::Arm64, DetectedArch::Arm64) => true,
-        (DetectedArch::X86_64, DetectedArch::X86_64) => true,
-        (DetectedArch::X86, DetectedArch::X86) => true,
-        (DetectedArch::Arm, DetectedArch::Arm) => true,
-        _ => false,
-    }
+    matches!(
+        (&claimed_arch, &detected.arch),
+        (DetectedArch::Arm64, DetectedArch::Arm64)
+            | (DetectedArch::X86_64, DetectedArch::X86_64)
+            | (DetectedArch::X86, DetectedArch::X86)
+            | (DetectedArch::Arm, DetectedArch::Arm)
+    )
 }
 
 #[cfg(test)]

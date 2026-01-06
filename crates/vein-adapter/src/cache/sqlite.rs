@@ -1086,7 +1086,11 @@ impl CacheBackend for SqliteCacheBackend {
             DELETE FROM gem_symbols
             WHERE gem_name = ?1
               AND gem_version = ?2
-              AND ((gem_platform IS NULL AND ?3 IS NULL) OR gem_platform = ?3)
+              AND (
+                    (?3 IS NULL AND gem_platform IS NULL)
+                    OR
+                    (?3 IS NOT NULL AND gem_platform = ?3)
+                  )
             "#,
         )
         .bind(gem_name)

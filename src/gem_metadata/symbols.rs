@@ -164,4 +164,32 @@ end
         assert_eq!(symbols[0].symbol_type, SymbolType::Class);
         assert_eq!(symbols[0].name, "Foo::Bar::Baz");
     }
+
+    #[test]
+    fn test_extract_nested_class_parent() {
+        // Test that nested classes capture parent relationships
+        // Note: Current implementation only handles scope resolution (::), not lexical nesting
+        let source = r#"
+class Foo::Bar
+end
+"#;
+        let symbols = extract_symbols(source).unwrap();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "Foo::Bar");
+        assert_eq!(symbols[0].parent, Some("Foo".to_string()));
+    }
+
+    #[test]
+    fn test_extract_complex_scope_chain() {
+        // Test extraction of a class with multiple levels of scope resolution
+        let source = r#"
+class A::B::C::D
+end
+"#;
+        let symbols = extract_symbols(source).unwrap();
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].symbol_type, SymbolType::Class);
+        assert_eq!(symbols[0].name, "A::B::C::D");
+        assert_eq!(symbols[0].parent, Some("A::B::C".to_string()));
+    }
 }

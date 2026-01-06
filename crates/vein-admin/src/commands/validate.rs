@@ -5,6 +5,71 @@ use tracing::{error, info};
 use vein::{config::Config as VeinConfig, db, gem_metadata::validate_binary_architectures};
 use vein_adapter::CacheBackendKind;
 
+/// Checks if a string looks like a valid RubyGems platform identifier.
+///
+/// This helps distinguish between version suffixes (e.g., "1.0.0-pre1") and
+/// actual platform identifiers (e.g., "1.0.0-x86_64-linux").
+fn looks_like_rubygems_platform(s: &str) -> bool {
+    // Common RubyGems platform identifiers
+    const KNOWN_PLATFORMS: &[&str] = &[
+        "ruby",
+        "jruby",
+        "java",
+        "x86-mswin32",
+        "x64-mswin64",
+        "x86-mingw32",
+        "x64-mingw32",
+        "x64-mingw-ucrt",
+        "x86_64-linux",
+        "x86-linux",
+        "x86_64-darwin",
+        "arm64-darwin",
+        "universal-darwin",
+        "x86_64-freebsd",
+        "x86_64-openbsd",
+        "x86_64-solaris",
+    ];
+
+    if KNOWN_PLATFORMS.contains(&s) {
+        return true;
+    }
+
+    // Fallback: accept simple CPU-OS[-version] style strings with safe characters
+    fn valid_segment(seg: &str) -> bool {
+        !seg.is_empty()
+            && seg
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+    }
+
+    let mut parts = s.split('-');
+    let first = match parts.next() {
+        Some(p) => p,
+        None => return false,
+    };
+    let second = match parts.next() {
+        Some(p) => p,
+        None => return false,
+    };
+    let third = parts.next();
+
+    // If there are more than three segments, it's unlikely to be a standard platform string.
+    if parts.next().is_some() {
+        return false;
+    }
+
+    if !valid_segment(first) || !valid_segment(second) {
+        return false;
+    }
+    if let Some(third) = third {
+        if !valid_segment(third) {
+            return false;
+        }
+    }
+
+    true
+}
+
 pub async fn run(name: String, version: Option<String>) -> Result<()> {
     // Initialize logging
     tracing_subscriber::fmt()
@@ -99,19 +164,23 @@ async fn validate_gem_version_with_platform(
     platform: Option<&str>,
 ) -> Result<bool> {
     // Parse version which might contain platform (e.g., "0.0.52-arm64-darwin")
-    let (actual_version, claimed_platform): (String, Option<String>) = if platform.is_some() {
-        (version.to_string(), platform.map(|s| s.to_string()))
-    } else {
-        // Try to extract platform from version string
-        // E.g., "0.0.52-arm64-darwin" -> ("0.0.52", Some("arm64-darwin"))
-        // Split by '-' to separate version from platform
-        let parts: Vec<&str> = version.splitn(2, '-').collect();
-        if parts.len() == 2 {
-            // First part is version (e.g., "0.0.52"), second is platform (e.g., "arm64-darwin")
-            (parts[0].to_string(), Some(parts[1].to_string()))
+    // Only treat a suffix as platform if it looks like a valid RubyGems platform.
+    let (actual_version, claimed_platform): (String, Option<String>) = if let Some(p) = platform {
+        (version.to_string(), Some(p.to_string()))
+    } else if let Some(idx) = version.find('-') {
+        // Split into potential version and platform components.
+        let (maybe_version, rest) = version.split_at(idx);
+        // `rest` starts with '-', so skip it to get the candidate platform.
+        let maybe_platform = &rest[1..];
+
+        if looks_like_rubygems_platform(maybe_platform) {
+            (maybe_version.to_string(), Some(maybe_platform.to_string()))
         } else {
+            // Hyphen is part of the version (e.g., "1.0.0-pre1"), not a platform separator.
             (version.to_string(), None)
         }
+    } else {
+        (version.to_string(), None)
     };
 
     // Build gem file path
@@ -182,22 +251,16 @@ async fn validate_gem_version_with_platform(
 }
 
 async fn get_gem_versions(cache: &CacheBackendKind, name: &str) -> Result<Vec<(String, Option<String>)>> {
-    // Get all cached gems
-    let all_gems = cache
-        .get_all_gems()
+    // Get all versions for this gem (includes platform information)
+    let gem_versions = cache
+        .get_gem_versions_for_index(name)
         .await
-        .context("fetching all gems")?;
+        .context("fetching gem versions")?;
 
-    // Filter for this gem name and collect (version, platform) tuples
-    let versions: Vec<(String, Option<String>)> = all_gems
+    // Extract (version, platform) tuples
+    let versions: Vec<(String, Option<String>)> = gem_versions
         .into_iter()
-        .filter_map(|(gem_name, version_platform)| {
-            if gem_name == name {
-                Some((version_platform, None))
-            } else {
-                None
-            }
-        })
+        .map(|gv| (gv.version, gv.platform))
         .collect();
 
     Ok(versions)

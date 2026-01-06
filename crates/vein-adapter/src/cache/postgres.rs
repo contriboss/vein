@@ -962,7 +962,7 @@ impl CacheBackend for PostgresCacheBackend {
             DELETE FROM gem_symbols
             WHERE gem_name = $1
               AND gem_version = $2
-              AND ((gem_platform IS NULL AND $3 IS NULL) OR gem_platform = $3)
+              AND gem_platform IS NOT DISTINCT FROM $3
             "#,
         )
         .bind(gem_name)

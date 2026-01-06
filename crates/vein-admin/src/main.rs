@@ -76,10 +76,40 @@ enum Commands {
     },
 }
 
+async fn start_server(
+    environment: &Environment,
+    bind: Option<String>,
+    port: Option<u16>,
+) -> loco_rs::Result<()> {
+    // Create Loco app using standard boot process
+    let config_path = std::path::Path::new("crates/vein-admin/config");
+    let app = loco_rs::boot::create_app::<App, migration::Migrator>(
+        StartMode::ServerOnly,
+        environment,
+        loco_rs::config::Config::from_folder(environment, config_path)?,
+    )
+    .await?;
+
+    // Get binding and port from config or CLI overrides
+    let binding = bind.unwrap_or_else(|| app.app_context.config.server.binding.clone());
+    let port = port
+        .map(|p| p as i32)
+        .unwrap_or(app.app_context.config.server.port);
+
+    let serve_params = ServeParams { port, binding };
+
+    // Start the server
+    boot::start::<App>(app, serve_params, false).await?;
+
+    Ok(())
+}
+
 #[tokio::main]
 async fn main() -> loco_rs::Result<()> {
     // Initialize rustls crypto provider
-    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .map_err(|e| loco_rs::Error::Message(format!("Failed to install rustls crypto provider: {e}")))?;
 
     let cli = Cli::parse();
 
@@ -98,25 +128,7 @@ async fn main() -> loco_rs::Result<()> {
 
     match cli.command {
         Some(Commands::Serve { bind, port }) => {
-            // Create Loco app using standard boot process
-            let config_path = std::path::Path::new("crates/vein-admin/config");
-            let app = loco_rs::boot::create_app::<App, migration::Migrator>(
-                StartMode::ServerOnly,
-                &environment,
-                loco_rs::config::Config::from_folder(&environment, config_path)?,
-            )
-            .await?;
-
-            // Get binding and port from config or CLI overrides
-            let binding = bind.unwrap_or_else(|| app.app_context.config.server.binding.clone());
-            let port = port
-                .map(|p| p as i32)
-                .unwrap_or(app.app_context.config.server.port);
-
-            let serve_params = ServeParams { port, binding };
-
-            // Start the server
-            boot::start::<App>(app, serve_params, false).await?;
+            start_server(&environment, bind, port).await?;
         }
         Some(Commands::Sync {
             name,
@@ -139,19 +151,7 @@ async fn main() -> loco_rs::Result<()> {
         }
         None => {
             // Default to serve if no subcommand provided
-            let config_path = std::path::Path::new("crates/vein-admin/config");
-            let app = loco_rs::boot::create_app::<App, migration::Migrator>(
-                StartMode::ServerOnly,
-                &environment,
-                loco_rs::config::Config::from_folder(&environment, config_path)?,
-            )
-            .await?;
-
-            let binding = app.app_context.config.server.binding.clone();
-            let port = app.app_context.config.server.port;
-            let serve_params = ServeParams { port, binding };
-
-            boot::start::<App>(app, serve_params, false).await?;
+            start_server(&environment, None, None).await?;
         }
     }
 

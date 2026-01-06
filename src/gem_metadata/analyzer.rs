@@ -144,9 +144,9 @@ pub fn validate_binary_architectures(
                 let file_path = data_entry.path()?.into_owned();
                 let path_str = file_path.to_string_lossy();
 
-                // Check if this is a binary file by extension or location
+                // Check if this might be a binary file by extension or location
                 let path_str_lower = path_str.to_ascii_lowercase();
-                let is_binary = file_path
+                let might_be_binary = file_path
                     .extension()
                     .and_then(|s| s.to_str())
                     .map(|ext| matches!(ext, "so" | "dll" | "dylib" | "bundle" | "exe"))
@@ -154,14 +154,18 @@ pub fn validate_binary_architectures(
                     || path_str_lower.starts_with("exe/")
                     || path_str_lower.starts_with("bin/");
 
-                if is_binary {
+                if might_be_binary {
                     // Read the file contents
                     let mut contents = Vec::new();
-                    if let Err(_) = data_entry.read_to_end(&mut contents) {
+                    if let Err(err) = data_entry.read_to_end(&mut contents) {
+                        eprintln!(
+                            "Warning: failed to read binary file '{}': {}",
+                            path_str, err
+                        );
                         continue; // Skip files we can't read
                     }
 
-                    // Detect architecture
+                    // Detect architecture; only treat as binary if parsing succeeds
                     if let Ok(binary_info) = detect_binary_arch(&contents) {
                         let is_match = matches_platform(claimed_platform, &binary_info);
 
