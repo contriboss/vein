@@ -13,13 +13,13 @@ use rama::{
     layer::{MapErrLayer, TimeoutLayer},
     telemetry::tracing::{error, info},
 };
-use vein_adapter::CacheBackendKind;
+use vein_adapter::{CacheBackend, CacheBackendTrait};
 
 const NAMES_URL: &str = "https://rubygems.org/names.gz";
 const META_ETAG: &str = "catalog_names_etag";
 const META_LAST_MODIFIED: &str = "catalog_names_last_modified";
 
-pub async fn sync_names_once(index: &CacheBackendKind) -> Result<Option<usize>> {
+pub async fn sync_names_once(index: &CacheBackend) -> Result<Option<usize>> {
     let client = build_client()?;
     sync_names_with_client(index, &client).await
 }
@@ -41,7 +41,7 @@ fn build_client() -> Result<impl Service<Request, Output = Response, Error = Opa
 }
 
 async fn sync_names_with_client(
-    index: &CacheBackendKind,
+    index: &CacheBackend,
     client: &impl Service<Request, Output = Response, Error = OpaqueError>,
 ) -> Result<Option<usize>> {
     let mut request = client.get(NAMES_URL);
@@ -113,7 +113,7 @@ async fn sync_names_with_client(
 /// Spawns a background task that periodically syncs the catalog names.
 /// Syncs every 6 hours.
 #[allow(dead_code)]
-pub fn spawn_background_sync(backend: Arc<CacheBackendKind>) -> Result<()> {
+pub fn spawn_background_sync(backend: Arc<CacheBackend>) -> Result<()> {
     tokio::spawn(async move {
         let sync_interval = Duration::from_secs(6 * 60 * 60); // 6 hours
 

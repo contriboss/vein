@@ -6,7 +6,7 @@ use sqlx::{
 };
 
 use super::{
-    CacheBackend, GemVersion, QuarantineStats, VersionStatus,
+    CacheBackendTrait, GemVersion, QuarantineStats, VersionStatus,
     models::{DbGemMetadataRow, PostgresCachedAssetRow, PostgresGemVersionRow, format_timestamp},
     serialization::{hydrate_metadata_row, parse_language_rows, prepare_metadata_strings},
     types::{AssetKey, CachedAsset, GemMetadata, IndexStats, SbomCoverage},
@@ -259,7 +259,7 @@ impl PostgresCacheBackend {
     }
 }
 
-impl CacheBackend for PostgresCacheBackend {
+impl CacheBackendTrait for PostgresCacheBackend {
     async fn get(&self, key: &AssetKey<'_>) -> Result<Option<CachedAsset>> {
         let record = sqlx::query_as::<_, PostgresCachedAssetRow>(
             r#"

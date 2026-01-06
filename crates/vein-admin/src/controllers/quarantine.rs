@@ -7,7 +7,8 @@
 
 use rama::http::service::web::extract::{Form, Path, Query, State};
 use rama::http::service::web::response::{Html, IntoResponse, Json, Redirect};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use tera::Context;
 
 use crate::state::AdminState;
 
@@ -23,265 +24,81 @@ pub struct PendingQuery {
     offset: Option<u32>,
 }
 
+#[derive(Debug, Serialize)]
+struct QuarantineStats {
+    quarantined: u64,
+    available: u64,
+    pinned: u64,
+    yanked: u64,
+}
+
+#[derive(Debug, Serialize)]
+struct PendingGem {
+    name: String,
+    version: String,
+    platform: Option<String>,
+    platform_raw: String,
+    status: String,
+    hours_remaining: i64,
+}
+
 pub async fn index(State(state): State<AdminState>) -> impl IntoResponse {
+    let mut context = Context::new();
+    context.insert("current_page", "quarantine");
+
     if !state.resources.quarantine_enabled() {
-        return Html(disabled_html().to_string());
+        return match state.tera.render("quarantine/disabled.html", &context) {
+            Ok(html) => Html(html),
+            Err(e) => Html(format!("<h1>Template Error: {}</h1>", e)),
+        };
     }
 
     let stats = match state.resources.quarantine_stats().await {
-        Ok(s) => s,
+        Ok(s) => QuarantineStats {
+            quarantined: s.total_quarantined,
+            available: s.total_available,
+            pinned: s.total_pinned,
+            yanked: s.total_yanked,
+        },
         Err(e) => return Html(format!("<h1>Error: {}</h1>", e)),
     };
 
     let pending = match state.resources.quarantine_pending(50, 0).await {
-        Ok(p) => p,
+        Ok(p) => p
+            .into_iter()
+            .map(|gem| {
+                let time_remaining = gem.available_after.signed_duration_since(chrono::Utc::now());
+                let hours_remaining = time_remaining.num_hours().max(0);
+                let status = match gem.status {
+                    vein_adapter::VersionStatus::Quarantine => "Quarantine",
+                    vein_adapter::VersionStatus::Available => "Available",
+                    vein_adapter::VersionStatus::Yanked => "Yanked",
+                    vein_adapter::VersionStatus::Pinned => "Pinned",
+                };
+
+                PendingGem {
+                    name: gem.name,
+                    version: gem.version,
+                    platform: gem.platform.clone(),
+                    platform_raw: gem.platform.unwrap_or_default(),
+                    status: status.to_string(),
+                    hours_remaining,
+                }
+            })
+            .collect::<Vec<_>>(),
         Err(e) => return Html(format!("<h1>Error: {}</h1>", e)),
     };
 
-    let rows = pending
-        .into_iter()
-        .map(|gem| {
-            let platform_display = gem.platform.as_deref().unwrap_or("ruby");
-            let time_remaining = gem.available_after.signed_duration_since(chrono::Utc::now());
-            let hours_remaining = time_remaining.num_hours().max(0);
-            let status_class = match gem.status {
-                vein_adapter::VersionStatus::Quarantine => "quarantine",
-                vein_adapter::VersionStatus::Available => "available",
-                vein_adapter::VersionStatus::Yanked => "blocked",
-                vein_adapter::VersionStatus::Pinned => "approved",
-            };
+    context.insert("stats", &stats);
+    context.insert("pending", &pending);
 
-            format!(
-                r#"<tr class="status-{status_class}">
-  <td class="gem">{name}</td>
-  <td>{version}</td>
-  <td>{platform}</td>
-  <td class="status">{status:?}</td>
-  <td>{hours}h remaining</td>
-  <td class="actions">
-    <form method="post" action="/quarantine/{name}/{version}/approve" style="display:inline">
-      <input type="hidden" name="platform" value="{platform_raw}">
-      <input type="text" name="reason" placeholder="Reason" style="width:120px">
-      <button type="submit" class="btn approve">Approve</button>
-    </form>
-    <form method="post" action="/quarantine/{name}/{version}/block" style="display:inline">
-      <input type="hidden" name="platform" value="{platform_raw}">
-      <input type="text" name="reason" placeholder="Reason" style="width:120px">
-      <button type="submit" class="btn block">Block</button>
-    </form>
-  </td>
-</tr>"#,
-                name = gem.name,
-                version = gem.version,
-                platform = platform_display,
-                platform_raw = gem.platform.as_deref().unwrap_or(""),
-                status = gem.status,
-                status_class = status_class,
-                hours = hours_remaining,
-            )
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let html = format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Vein Admin - Quarantine</title>
-    <style>
-      :root {{
-        color-scheme: light dark;
-        --bg: #0d1119;
-        --panel: rgba(16, 22, 34, 0.85);
-        --border: rgba(99, 113, 140, 0.18);
-        --fg: #f2f6ff;
-        --muted: rgba(242, 246, 255, 0.7);
-        --quarantine: #f97316;
-        --approved: #22c55e;
-        --blocked: #ef4444;
-      }}
-      body {{
-        margin: 0;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        background:
-          radial-gradient(circle at top, rgba(249, 115, 22, 0.12), transparent 55%),
-          var(--bg);
-        color: var(--fg);
-        padding: clamp(2rem, 5vw, 4rem);
-      }}
-      main {{
-        max-width: 1200px;
-        margin: auto;
-        display: flex;
-        flex-direction: column;
-        gap: 1.5rem;
-      }}
-      header.top {{
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-      }}
-      header.top h1 {{
-        margin: 0;
-        font-size: clamp(2rem, 3.5vw, 2.5rem);
-      }}
-      header.top a {{
-        color: var(--muted);
-        text-decoration: none;
-      }}
-      .stats {{
-        display: flex;
-        gap: 1rem;
-        flex-wrap: wrap;
-      }}
-      .stat-card {{
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        padding: 1rem 1.5rem;
-        min-width: 150px;
-      }}
-      .stat-card .value {{
-        font-size: 2rem;
-        font-weight: 700;
-      }}
-      .stat-card .label {{
-        color: var(--muted);
-        font-size: 0.9rem;
-      }}
-      table {{
-        width: 100%;
-        border-collapse: collapse;
-        background: var(--panel);
-        border-radius: 20px;
-        overflow: hidden;
-        border: 1px solid var(--border);
-        box-shadow: 0 30px 55px rgba(15, 23, 42, 0.32);
-      }}
-      thead {{
-        background: rgba(249, 115, 22, 0.12);
-      }}
-      th, td {{
-        padding: 1rem;
-        text-align: left;
-        font-size: 0.95rem;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.08);
-      }}
-      th {{
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-size: 0.85rem;
-        color: var(--muted);
-      }}
-      tr:last-child td {{
-        border-bottom: none;
-      }}
-      td.gem {{
-        font-weight: 600;
-      }}
-      td.status {{
-        font-weight: 700;
-        letter-spacing: 0.06em;
-      }}
-      tr.status-quarantine td.status {{ color: var(--quarantine); }}
-      tr.status-approved td.status {{ color: var(--approved); }}
-      tr.status-blocked td.status {{ color: var(--blocked); }}
-      .btn {{
-        padding: 0.4rem 0.8rem;
-        border: none;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 0.85rem;
-        font-weight: 600;
-      }}
-      .btn.approve {{
-        background: var(--approved);
-        color: #000;
-      }}
-      .btn.block {{
-        background: var(--blocked);
-        color: #fff;
-      }}
-      nav.links {{
-        display: flex;
-        gap: 1rem;
-      }}
-      nav.links a {{
-        color: var(--muted);
-        text-decoration: none;
-      }}
-      nav.links a:hover {{
-        text-decoration: underline;
-      }}
-      input[type="text"] {{
-        padding: 0.4rem;
-        border: 1px solid var(--border);
-        border-radius: 4px;
-        background: var(--bg);
-        color: var(--fg);
-        margin-right: 0.5rem;
-      }}
-    </style>
-  </head>
-  <body>
-    <main>
-      <header class="top">
-        <h1>Quarantine Management</h1>
-        <a href="/">Back to dashboard</a>
-      </header>
-      <nav class="links">
-        <a href="/">Dashboard</a>
-        <a href="/catalog">Catalogue</a>
-        <a href="/changelog">Changelog</a>
-        <a href="/permissions">Entitlements</a>
-        <a href="/security">Security</a>
-      </nav>
-      <section class="stats">
-        <div class="stat-card">
-          <div class="value">{quarantined}</div>
-          <div class="label">Quarantined</div>
-        </div>
-        <div class="stat-card">
-          <div class="value">{available}</div>
-          <div class="label">Available</div>
-        </div>
-        <div class="stat-card">
-          <div class="value">{pinned}</div>
-          <div class="label">Pinned</div>
-        </div>
-        <div class="stat-card">
-          <div class="value">{yanked}</div>
-          <div class="label">Blocked</div>
-        </div>
-      </section>
-      <table>
-        <thead>
-          <tr>
-            <th>Gem</th>
-            <th>Version</th>
-            <th>Platform</th>
-            <th>Status</th>
-            <th>Time Remaining</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-        {rows}
-        </tbody>
-      </table>
-    </main>
-  </body>
-</html>
-"#,
-        quarantined = stats.total_quarantined,
-        available = stats.total_available,
-        pinned = stats.total_pinned,
-        yanked = stats.total_yanked,
-        rows = rows,
-    );
-
-    Html(html)
+    match state.tera.render("quarantine/index.html", &context) {
+        Ok(html) => Html(html),
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to render quarantine template");
+            Html(format!("<h1>Template Error: {}</h1>", e))
+        }
+    }
 }
 
 pub async fn api_stats(State(state): State<AdminState>) -> impl IntoResponse {
@@ -405,40 +222,4 @@ pub async fn block(
     }
 
     Redirect::to("/quarantine")
-}
-
-fn disabled_html() -> &'static str {
-    r#"<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>Vein Admin - Quarantine Disabled</title>
-    <style>
-      :root {
-        color-scheme: light dark;
-        --bg: #0d1119;
-        --fg: #f2f6ff;
-        --muted: rgba(242, 246, 255, 0.7);
-      }
-      body {
-        margin: 0;
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        background: var(--bg);
-        color: var(--fg);
-        padding: clamp(2rem, 5vw, 4rem);
-        text-align: center;
-      }
-      h1 { margin-top: 4rem; }
-      p { color: var(--muted); }
-      a { color: var(--fg); }
-    </style>
-  </head>
-  <body>
-    <h1>Quarantine Disabled</h1>
-    <p>The quarantine feature is not enabled in your configuration.</p>
-    <p>Enable it by setting <code>delay_policy.enabled = true</code> in vein.toml</p>
-    <p><a href="/">Back to dashboard</a></p>
-  </body>
-</html>
-"#
 }

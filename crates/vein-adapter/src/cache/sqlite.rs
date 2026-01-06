@@ -5,7 +5,7 @@ use chrono::{DateTime, Duration, Utc};
 use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
 
 use super::{
-    CacheBackend, GemVersion, QuarantineStats, VersionStatus,
+    CacheBackendTrait, GemVersion, QuarantineStats, VersionStatus,
     models::{CachedAssetRow, DbGemMetadataRow, GemVersionRow},
     serialization::{hydrate_metadata_row, parse_language_rows, prepare_metadata_strings},
     types::{AssetKey, CachedAsset, GemMetadata, IndexStats, SbomCoverage},
@@ -378,7 +378,7 @@ impl SqliteCacheBackend {
     }
 }
 
-impl CacheBackend for SqliteCacheBackend {
+impl CacheBackendTrait for SqliteCacheBackend {
     async fn get(&self, key: &AssetKey<'_>) -> Result<Option<CachedAsset>> {
         let record = sqlx::query_as::<_, CachedAssetRow>(
             r#"

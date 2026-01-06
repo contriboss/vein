@@ -51,7 +51,7 @@ use rama::{
         },
     },
 };
-use vein_adapter::FilesystemStorage;
+use vein_adapter::{CacheBackendTrait, FilesystemStorage};
 
 use crate::config::{Config, DatabaseBackend};
 use crate::db::connect_cache_backend;

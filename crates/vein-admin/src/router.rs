@@ -2,13 +2,19 @@
 
 use rama::http::service::web::response::DatastarScript;
 use rama::http::service::web::Router;
+use rama::utils::include_dir::{include_dir, Dir};
 
 use crate::controllers;
 use crate::state::AdminState;
 
+/// Embedded CSS assets.
+const CSS_ASSETS: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/assets/css");
+
 /// Build the main application router.
 pub fn build(state: AdminState) -> Router<AdminState> {
     Router::new_with_state(state)
+        // Static assets
+        .with_dir_embed("/assets/css", CSS_ASSETS)
         // Dashboard
         .with_get("/", controllers::dashboard::index)
         .with_get("/stats", controllers::dashboard::stats)

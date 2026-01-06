@@ -5,7 +5,7 @@ use rama::http::service::web::extract::Query;
 use rama::http::{Request, StatusCode};
 use serde::Deserialize;
 use serde_json::{json, to_string_pretty};
-use vein_adapter::CacheBackendKind;
+use vein_adapter::{CacheBackend, CacheBackendTrait};
 
 use super::response::{respond_json, respond_json_download, respond_text};
 use super::types::CacheStatus;
@@ -13,7 +13,7 @@ use super::utils::sanitize_filename;
 
 /// Handles health check requests
 pub async fn handle_health(
-    index: &CacheBackendKind,
+    index: &CacheBackend,
 ) -> Result<(rama::http::Response<rama::http::Body>, CacheStatus)> {
     let mut ok = true;
     let mut checks = Vec::new();
@@ -62,7 +62,7 @@ pub async fn handle_health(
 /// Handles SBOM (Software Bill of Materials) requests
 pub async fn handle_sbom_request(
     req: &Request<rama::http::Body>,
-    index: &CacheBackendKind,
+    index: &CacheBackend,
 ) -> Result<(rama::http::Response<rama::http::Body>, CacheStatus)> {
     let query = req.uri().query().unwrap_or("");
 

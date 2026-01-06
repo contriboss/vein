@@ -232,18 +232,20 @@ Vein uses a **dual-database architecture** for optimal performance:
 ## Development
 
 ```bash
-# Build
-cargo build
+# Build (SQLite backend, default)
+cargo build --release
+
+# Build with PostgreSQL backend
+cargo build --release --no-default-features --features postgres,tls
 
 # Run (with logging)
 RUST_LOG=debug cargo run -- serve
 
 # Test
 cargo test
-
-# Check code
-cargo clippy
 ```
+
+**Note:** SQLite and PostgreSQL are mutually exclusive at compile time. Pick one.
 
 ## Docker Deployment
 

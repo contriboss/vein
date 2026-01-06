@@ -1,0 +1,8 @@
+<nav class="links">
+  <a href="/"{% if current_page == "dashboard" %} class="active"{% endif %}>Dashboard</a>
+  <a href="/catalog"{% if current_page == "catalog" %} class="active"{% endif %}>Catalogue</a>
+  <a href="/changelog"{% if current_page == "changelog" %} class="active"{% endif %}>Changelog</a>
+  <a href="/permissions"{% if current_page == "permissions" %} class="active"{% endif %}>Entitlements</a>
+  <a href="/security"{% if current_page == "security" %} class="active"{% endif %}>Security</a>
+  <a href="/quarantine"{% if current_page == "quarantine" %} class="active"{% endif %}>Quarantine</a>
+</nav>

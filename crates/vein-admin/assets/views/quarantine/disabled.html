@@ -1,0 +1,12 @@
+{% extends "_base.html" %}
+
+{% block title %}Vein Admin - Quarantine Disabled{% endblock %}
+
+{% block content %}
+<div class="empty-state">
+  <h1>Quarantine Disabled</h1>
+  <p>The quarantine feature is not enabled in your configuration.</p>
+  <p>Enable it by setting <code>delay_policy.enabled = true</code> in vein.toml</p>
+  <p class="mt-lg"><a href="/">Back to dashboard</a></p>
+</div>
+{% endblock %}

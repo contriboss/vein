@@ -9,7 +9,7 @@ use sqlx::SqlitePool;
 use tera::Tera;
 use vein::config::Config as VeinConfig;
 use vein_adapter::{
-    CacheBackendKind, GemMetadata, GemVersion, IndexStats, QuarantineStats, SbomCoverage,
+    CacheBackend, CacheBackendTrait, GemMetadata, GemVersion, IndexStats, QuarantineStats, SbomCoverage,
     VersionStatus,
 };
 
@@ -34,14 +34,14 @@ impl AdminState {
 #[derive(Clone)]
 pub struct AdminResources {
     config: Arc<VeinConfig>,
-    cache: Arc<CacheBackendKind>,
+    cache: Arc<CacheBackend>,
     ruby_status: Arc<RubyStatus>,
 }
 
 impl AdminResources {
     pub fn new(
         config: Arc<VeinConfig>,
-        cache: Arc<CacheBackendKind>,
+        cache: Arc<CacheBackend>,
         ruby_status: Arc<RubyStatus>,
     ) -> Self {
         Self {

@@ -1,0 +1,28 @@
+{% extends "_base.html" %}
+
+{% block title %}Vein Admin - Changelog{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <h1>Changelog</h1>
+  <a href="/" class="back-link">Back to dashboard</a>
+</header>
+
+{% if entries %}
+  {% for entry in entries %}
+  <article class="entry{% if entry.highlight %} highlight{% endif %}">
+    <header>
+      <span class="date">{{ entry.date }}</span>
+      <span class="category">{{ entry.category }}</span>
+      <h2>{{ entry.title }}</h2>
+    </header>
+    <p>{{ entry.details }}</p>
+  </article>
+  {% endfor %}
+{% else %}
+<div class="empty-state">
+  <h3>No changelog entries</h3>
+  <p>Changelog entries will appear here as updates are made.</p>
+</div>
+{% endif %}
+{% endblock %}

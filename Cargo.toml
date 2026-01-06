@@ -23,8 +23,9 @@ name = "vein"
 path = "src/main.rs"
 
 [features]
-default = ["tls", "postgres"]
+default = ["tls", "sqlite"]
 tls = ["rama/rustls", "vein-adapter/tls"]
+sqlite = ["vein-adapter/sqlite"]
 postgres = ["vein-adapter/postgres"]
 android = []
 

@@ -2,93 +2,11 @@
 
 {% block title %}Vein Catalogue{% endblock %}
 
-{% block extra_styles %}
-.meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1rem;
-  color: rgba(240, 246, 255, 0.75);
-}
-h1 {
-  margin-top: 0;
-  font-size: clamp(1.8rem, 3vw, 2.4rem);
-}
-.filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-bottom: 1.5rem;
-}
-.filters a {
-  display: inline-flex;
-  padding: 0.4rem 0.8rem;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(255, 255, 255, 0.02);
-  color: #cbd5f5;
-  font-size: 0.9rem;
-  text-decoration: none;
-  transition: all 0.15s ease;
-}
-.filters a:hover {
-  border-color: rgba(79, 140, 255, 0.6);
-  color: #fff;
-}
-.filters a.active {
-  background: #4f8cff;
-  color: #091220;
-  border-color: #4f8cff;
-  font-weight: 600;
-}
-.search {
-  margin-bottom: 1.5rem;
-}
-.search input {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  border-radius: 12px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(17, 23, 34, 0.6);
-  color: #f4f7ff;
-  font-size: 1rem;
-}
-.search input::placeholder {
-  color: rgba(240, 246, 255, 0.4);
-}
-ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  columns: 2;
-  column-gap: 2rem;
-}
-li {
-  break-inside: avoid;
-  padding: 0.4rem 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.14);
-}
-.pager {
-  margin-top: 2rem;
-  display: flex;
-  gap: 1rem;
-}
-.pager span {
-  color: rgba(240, 246, 255, 0.6);
-}
-{% endblock %}
-
 {% block content %}
-<div class="meta">
+<header class="page-header">
   <h1>Vein Catalogue</h1>
-  <span>Total gems: {{ total_label }}</span>
-</div>
-<nav class="links">
-  <a href="/">Dashboard</a>
-  <a href="/changelog">Changelog</a>
-  <a href="/permissions">Entitlements</a>
-  <a href="/security">Security</a>
-</nav>
+  <span class="text-dim">Total gems: {{ total_label }}</span>
+</header>
 <div class="search">
   <input
     type="text"

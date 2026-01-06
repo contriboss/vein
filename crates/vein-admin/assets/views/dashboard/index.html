@@ -2,228 +2,31 @@
 
 {% block title %}Vein Dashboard{% endblock %}
 
-{% block main_width %}960px{% endblock %}
-
-{% block extra_styles %}
-:root {
-  color-scheme: light dark;
-  --bg: #0b1018;
-  --fg: #f4f7ff;
-  --muted: #96a1b7;
-  --panel: rgba(17, 23, 34, 0.75);
-  --border: rgba(148, 163, 184, 0.2);
-  --accent: #4f8cff;
-  --accent-soft: rgba(79, 140, 255, 0.2);
-}
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #f5f7fc;
-    --fg: #101522;
-    --muted: #4c566f;
-    --panel: rgba(255, 255, 255, 0.85);
-    --border: rgba(15, 23, 42, 0.08);
-    --accent: #1d4ed8;
-    --accent-soft: rgba(29, 78, 216, 0.08);
-  }
-}
-body {
-  background: radial-gradient(circle at top, rgba(79, 140, 255, 0.06), transparent 55%), var(--bg);
-  min-height: 100vh;
-  display: flex;
-}
-main {
-  width: min(960px, 100%);
-  display: flex;
-  flex-direction: column;
-  gap: 2.5rem;
-}
-header.dash-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1.5rem;
-  padding: clamp(1.75rem, 3vw, 2.5rem);
-  border-radius: 24px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  box-shadow: 0 40px 80px rgba(15, 23, 42, 0.2);
-  backdrop-filter: blur(20px);
-}
-header.dash-header h1 {
-  margin: 0;
-  font-size: clamp(1.75rem, 4vw, 2.3rem);
-  letter-spacing: -0.03em;
-}
-header.dash-header p {
-  margin: .35rem 0 0;
-  color: var(--muted);
-  font-size: clamp(0.95rem, 1.8vw, 1rem);
-}
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: .5rem;
-  padding: .5rem 1rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,0.02);
-  color: var(--muted);
-  font-size: .9rem;
-}
-nav.links {
-  display: flex;
-  gap: 1rem;
-  margin: -1.5rem 0 1rem;
-  padding: 0 clamp(1.75rem, 3vw, 2.5rem);
-}
-nav.links a {
-  color: var(--accent);
-  font-weight: 600;
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 1.5rem;
-}
-.card {
-  padding: 1.6rem;
-  border-radius: 20px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  box-shadow: 0 24px 48px rgba(15, 23, 42, 0.18);
-  display: flex;
-  flex-direction: column;
-  gap: .85rem;
-}
-.card h2 {
-  margin: 0;
-  font-size: .95rem;
-  text-transform: uppercase;
-  letter-spacing: .14em;
-  color: var(--muted);
-}
-.card .metric {
-  font-size: clamp(1.8rem, 3.4vw, 2.4rem);
-  font-weight: 600;
-}
-.detail {
-  margin-top: auto;
-  font-size: .9rem;
-  color: var(--muted);
-  line-height: 1.5;
-}
-.muted {
-  color: var(--muted);
-}
-.panel {
-  padding: 1.75rem;
-  border-radius: 20px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.16);
-  display: grid;
-  gap: 1rem;
-}
-.feature-box {
-  display: grid;
-  gap: 1.1rem;
-  padding: clamp(1.75rem, 3vw, 2.3rem);
-  border-radius: 22px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  box-shadow: 0 26px 45px rgba(15, 23, 42, 0.18);
-}
-.feature-box h2 {
-  margin: 0;
-  font-size: 1.1rem;
-  text-transform: uppercase;
-  letter-spacing: .12em;
-  color: var(--muted);
-}
-.feature-box ul {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: .75rem;
-}
-.feature-box li {
-  display: flex;
-  align-items: center;
-  gap: .8rem;
-  font-size: 1rem;
-  color: var(--fg);
-}
-.feature-box li span.icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 700;
-  font-size: .9rem;
-}
-.panel dl {
-  margin: 0;
-  display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: .75rem 1.5rem;
-  font-size: .95rem;
-}
-.panel dt {
-  font-weight: 600;
-  color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: .1em;
-}
-.panel dd {
-  margin: 0;
-  font-family: 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
-  font-size: .95rem;
-  color: var(--fg);
-}
-{% endblock %}
-
 {% block content %}
-<header class="dash-header">
+<header class="page-header">
   <div>
-    <h1>Vein Admin Console</h1>
-    <p>Live cache insight and node configuration snapshot</p>
+    <h1 class="mb-0">Vein Admin Console</h1>
+    <p class="text-dim mt-sm">Live cache insight and node configuration snapshot</p>
   </div>
-  <div style="display: flex; align-items: center; gap: 1rem;">
-    <div class="pill">
-      <span>Generated {{ generated_at }}</span>
-    </div>
-    <div class="pill" style="background: var(--accent-soft); color: var(--accent);">
-      <span>🔴</span>
-      <span>Live updating via SSE</span>
-    </div>
+  <div class="flex items-center gap-md">
+    <span class="pill">{{ generated_at }}</span>
+    <span class="pill pill--success">Live SSE</span>
   </div>
 </header>
 
-<nav class="links">
-  <a href="/catalog">Catalogue</a>
-  <a href="/changelog">Changelog</a>
-  <a href="/permissions">Entitlements</a>
-  <a href="/security">Security</a>
-</nav>
-
 {% include "dashboard/_partials/stats.html" %}
 
-<section class="feature-box">
-  <h2>Features enabled</h2>
-  <ul>
-    <li><span class="icon">&#10003;</span>Rubygems protocol</li>
-    <li><span class="icon">&#10003;</span>Upstream protocol bridge</li>
-    <li><span class="icon">&#10003;</span>SBOM export stream</li>
-    <li><span class="icon">&#10003;</span>Gem auto-updater</li>
-    <li><span class="icon">&#10003;</span>Diff-aware gem delivery</li>
-    <li><span class="icon">&#10003;</span>SSH entitlement signing</li>
-    <li><span class="icon">&#10003;</span>Incremental catalogue sync</li>
-    <li><span class="icon">&#10003;</span>Ruby lifecycle insights</li>
+<section class="panel mb-lg">
+  <h2>Features Enabled</h2>
+  <ul class="feature-list">
+    <li><span class="icon text-success">&#10003;</span> Rubygems protocol</li>
+    <li><span class="icon text-success">&#10003;</span> Upstream protocol bridge</li>
+    <li><span class="icon text-success">&#10003;</span> SBOM export stream</li>
+    <li><span class="icon text-success">&#10003;</span> Gem auto-updater</li>
+    <li><span class="icon text-success">&#10003;</span> Diff-aware gem delivery</li>
+    <li><span class="icon text-success">&#10003;</span> SSH entitlement signing</li>
+    <li><span class="icon text-success">&#10003;</span> Incremental catalogue sync</li>
+    <li><span class="icon text-success">&#10003;</span> Ruby lifecycle insights</li>
   </ul>
 </section>
 

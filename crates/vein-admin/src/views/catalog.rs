@@ -191,6 +191,7 @@ fn format_bytes(bytes: u64) -> String {
 
 pub fn list(tera: &Tera, data: CatalogListData) -> anyhow::Result<String> {
     let mut context = Context::new();
+    context.insert("current_page", "catalog");
     context.insert("entries", &data.entries);
     context.insert("page", &data.page);
     context.insert("total_pages", &data.total_pages);
@@ -203,6 +204,7 @@ pub fn list(tera: &Tera, data: CatalogListData) -> anyhow::Result<String> {
 
 pub fn detail(tera: &Tera, data: GemDetailData) -> anyhow::Result<String> {
     let mut context = Context::new();
+    context.insert("current_page", "catalog");
     context.insert("name", &data.name);
     context.insert("versions", &data.versions);
     context.insert("selected_version", &data.selected_version);

@@ -1,0 +1,51 @@
+{% extends "_base.html" %}
+
+{% block title %}Vein Admin - Security{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <h1>Security Centre</h1>
+  <a href="/" class="back-link">Back to dashboard</a>
+</header>
+
+{% if vulnerabilities %}
+<div class="panel mb-lg pill--danger">
+  {{ vulnerabilities | length }} known vulnerabilities detected.
+</div>
+{% else %}
+<div class="panel mb-lg pill--success">
+  No known vulnerabilities detected.
+</div>
+{% endif %}
+
+<table>
+  <thead>
+    <tr>
+      <th>Gem</th>
+      <th>Affected Version</th>
+      <th>CVE</th>
+      <th>Severity</th>
+      <th>Patched in</th>
+      <th>Notes</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for vuln in vulnerabilities %}
+    <tr>
+      <td><strong>{{ vuln.name }}</strong></td>
+      <td>{{ vuln.version }}</td>
+      <td>{{ vuln.cve }}</td>
+      <td class="text-{% if vuln.severity == 'critical' %}danger{% elif vuln.severity == 'high' %}warning{% else %}dim{% endif %}">
+        {{ vuln.severity | upper }}
+      </td>
+      <td>{{ vuln.patched_in }}</td>
+      <td class="text-dim">{{ vuln.note }}</td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="6" class="text-center text-muted">No vulnerabilities to display</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

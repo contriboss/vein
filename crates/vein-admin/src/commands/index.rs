@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use tracing::{error, info};
 use vein::{config::Config as VeinConfig, db, gem_metadata::indexer};
-use vein_adapter::CacheBackendKind;
+use vein_adapter::{CacheBackend, CacheBackendTrait};
 
 pub async fn run(name: String, version: Option<String>) -> Result<()> {
     // Initialize logging
@@ -63,7 +63,7 @@ pub async fn run(name: String, version: Option<String>) -> Result<()> {
 }
 
 async fn index_gem_version(
-    cache: &CacheBackendKind,
+    cache: &CacheBackend,
     config: &VeinConfig,
     name: &str,
     version: &str,
@@ -126,7 +126,7 @@ async fn index_gem_version(
     Ok(())
 }
 
-async fn get_gem_versions(cache: &CacheBackendKind, name: &str) -> Result<Vec<String>> {
+async fn get_gem_versions(cache: &CacheBackend, name: &str) -> Result<Vec<String>> {
     // Get all cached gems
     let all_gems = cache
         .get_all_gems()

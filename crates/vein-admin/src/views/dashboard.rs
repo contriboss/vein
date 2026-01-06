@@ -151,6 +151,7 @@ impl DashboardData {
 
 pub fn index(tera: &Tera, data: DashboardData) -> anyhow::Result<String> {
     let mut context = Context::new();
+    context.insert("current_page", "dashboard");
     context.insert("generated_at", &data.generated_at);
     context.insert("total_assets", &data.total_assets);
     context.insert("gems", &data.gems);

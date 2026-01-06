@@ -1,0 +1,82 @@
+{% extends "_base.html" %}
+
+{% block title %}Vein Admin - Entitlements{% endblock %}
+
+{% block content %}
+<header class="page-header">
+  <h1>Entitlements & Access Control</h1>
+  <a href="/" class="back-link">Back to dashboard</a>
+</header>
+
+<div class="panel mb-lg">
+  <span class="pill">Design draft</span>
+  <p class="text-dim mt-md">
+    Enterprise instances of Vein will mint short-lived download grants that describe
+    exactly which gems (and versions) a customer is entitled to. Grants are issued
+    through an SSH-signed request pipeline so that organisations can reuse existing
+    host keys without new credential stores.
+  </p>
+  <p class="text-dim">
+    This page sketches the flow we will implement next. Once the adapter exposes the
+    entitlement backend, live metrics will replace the placeholders below.
+  </p>
+</div>
+
+<section class="panel mb-lg">
+  <h2>Federated Permission Model</h2>
+  <p class="text-dim">
+    Each download token embeds a <code>policy</code> section enumerating gem versions that
+    were purchased or approved. The proxy validates the policy before serving cached assets.
+    Tokens are signed by an internal signer using the organisation's SSH private key. The
+    public key fingerprint doubles as the tenant identifier and allows mirroring nodes to
+    trust grants without central coordination.
+  </p>
+  <p class="text-dim mt-md">
+    Grant checks will happen at the adapter layer so all endpoints share the same entitlement
+    logic. Expired or revoked grants fallback to the upstream mirror, but only for packages
+    that the policy allows.
+  </p>
+</section>
+
+<section class="panel mb-lg">
+  <h2>Lifecycle at a Glance</h2>
+  <ul class="feature-list">
+    <li><span class="icon text-success">1</span> Admin registers an SSH public key for the tenant. Fingerprint is stored alongside the allowed catalogue scopes.</li>
+    <li><span class="icon text-success">2</span> Client CLI signs an access request with the tenant host key. Payload lists the gems + versions it needs right now.</li>
+    <li><span class="icon text-success">3</span> Vein issues a JSON Web Token with the request hash, allowed scopes, and expiry (15 minutes by default).</li>
+    <li><span class="icon text-success">4</span> Proxy validates the signature, checks requested gem against the policy, and serves the artifact if authorised.</li>
+    <li><span class="icon text-success">5</span> Background job audits grant usage to spot anomalous access and feed billing reports.</li>
+  </ul>
+</section>
+
+<section class="grid mb-lg">
+  <article class="card">
+    <h2>Token Format</h2>
+    <ul class="feature-list">
+      <li>Detached JWS signed with ed25519 (via SSH keys)</li>
+      <li>Claims: <code>tenant</code>, <code>scopes</code>, <code>versions</code>, <code>nonce</code>, <code>exp</code></li>
+      <li>Optional <code>mac</code> for offline validation</li>
+    </ul>
+  </article>
+  <article class="card">
+    <h2>Enforcement Points</h2>
+    <ul class="feature-list">
+      <li>Request filter before cache lookup</li>
+      <li>API downloads and pre-signed URLs</li>
+    </ul>
+  </article>
+  <article class="card">
+    <h2>Next Workstreams</h2>
+    <ul class="feature-list">
+      <li>Implement entitlement tables in <code>vein-adapter</code></li>
+      <li>Create signer CLI to mint grants locally</li>
+      <li>Dashboard widgets for tenant activity + revocations</li>
+    </ul>
+  </article>
+</section>
+
+<footer class="text-muted">
+  Looking ahead: the dashboard will surface current tenants, latest key rotations,
+  and unresolved access violations once the entitlement service is wired up.
+</footer>
+{% endblock %}
