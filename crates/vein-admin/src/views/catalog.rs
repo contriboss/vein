@@ -113,9 +113,9 @@ impl From<&GemMetadata> for GemMetadataView {
                 urlencoding::encode(&meta.name),
                 urlencoding::encode(&meta.version)
             );
-            if let Some(platform) = &meta.platform {
+            if meta.platform != "ruby" {
                 url.push_str("&platform=");
-                url.push_str(&urlencoding::encode(platform));
+                url.push_str(&urlencoding::encode(&meta.platform));
             }
             Some(url)
         } else {
@@ -136,7 +136,7 @@ impl From<&GemMetadata> for GemMetadataView {
             bug_tracker_url: meta.bug_tracker_url.clone(),
             wiki_url: meta.wiki_url.clone(),
             funding_url: meta.funding_url.clone(),
-            platform: meta.platform.clone(),
+            platform: Some(meta.platform.clone()),
             built_at: meta.built_at.clone(),
             size_formatted: format_bytes(meta.size_bytes),
             sha256: meta.sha256.clone(),
@@ -166,7 +166,7 @@ impl From<&GemMetadata> for GemMetadataView {
             sbom,
             sbom_json,
             sbom_download_url,
-            purl: purl_for_gem(&meta.name, &meta.version, meta.platform.as_deref()),
+            purl: purl_for_gem(&meta.name, &meta.version, Some(&meta.platform)),
         }
     }
 }

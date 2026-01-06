@@ -151,6 +151,7 @@ async fn detail(
         .ok_or_else(|| Error::Message("Tera not initialized".to_string()))?;
 
     let resources = resources(&ctx)?;
+
     let versions = resources
         .gem_versions(&params.name)
         .await
@@ -163,20 +164,22 @@ async fn detail(
         .cloned()
         .or_else(|| versions.first().cloned());
 
+    // Default to "ruby" platform when not specified
+    let query_platform = query.platform.as_deref().unwrap_or("ruby");
+
     let metadata = if let Some(version) = selected_version.as_deref() {
         resources
-            .gem_metadata(&params.name, version, query.platform.as_deref())
+            .gem_metadata(&params.name, version, Some(query_platform))
             .await
             .map_err(|err| Error::Message(err.to_string()))?
     } else {
         None
     };
 
-    let platform = query
-        .platform
-        .as_deref()
-        .or_else(|| metadata.as_ref().and_then(|m| m.platform.as_deref()))
-        .unwrap_or("ruby");
+    let platform = metadata
+        .as_ref()
+        .map(|m| m.platform.as_str())
+        .unwrap_or(query_platform);
 
     let data = views::catalog::GemDetailData {
         name: params.name,
@@ -213,8 +216,11 @@ async fn sbom(
         return Err(Error::NotFound);
     };
 
+    // Default to "ruby" platform when not specified
+    let query_platform = query.platform.as_deref().unwrap_or("ruby");
+
     let metadata = resources
-        .gem_metadata(&params.name, &version, query.platform.as_deref())
+        .gem_metadata(&params.name, &version, Some(query_platform))
         .await
         .map_err(|err| Error::Message(err.to_string()))?;
 
@@ -228,7 +234,7 @@ async fn sbom(
 
     let json_body = to_string_pretty(sbom).unwrap_or_else(|_| sbom.to_string());
 
-    let platform_slug = meta.platform.as_deref().unwrap_or("ruby");
+    let platform_slug = &meta.platform;
     let filename = format!(
         "{}-{}-{}.sbom.json",
         sanitize_for_filename(&meta.name),

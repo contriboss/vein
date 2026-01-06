@@ -5,12 +5,6 @@
   <div class="graph-controls">
     <button id="fit-btn">Fit</button>
     <button id="center-btn">Center</button>
-    <select id="layout-select">
-      <option value="breadthfirst">Hierarchical</option>
-      <option value="cose">Force-Directed</option>
-      <option value="circle">Circle</option>
-      <option value="concentric">Concentric</option>
-    </select>
   </div>
 </section>
 
@@ -149,15 +143,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
   document.getElementById('fit-btn').onclick = () => cy.fit(null, 30);
   document.getElementById('center-btn').onclick = () => cy.center();
-  document.getElementById('layout-select').onchange = function() {
-    const layouts = {
-      breadthfirst: { name: 'breadthfirst', directed: true, roots: '#{{ name }}', padding: 30, spacingFactor: 1.2 },
-      cose: { name: 'cose', animate: false, nodeRepulsion: 8000, idealEdgeLength: 80, gravity: 0.5, padding: 30 },
-      circle: { name: 'circle', padding: 30, avoidOverlap: true },
-      concentric: { name: 'concentric', padding: 30, concentric: n => n.data('isRoot') ? 2 : 1 }
-    };
-    cy.layout(layouts[this.value]).run();
-  };
 });
 </script>
 
@@ -176,7 +161,7 @@ document.addEventListener('DOMContentLoaded', function() {
   gap: 0.5rem;
   align-items: center;
 }
-.graph-controls button, .graph-controls select {
+.graph-controls button {
   padding: 0.4rem 0.8rem;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -184,7 +169,7 @@ document.addEventListener('DOMContentLoaded', function() {
   color: var(--fg);
   cursor: pointer;
 }
-.graph-controls button:hover, .graph-controls select:hover {
+.graph-controls button:hover {
   background: rgba(99, 102, 241, 0.2);
 }
 </style>

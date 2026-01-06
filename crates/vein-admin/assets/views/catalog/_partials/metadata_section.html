@@ -1,4 +1,3 @@
-{% import "catalog/_partials/link.html" as link %}
 {% if metadata %}
 <article>
   <h2>Gem overview</h2>
@@ -63,15 +62,6 @@
 {% include "catalog/_partials/dependency_graph.html" %}
 
 {% include "catalog/_partials/sbom_section.html" %}
-
-<article>
-  <h2>Metadata payload</h2>
-  {% if metadata.metadata_json %}
-  <pre class="metadata-json">{{ metadata.metadata_json }}</pre>
-  {% else %}
-  <p class="empty">No extra metadata payload recorded.</p>
-  {% endif %}
-</article>
 {% else %}
 <p class="empty">Metadata for this gem has not been cached yet. Trigger a fetch by installing this gem through Vein.</p>
 {% endif %}
