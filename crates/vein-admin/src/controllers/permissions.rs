@@ -186,6 +186,7 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
         <a href="/catalog">Catalogue</a>
         <a href="/changelog">Changelog</a>
         <a href="/security">Security</a>
+        <a href="/quarantine">Quarantine</a>
       </nav>
 
       <div class="panel summary">

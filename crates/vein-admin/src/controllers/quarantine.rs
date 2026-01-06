@@ -239,9 +239,10 @@ async fn index(State(ctx): State<AppContext>) -> Result<Response> {
       </header>
       <nav class="links">
         <a href="/">Dashboard</a>
-        <a href="/changelog">Changelog</a>
-        <a href="/security">Security</a>
         <a href="/catalog">Catalogue</a>
+        <a href="/changelog">Changelog</a>
+        <a href="/permissions">Entitlements</a>
+        <a href="/security">Security</a>
       </nav>
       <section class="stats">
         <div class="stat-card">

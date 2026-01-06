@@ -122,7 +122,9 @@ pub fn parse_gem_metadata(
     let mut metadata = GemMetadata {
         name: name.to_string(),
         version: version.to_string(),
-        platform: spec_platform.or(platform),
+        platform: spec_platform
+            .or(platform)
+            .unwrap_or_else(|| "ruby".to_string()),
         summary,
         description,
         licenses,

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rama::http::{Body, Response, StatusCode, header};
+use rama::http::{header, Body, Response, StatusCode};
 
 use crate::config::Config;
 
@@ -186,8 +186,6 @@ pub fn respond_homepage(config: &Config) -> Result<Response<Body>> {
       <ul>
         <li><span>1</span>Point clients at this URL as the primary gem source</li>
         <li><span>2</span>Watch the cache fill under <code>./gems</code></li>
-        <li><span>3</span>Ask for <a href="https://github.com/contriboss/vein">admin access</a>
-          to view dashboards (coming soon)</li>
       </ul>
     </main>
   </body>

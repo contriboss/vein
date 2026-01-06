@@ -45,7 +45,7 @@ impl From<PostgresCachedAssetRow> for CachedAsset {
 pub struct DbGemMetadataRow {
     pub name: String,
     pub version: String,
-    pub platform: Option<String>,
+    pub platform: String,
     pub summary: Option<String>,
     pub description: Option<String>,
     pub licenses: String,

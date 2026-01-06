@@ -13,7 +13,7 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(ColumnDef::new(GemMetadata::Name).string().not_null())
                     .col(ColumnDef::new(GemMetadata::Version).string().not_null())
-                    .col(ColumnDef::new(GemMetadata::Platform).string())
+                    .col(ColumnDef::new(GemMetadata::Platform).string().not_null().default("ruby"))
                     .col(ColumnDef::new(GemMetadata::Summary).string())
                     .col(ColumnDef::new(GemMetadata::Description).string())
                     .col(ColumnDef::new(GemMetadata::Licenses).string())

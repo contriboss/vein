@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use cyclonedx_bom::{
     models::{
         component::{Classification, Component},
@@ -112,7 +112,7 @@ pub fn generate_cyclonedx_sbom(
                 event = "sbom.reuse",
                 gem = %metadata.name,
                 version = %metadata.version,
-                platform = metadata.platform.as_deref().unwrap_or("ruby"),
+                platform = %metadata.platform,
                 "reused cached CycloneDX SBOM"
             );
         }
@@ -128,7 +128,7 @@ pub fn generate_cyclonedx_sbom(
                 event = "sbom.compute",
                 gem = %metadata.name,
                 version = %metadata.version,
-                platform = metadata.platform.as_deref().unwrap_or("ruby"),
+                platform = %metadata.platform,
                 "generated CycloneDX SBOM"
             );
         } else {
@@ -136,7 +136,7 @@ pub fn generate_cyclonedx_sbom(
                 event = "sbom.absent",
                 gem = %metadata.name,
                 version = %metadata.version,
-                platform = metadata.platform.as_deref().unwrap_or("ruby"),
+                platform = %metadata.platform,
                 "gem provided no SBOM-compatible metadata payload"
             );
         }
@@ -160,9 +160,7 @@ fn compute_cyclonedx_sbom(metadata: &GemMetadata) -> Result<Option<serde_json::V
         component.description = Some(NormalizedString::new(desc));
     }
 
-    if let Some(platform) = metadata.platform.as_deref() {
-        component.group = Some(NormalizedString::new(platform));
-    }
+    component.group = Some(NormalizedString::new(&metadata.platform));
 
     let author_list: Vec<_> = metadata
         .authors
@@ -201,9 +199,7 @@ fn compute_cyclonedx_sbom(metadata: &GemMetadata) -> Result<Option<serde_json::V
 
     let mut properties = Vec::new();
 
-    if let Some(platform) = metadata.platform.as_deref() {
-        properties.push(Property::new("vein:platform", platform));
-    }
+    properties.push(Property::new("vein:platform", &metadata.platform));
 
     properties.push(Property::new(
         "vein:has-native-extensions",

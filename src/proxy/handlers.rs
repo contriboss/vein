@@ -132,7 +132,7 @@ pub async fn handle_sbom_request(
         "{}-{}-{}.sbom.json",
         sanitize_filename(&meta.name),
         sanitize_filename(&meta.version),
-        sanitize_filename(meta.platform.as_deref().unwrap_or("ruby")),
+        sanitize_filename(&meta.platform),
     );
 
     let resp = respond_json_download(&body, &filename)?;

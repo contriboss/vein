@@ -31,6 +31,7 @@ android = []
 [dependencies]
 # Rama network framework (conditional TLS via feature)
 rama = { version = "0.3.0-alpha.4", features = ["http-full", "tcp", "opentelemetry"] }
+rustls = { version = "0.23", features = ["aws-lc-rs"], default-features = false }
 
 # Async runtime
 tokio = { version = "1.43", features = ["full"] }
@@ -63,7 +64,7 @@ tree-sitter = "0.26.3"
 tree-sitter-ruby = "0.23.1"
 
 # Binary parsing for architecture validation
-goblin = "0.9"
+goblin = "0.10"
 
 # Error handling
 anyhow = "1.0.95"

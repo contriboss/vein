@@ -271,6 +271,9 @@ fn main() -> Result<()> {
 
 #[allow(unreachable_code)]
 fn run_server(config_path: PathBuf) -> Result<()> {
+    // Initialize rustls crypto provider
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     let config = Arc::new(Config::load(Some(config_path)).context("loading configuration")?);
     config.validate().context("validating configuration")?;
 

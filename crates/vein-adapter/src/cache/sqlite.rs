@@ -261,7 +261,7 @@ impl SqliteCacheBackend {
         )
         .bind(&metadata.name)
         .bind(&metadata.version)
-        .bind(metadata.platform.as_deref())
+        .bind(&metadata.platform)
         .bind(metadata.summary.as_deref())
         .bind(metadata.description.as_deref())
         .bind(prepared.licenses_json)
@@ -338,7 +338,7 @@ impl SqliteCacheBackend {
             FROM gem_metadata
             WHERE name = ?1
               AND version = ?2
-              AND ((platform IS NULL AND ?3 IS NULL) OR platform = ?3)
+              AND platform = ?3
             "#,
         )
         .bind(name)
