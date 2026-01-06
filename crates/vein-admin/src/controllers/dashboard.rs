@@ -11,6 +11,7 @@ use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::state::AdminState;
+use crate::utils::receiver_stream;
 use crate::views;
 
 #[derive(Debug, Deserialize, Default)]
@@ -100,7 +101,7 @@ pub async fn stats_stream(State(state): State<AdminState>) -> impl IntoResponse 
     });
 
     // Convert receiver to a stream that can be used with Sse
-    let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+    let stream = receiver_stream(rx);
 
     Sse::new(KeepAliveStream::new(
         KeepAlive::new(),

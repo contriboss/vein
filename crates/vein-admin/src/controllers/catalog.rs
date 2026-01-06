@@ -11,6 +11,7 @@ use serde_json::to_string_pretty;
 use tokio::sync::mpsc;
 
 use crate::state::AdminState;
+use crate::utils::receiver_stream;
 use crate::views;
 
 const PAGE_SIZE: i64 = 100;
@@ -141,7 +142,7 @@ pub async fn search(
     });
 
     // Convert receiver to stream
-    let stream = tokio_stream::wrappers::ReceiverStream::new(rx);
+    let stream = receiver_stream(rx);
 
     Sse::new(KeepAliveStream::new(
         KeepAlive::new(),

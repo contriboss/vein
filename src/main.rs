@@ -50,6 +50,7 @@ use rama::{
             },
         },
     },
+    tls::rustls::dep::rustls,
 };
 use vein_adapter::{CacheBackendTrait, FilesystemStorage};
 
