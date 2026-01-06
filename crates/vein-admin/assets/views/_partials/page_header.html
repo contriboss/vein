@@ -1,0 +1,9 @@
+{% macro render(title, subtitle="") %}
+<header class="page-header">
+  <div>
+    <h1>{{ title }}</h1>
+    {% if subtitle %}<span class="text-dim">{{ subtitle }}</span>{% endif %}
+  </div>
+  <a href="/" class="back-link">Back to dashboard</a>
+</header>
+{% endmacro %}

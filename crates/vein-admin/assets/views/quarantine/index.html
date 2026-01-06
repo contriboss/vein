@@ -1,14 +1,13 @@
 {% extends "_base.html" %}
+{% import "_partials/page_header.html" as header %}
+{% import "_partials/quarantine_action.html" as action %}
 
 {% block title %}Vein Admin - Quarantine{% endblock %}
 
 {% block main_width %}1200px{% endblock %}
 
 {% block content %}
-<header class="page-header">
-  <h1>Quarantine Management</h1>
-  <a href="/" class="back-link">Back to dashboard</a>
-</header>
+{{ header::render(title="Quarantine Management") }}
 
 <section class="grid mb-lg">
   <div class="card">
@@ -51,16 +50,8 @@
       </td>
       <td>{{ gem.hours_remaining }}h remaining</td>
       <td>
-        <form method="post" action="/quarantine/{{ gem.name }}/{{ gem.version }}/approve" style="display:inline">
-          <input type="hidden" name="platform" value="{{ gem.platform_raw }}">
-          <input type="text" name="reason" placeholder="Reason">
-          <button type="submit" class="btn btn--success">Approve</button>
-        </form>
-        <form method="post" action="/quarantine/{{ gem.name }}/{{ gem.version }}/block" style="display:inline">
-          <input type="hidden" name="platform" value="{{ gem.platform_raw }}">
-          <input type="text" name="reason" placeholder="Reason">
-          <button type="submit" class="btn btn--danger">Block</button>
-        </form>
+        {{ action::form(gem=gem, action="approve", label="Approve", btn_class="btn--success") }}
+        {{ action::form(gem=gem, action="block", label="Block", btn_class="btn--danger") }}
       </td>
     </tr>
     {% else %}

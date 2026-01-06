@@ -1,12 +1,10 @@
 {% extends "_base.html" %}
+{% import "_partials/page_header.html" as header %}
 
 {% block title %}Vein Admin - Security{% endblock %}
 
 {% block content %}
-<header class="page-header">
-  <h1>Security Centre</h1>
-  <a href="/" class="back-link">Back to dashboard</a>
-</header>
+{{ header::render(title="Security Centre") }}
 
 {% if vulnerabilities %}
 <div class="panel mb-lg pill--danger">

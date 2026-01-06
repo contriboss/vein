@@ -1,12 +1,10 @@
 {% extends "_base.html" %}
+{% import "_partials/page_header.html" as header %}
 
 {% block title %}Vein Admin - Changelog{% endblock %}
 
 {% block content %}
-<header class="page-header">
-  <h1>Changelog</h1>
-  <a href="/" class="back-link">Back to dashboard</a>
-</header>
+{{ header::render(title="Changelog") }}
 
 {% if entries %}
   {% for entry in entries %}

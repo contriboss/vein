@@ -25,14 +25,14 @@ pub async fn bootstrap(config: &AdminConfig) -> anyhow::Result<AdminState> {
     // Connect cache backend
     let (cache_backend, _) = connect_cache_backend(&vein_config).await?;
 
-    // Connect admin DB (SQLx)
-    let db = SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect(&config.database.url)
-        .await?;
-
-    // Run migrations
-    sqlx::migrate!("./migrations").run(&db).await?;
+    // Run admin DB migrations
+    {
+        let db = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect(&config.database.url)
+            .await?;
+        sqlx::migrate!("./migrations").run(&db).await?;
+    }
 
     // Load templates
     let tera = Arc::new(Tera::new("crates/vein-admin/assets/views/**/*.html")?);
@@ -52,5 +52,5 @@ pub async fn bootstrap(config: &AdminConfig) -> anyhow::Result<AdminState> {
     // Spawn background sync
     catalog::spawn_background_sync(cache_backend)?;
 
-    Ok(AdminState::new(resources, tera, db))
+    Ok(AdminState::new(resources, tera))
 }

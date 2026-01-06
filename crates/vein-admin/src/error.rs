@@ -1,4 +1,9 @@
 //! Error types for vein-admin handlers.
+//!
+//! Structured error handling for controllers. Currently unused but
+//! provides a pattern for typed error responses.
+
+#![allow(dead_code)]
 
 use rama::http::service::web::response::{Html, IntoResponse};
 use rama::http::StatusCode;

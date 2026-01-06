@@ -2,10 +2,8 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use crate::ruby::RubyStatus;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use sqlx::SqlitePool;
 use tera::Tera;
 use vein::config::Config as VeinConfig;
 use vein_adapter::{
@@ -13,21 +11,18 @@ use vein_adapter::{
     VersionStatus,
 };
 
+use crate::ruby::RubyStatus;
+
 /// Main application state, passed to all handlers.
 #[derive(Clone)]
 pub struct AdminState {
     pub resources: AdminResources,
     pub tera: Arc<Tera>,
-    pub db: SqlitePool,
 }
 
 impl AdminState {
-    pub fn new(resources: AdminResources, tera: Arc<Tera>, db: SqlitePool) -> Self {
-        Self {
-            resources,
-            tera,
-            db,
-        }
+    pub fn new(resources: AdminResources, tera: Arc<Tera>) -> Self {
+        Self { resources, tera }
     }
 }
 

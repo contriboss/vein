@@ -10,6 +10,7 @@ use rama::http::service::web::response::{Html, IntoResponse, Json, Redirect};
 use serde::{Deserialize, Serialize};
 use tera::Context;
 
+use crate::controllers::render;
 use crate::state::AdminState;
 
 #[derive(Debug, Deserialize)]
@@ -47,10 +48,7 @@ pub async fn index(State(state): State<AdminState>) -> impl IntoResponse {
     context.insert("current_page", "quarantine");
 
     if !state.resources.quarantine_enabled() {
-        return match state.tera.render("quarantine/disabled.html", &context) {
-            Ok(html) => Html(html),
-            Err(e) => Html(format!("<h1>Template Error: {}</h1>", e)),
-        };
+        return render(&state.tera, "quarantine/disabled.html", &context);
     }
 
     let stats = match state.resources.quarantine_stats().await {
@@ -91,14 +89,7 @@ pub async fn index(State(state): State<AdminState>) -> impl IntoResponse {
 
     context.insert("stats", &stats);
     context.insert("pending", &pending);
-
-    match state.tera.render("quarantine/index.html", &context) {
-        Ok(html) => Html(html),
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to render quarantine template");
-            Html(format!("<h1>Template Error: {}</h1>", e))
-        }
-    }
+    render(&state.tera, "quarantine/index.html", &context)
 }
 
 pub async fn api_stats(State(state): State<AdminState>) -> impl IntoResponse {
