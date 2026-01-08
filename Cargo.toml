@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/vein-adapter", "crates/vein-admin", "crates/vein-admin/migration"]
+members = ["crates/vein-adapter", "crates/vein-admin"]
 
 [package]
 name = "vein"
@@ -23,8 +23,9 @@ name = "vein"
 path = "src/main.rs"
 
 [features]
-default = ["tls", "postgres"]
+default = ["tls", "sqlite"]
 tls = ["rama/rustls", "vein-adapter/tls"]
+sqlite = ["vein-adapter/sqlite"]
 postgres = ["vein-adapter/postgres"]
 android = []
 
@@ -63,7 +64,7 @@ tree-sitter = "0.26.3"
 tree-sitter-ruby = "0.23.1"
 
 # Binary parsing for architecture validation
-goblin = "0.9"
+goblin = "0.10"
 
 # Error handling
 anyhow = "1.0.95"

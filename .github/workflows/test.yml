@@ -12,6 +12,9 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        backend: [sqlite, postgres]
     steps:
       - uses: actions/checkout@v6
 
@@ -38,5 +41,5 @@ jobs:
           path: target
           key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
 
-      - name: Run tests
-        run: cargo test --all-features
+      - name: Run tests with ${{ matrix.backend }}
+        run: cargo test --no-default-features --features ${{ matrix.backend }},tls

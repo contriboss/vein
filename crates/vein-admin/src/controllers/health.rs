@@ -1,37 +1,28 @@
-use loco_rs::prelude::*;
+//! Health check endpoints.
 
-pub fn routes() -> Routes {
-    Routes::new().add("/up", get(up))
+use rama::http::service::web::extract::State;
+use rama::http::service::web::response::IntoResponse;
+use rama::http::StatusCode;
+
+use crate::state::AdminState;
+
+pub async fn up() -> impl IntoResponse {
+    (
+        StatusCode::OK,
+        [("content-type", "text/plain; charset=utf-8")],
+        "ok",
+    )
 }
 
-#[debug_handler]
-async fn up() -> Result<Response> {
-    let response = Response::builder()
-        .status(axum::http::StatusCode::OK)
-        .header(
-            axum::http::header::CONTENT_TYPE,
-            "text/plain; charset=utf-8",
-        )
-        .body("ok".into())
-        .map_err(|err| Error::Message(err.to_string()))?;
+pub async fn debug(State(state): State<AdminState>) -> impl IntoResponse {
+    let msg = match state.resources.snapshot().await {
+        Ok(_) => "Snapshot OK".to_string(),
+        Err(e) => format!("Snapshot error: {:?}", e),
+    };
 
-    Ok(response)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn up_returns_ok() {
-        let response = super::up().await.expect("up handler");
-        assert_eq!(response.status(), axum::http::StatusCode::OK);
-        assert_eq!(
-            response
-                .headers()
-                .get(axum::http::header::CONTENT_TYPE)
-                .and_then(|value| value.to_str().ok()),
-            Some("text/plain; charset=utf-8")
-        );
-    }
+    (
+        StatusCode::OK,
+        [("content-type", "text/plain; charset=utf-8")],
+        msg,
+    )
 }

@@ -1,8 +1,8 @@
-use loco_rs::prelude::*;
+//! HTTP request handlers for vein-admin.
 
-use crate::state::AdminResources;
+use rama::http::service::web::response::Html;
+use tera::{Context, Tera};
 
-pub mod assets;
 pub mod catalog;
 pub mod changelog;
 pub mod dashboard;
@@ -11,8 +11,13 @@ pub mod permissions;
 pub mod quarantine;
 pub mod security;
 
-pub(crate) fn resources(ctx: &AppContext) -> Result<AdminResources> {
-    ctx.shared_store
-        .get::<AdminResources>()
-        .ok_or_else(|| Error::Message("admin resources unavailable".into()))
+/// Render a Tera template with error handling.
+pub fn render(tera: &Tera, template: &str, context: &Context) -> Html<String> {
+    match tera.render(template, context) {
+        Ok(html) => Html(html),
+        Err(e) => {
+            tracing::error!(error = %e, template = %template, "Template render failed");
+            Html(format!("<h1>Template Error: {}</h1>", e))
+        }
+    }
 }

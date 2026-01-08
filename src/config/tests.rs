@@ -33,8 +33,6 @@ fn test_default_server_config() {
 fn test_default_upstream_config() {
     let upstream = UpstreamConfig::default();
     assert_eq!(upstream.url.to_string(), "https://rubygems.org/");
-    assert_eq!(upstream.timeout_secs, 30);
-    assert_eq!(upstream.connection_pool_size, 128);
 }
 
 #[test]
@@ -104,8 +102,6 @@ fn test_parse_full_config() {
 
     let upstream = config.upstream.unwrap();
     assert_eq!(upstream.url.to_string(), "https://example.com/");
-    assert_eq!(upstream.timeout_secs, 60);
-    assert_eq!(upstream.connection_pool_size, 256);
 
     assert_eq!(config.storage.path, PathBuf::from("/var/lib/vein/gems"));
     assert_eq!(
@@ -381,8 +377,6 @@ fn test_validate_https_upstream() {
     let config = Config {
         upstream: Some(UpstreamConfig {
             url: Uri::from_str("https://rubygems.org/").unwrap(),
-            timeout_secs: 30,
-            connection_pool_size: 128,
             ..UpstreamConfig::default()
         }),
         ..Default::default()
@@ -395,8 +389,6 @@ fn test_validate_http_upstream() {
     let config = Config {
         upstream: Some(UpstreamConfig {
             url: Uri::from_str("http://localhost:8346/").unwrap(),
-            timeout_secs: 30,
-            connection_pool_size: 128,
             ..UpstreamConfig::default()
         }),
         ..Default::default()
@@ -409,8 +401,6 @@ fn test_validate_invalid_scheme() {
     let config = Config {
         upstream: Some(UpstreamConfig {
             url: Uri::from_str("ftp://example.com/").unwrap(),
-            timeout_secs: 30,
-            connection_pool_size: 128,
             ..UpstreamConfig::default()
         }),
         ..Default::default()
@@ -481,28 +471,6 @@ fn test_zero_workers() {
     "#;
     let config: Config = toml::from_str(toml).unwrap();
     assert_eq!(config.server.workers, 0);
-}
-
-#[test]
-fn test_large_timeout() {
-    let toml = r#"
-        [upstream]
-        url = "https://example.com/"
-        timeout_secs = 3600
-    "#;
-    let config: Config = toml::from_str(toml).unwrap();
-    assert_eq!(config.upstream.unwrap().timeout_secs, 3600);
-}
-
-#[test]
-fn test_large_pool_size() {
-    let toml = r#"
-        [upstream]
-        url = "https://example.com/"
-        connection_pool_size = 10000
-    "#;
-    let config: Config = toml::from_str(toml).unwrap();
-    assert_eq!(config.upstream.unwrap().connection_pool_size, 10000);
 }
 
 #[test]

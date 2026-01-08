@@ -1,0 +1,64 @@
+{% extends "_base.html" %}
+{% import "_partials/page_header.html" as header %}
+{% import "_partials/quarantine_action.html" as action %}
+
+{% block title %}Vein Admin - Quarantine{% endblock %}
+
+{% block main_width %}1200px{% endblock %}
+
+{% block content %}
+{{ header::render(title="Quarantine Management") }}
+
+<section class="grid mb-lg">
+  <div class="card">
+    <div class="metric">{{ stats.quarantined }}</div>
+    <h2>Quarantined</h2>
+  </div>
+  <div class="card">
+    <div class="metric">{{ stats.available }}</div>
+    <h2>Available</h2>
+  </div>
+  <div class="card">
+    <div class="metric">{{ stats.pinned }}</div>
+    <h2>Pinned</h2>
+  </div>
+  <div class="card">
+    <div class="metric">{{ stats.yanked }}</div>
+    <h2>Blocked</h2>
+  </div>
+</section>
+
+<table>
+  <thead>
+    <tr>
+      <th>Gem</th>
+      <th>Version</th>
+      <th>Platform</th>
+      <th>Status</th>
+      <th>Time Remaining</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for gem in pending %}
+    <tr>
+      <td><strong>{{ gem.name }}</strong></td>
+      <td>{{ gem.version }}</td>
+      <td>{{ gem.platform | default(value="ruby") }}</td>
+      <td class="text-{% if gem.status == 'Quarantine' %}warning{% elif gem.status == 'Available' %}success{% elif gem.status == 'Yanked' %}danger{% else %}dim{% endif %}">
+        {{ gem.status }}
+      </td>
+      <td>{{ gem.hours_remaining }}h remaining</td>
+      <td>
+        {{ action::form(gem=gem, action="approve", label="Approve", btn_class="btn--success") }}
+        {{ action::form(gem=gem, action="block", label="Block", btn_class="btn--danger") }}
+      </td>
+    </tr>
+    {% else %}
+    <tr>
+      <td colspan="6" class="text-center text-muted">No versions in quarantine</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

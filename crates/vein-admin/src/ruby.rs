@@ -2,7 +2,14 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use chrono::{NaiveDate, Utc};
-use reqwest::Client;
+use rama::{
+    error::OpaqueError,
+    http::{
+        body::util::BodyExt, client::EasyHttpWebClient, header::HeaderValue, layer::required_header::AddRequiredRequestHeadersLayer, Body, Request, Response,
+    },
+    layer::{Layer, MapErrLayer, TimeoutLayer},
+    Service,
+};
 use serde::Deserialize;
 
 const BRANCHES_URL: &str =
@@ -64,7 +71,24 @@ impl Default for RubyStatus {
     }
 }
 
-async fn fetch_with_retry(client: &Client, url: &str, resource_name: &str) -> Result<String> {
+/// Build rama HTTP client with timeout and user-agent
+fn build_client() -> Result<impl Service<Request, Output = Response, Error = OpaqueError>> {
+    let inner = EasyHttpWebClient::default();
+
+    Ok((
+        MapErrLayer::new(OpaqueError::from_boxed),
+        TimeoutLayer::new(Duration::from_secs(15)),
+        AddRequiredRequestHeadersLayer::new()
+            .with_user_agent_header_value(HeaderValue::from_static("vein-admin/0.1.0")),
+    )
+        .into_layer(inner))
+}
+
+async fn fetch_with_retry(
+    client: &impl Service<Request, Output = Response, Error = OpaqueError>,
+    url: &str,
+    resource_name: &str,
+) -> Result<String> {
     const MAX_ATTEMPTS: u32 = 3;
     const INITIAL_BACKOFF_MS: u64 = 1000;
 
@@ -78,16 +102,29 @@ async fn fetch_with_retry(client: &Client, url: &str, resource_name: &str) -> Re
             "Fetching from GitHub"
         );
 
-        match client.get(url).send().await {
+        // Build request
+        let request = Request::builder()
+            .method("GET")
+            .uri(url)
+            .body(Body::empty())
+            .context("building request")?;
+
+        // Execute request
+        match client.serve(request).await {
             Ok(response) => {
                 let status = response.status();
 
-                // Check if we should retry based on status code
+                // Success path
                 if status.is_success() {
-                    return response
-                        .text()
+                    let body_bytes = response
+                        .into_body()
+                        .collect()
                         .await
-                        .context(format!("downloading {} body", resource_name));
+                        .context(format!("collecting {} body", resource_name))?
+                        .to_bytes();
+
+                    return String::from_utf8(body_bytes.to_vec())
+                        .context(format!("decoding {} as UTF-8", resource_name));
                 }
 
                 // Retry on rate limits (429) and server errors (5xx)
@@ -120,7 +157,7 @@ async fn fetch_with_retry(client: &Client, url: &str, resource_name: &str) -> Re
                 if attempt < MAX_ATTEMPTS {
                     tracing::warn!(
                         attempt = attempt,
-                        error = %err,
+                        error = ?err,
                         resource = resource_name,
                         "Network error, retrying..."
                     );
@@ -131,9 +168,11 @@ async fn fetch_with_retry(client: &Client, url: &str, resource_name: &str) -> Re
                     continue;
                 }
 
-                return Err(err).context(format!(
-                    "fetching {} data after {} attempts",
-                    resource_name, MAX_ATTEMPTS
+                return Err(anyhow::anyhow!(
+                    "fetching {} data after {} attempts: {}",
+                    resource_name,
+                    MAX_ATTEMPTS,
+                    err
                 ));
             }
         }
@@ -141,11 +180,7 @@ async fn fetch_with_retry(client: &Client, url: &str, resource_name: &str) -> Re
 }
 
 pub async fn fetch_ruby_status() -> Result<RubyStatus> {
-    let client = Client::builder()
-        .user_agent("vein-admin/0.1.0")
-        .timeout(Duration::from_secs(15))
-        .build()
-        .context("building reqwest client")?;
+    let client = build_client().context("building HTTP client")?;
 
     let branches_text = fetch_with_retry(&client, BRANCHES_URL, "branches").await?;
     let releases_text = fetch_with_retry(&client, RELEASES_URL, "releases").await?;

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 use tracing::{error, info};
 use vein::{config::Config as VeinConfig, db, gem_metadata::validate_binary_architectures};
-use vein_adapter::CacheBackendKind;
+use vein_adapter::{CacheBackend, CacheBackendTrait};
 
 /// Checks if a string looks like a valid RubyGems platform identifier.
 ///
@@ -93,11 +93,11 @@ pub async fn run(name: String, version: Option<String>) -> Result<()> {
     if let Some(ver) = version {
         // Validate specific version
         info!(gem = %name, version = %ver, "Validating gem");
-        validate_gem_version(&cache, &config, &name, &ver).await?;
+        validate_gem_version(&*cache, &config, &name, &ver).await?;
     } else {
         // Get all cached versions for this gem
         info!(gem = %name, "Fetching cached versions");
-        let versions = get_gem_versions(&cache, &name).await?;
+        let versions = get_gem_versions(&*cache, &name).await?;
 
         if versions.is_empty() {
             error!(gem = %name, "No cached versions found");
@@ -122,7 +122,7 @@ pub async fn run(name: String, version: Option<String>) -> Result<()> {
 }
 
 async fn validate_gem_version(
-    cache: &CacheBackendKind,
+    cache: &CacheBackend,
     config: &VeinConfig,
     name: &str,
     version: &str,
@@ -250,7 +250,7 @@ async fn validate_gem_version_with_platform(
     Ok(true)
 }
 
-async fn get_gem_versions(cache: &CacheBackendKind, name: &str) -> Result<Vec<(String, Option<String>)>> {
+async fn get_gem_versions(cache: &CacheBackend, name: &str) -> Result<Vec<(String, Option<String>)>> {
     // Get all versions for this gem (includes platform information)
     let gem_versions = cache
         .get_gem_versions_for_index(name)

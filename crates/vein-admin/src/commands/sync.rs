@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
-use rama::http::{Uri, body::util::BodyExt, header::HeaderMap};
+use rama::{http::{Uri, body::util::BodyExt, header::HeaderMap}, tls::rustls::dep::rustls};
 use sha2::{Digest, Sha256};
 use tracing::{error, info, warn};
 use vein::{config::Config as VeinConfig, db, gem_metadata::extract_gem_metadata, upstream::UpstreamClient};
-use vein_adapter::{AssetKey, AssetKind, CacheBackendKind, FilesystemStorage};
+use vein_adapter::{AssetKey, AssetKind, CacheBackend, CacheBackendTrait, FilesystemStorage};
 
 pub async fn run(
     name: String,
@@ -15,7 +15,7 @@ pub async fn run(
     // Initialize rustls crypto provider (required for TLS)
     rustls::crypto::aws_lc_rs::default_provider()
         .install_default()
-        .map_err(|e| anyhow!("Failed to install rustls crypto provider: {e}"))?;
+        .map_err(|e| anyhow!("Failed to install rustls crypto provider: {:?}", e))?;
 
     // Initialize logging
     tracing_subscriber::fmt()
@@ -103,7 +103,7 @@ pub async fn run(
 
 async fn sync_gem(
     client: &UpstreamClient,
-    cache: &CacheBackendKind,
+    cache: &CacheBackend,
     storage: &FilesystemStorage,
     base_url: Uri,
     name: &str,

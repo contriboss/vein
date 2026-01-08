@@ -50,8 +50,9 @@ use rama::{
             },
         },
     },
+    tls::rustls::dep::rustls,
 };
-use vein_adapter::FilesystemStorage;
+use vein_adapter::{CacheBackendTrait, FilesystemStorage};
 
 use crate::config::{Config, DatabaseBackend};
 use crate::db::connect_cache_backend;
@@ -271,6 +272,9 @@ fn main() -> Result<()> {
 
 #[allow(unreachable_code)]
 fn run_server(config_path: PathBuf) -> Result<()> {
+    // Initialize rustls crypto provider
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+
     let config = Arc::new(Config::load(Some(config_path)).context("loading configuration")?);
     config.validate().context("validating configuration")?;
 

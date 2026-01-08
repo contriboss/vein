@@ -7,13 +7,13 @@
       <tr><th>Authors</th><td>{{ metadata.authors | join(sep=", ") | default(value="—") }}</td></tr>
       <tr><th>Emails</th><td>{{ metadata.emails | join(sep=", ") | default(value="—") }}</td></tr>
       <tr><th>Licences</th><td>{{ metadata.licenses | join(sep=", ") | default(value="—") }}</td></tr>
-      <tr><th>Homepage</th><td>{% if metadata.homepage %}{% include "catalog/_partials/link.html" with url=metadata.homepage %}{% else %}—{% endif %}</td></tr>
-      <tr><th>Documentation</th><td>{% if metadata.documentation_url %}{% include "catalog/_partials/link.html" with url=metadata.documentation_url %}{% else %}—{% endif %}</td></tr>
-      <tr><th>Changelog</th><td>{% if metadata.changelog_url %}{% include "catalog/_partials/link.html" with url=metadata.changelog_url %}{% else %}—{% endif %}</td></tr>
-      <tr><th>Source</th><td>{% if metadata.source_code_url %}{% include "catalog/_partials/link.html" with url=metadata.source_code_url %}{% else %}—{% endif %}</td></tr>
-      <tr><th>Bug tracker</th><td>{% if metadata.bug_tracker_url %}{% include "catalog/_partials/link.html" with url=metadata.bug_tracker_url %}{% else %}—{% endif %}</td></tr>
-      <tr><th>Wiki</th><td>{% if metadata.wiki_url %}{% include "catalog/_partials/link.html" with url=metadata.wiki_url %}{% else %}—{% endif %}</td></tr>
-      <tr><th>Funding</th><td>{% if metadata.funding_url %}{% include "catalog/_partials/link.html" with url=metadata.funding_url %}{% else %}—{% endif %}</td></tr>
+      <tr><th>Homepage</th><td>{% if metadata.homepage %}{{ link::render(url=metadata.homepage) }}{% else %}—{% endif %}</td></tr>
+      <tr><th>Documentation</th><td>{% if metadata.documentation_url %}{{ link::render(url=metadata.documentation_url) }}{% else %}—{% endif %}</td></tr>
+      <tr><th>Changelog</th><td>{% if metadata.changelog_url %}{{ link::render(url=metadata.changelog_url) }}{% else %}—{% endif %}</td></tr>
+      <tr><th>Source</th><td>{% if metadata.source_code_url %}{{ link::render(url=metadata.source_code_url) }}{% else %}—{% endif %}</td></tr>
+      <tr><th>Bug tracker</th><td>{% if metadata.bug_tracker_url %}{{ link::render(url=metadata.bug_tracker_url) }}{% else %}—{% endif %}</td></tr>
+      <tr><th>Wiki</th><td>{% if metadata.wiki_url %}{{ link::render(url=metadata.wiki_url) }}{% else %}—{% endif %}</td></tr>
+      <tr><th>Funding</th><td>{% if metadata.funding_url %}{{ link::render(url=metadata.funding_url) }}{% else %}—{% endif %}</td></tr>
       <tr><th>Platform</th><td>{{ metadata.platform | default(value="ruby") }}</td></tr>
       <tr><th>Built at</th><td>{{ metadata.built_at | default(value="—") }}</td></tr>
       <tr><th>Size</th><td>{{ metadata.size_formatted }}</td></tr>
@@ -25,6 +25,22 @@
       <tr><th>Executables</th><td>{{ metadata.executables | join(sep=", ") | default(value="—") }}</td></tr>
       <tr><th>Extensions</th><td>{{ metadata.extensions | join(sep=", ") | default(value="—") }}</td></tr>
       <tr><th>Native languages</th><td>{{ metadata.native_languages | join(sep=", ") | default(value="—") }}</td></tr>
+    </tbody>
+  </table>
+</article>
+
+<article>
+  <h2>Install</h2>
+  <table class="meta-table">
+    <tbody>
+      <tr>
+        <th>Command line</th>
+        <td><code>gem install {{ name }} -v {{ selected_version }}</code></td>
+      </tr>
+      <tr>
+        <th>Gemfile</th>
+        <td><code>gem '{{ name }}', '~> {{ selected_version }}'</code></td>
+      </tr>
     </tbody>
   </table>
 </article>
@@ -43,16 +59,9 @@
   {% include "catalog/_partials/dependencies.html" %}
 </article>
 
-{% include "catalog/_partials/sbom_section.html" %}
+{% include "catalog/_partials/dependency_graph.html" %}
 
-<article>
-  <h2>Metadata payload</h2>
-  {% if metadata.metadata_json %}
-  <pre class="metadata-json">{{ metadata.metadata_json }}</pre>
-  {% else %}
-  <p class="empty">No extra metadata payload recorded.</p>
-  {% endif %}
-</article>
+{% include "catalog/_partials/sbom_section.html" %}
 {% else %}
 <p class="empty">Metadata for this gem has not been cached yet. Trigger a fetch by installing this gem through Vein.</p>
 {% endif %}

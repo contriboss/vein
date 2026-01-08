@@ -1,0 +1,176 @@
+{% if metadata.dependencies | length > 0 %}
+<section class="dep-graph-section">
+  <h2>Dependency Graph</h2>
+  <div id="cy" class="cytoscape-container"></div>
+  <div class="graph-controls">
+    <button id="fit-btn">Fit</button>
+    <button id="center-btn">Center</button>
+  </div>
+</section>
+
+<script src="https://unpkg.com/cytoscape@3.33.1/dist/cytoscape.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const deps = [
+    {% for dep in metadata.dependencies %}
+    { name: "{{ dep.name }}", req: "{{ dep.requirement }}", kind: "{{ dep.kind }}" },
+    {% endfor %}
+  ];
+
+  const nodes = [
+    { data: { id: '{{ name }}', name: '{{ name }}', version: '{{ selected_version }}', isRoot: true } }
+  ];
+  const edges = [];
+
+  deps.forEach(dep => {
+    nodes.push({
+      data: {
+        id: dep.name,
+        name: dep.name,
+        requirement: dep.req,
+        kind: dep.kind
+      }
+    });
+    edges.push({
+      data: {
+        source: '{{ name }}',
+        target: dep.name,
+        kind: dep.kind
+      }
+    });
+  });
+
+  const cy = cytoscape({
+    container: document.getElementById('cy'),
+    elements: { nodes, edges },
+    minZoom: 0.3,
+    maxZoom: 3,
+    userZoomingEnabled: true,
+    userPanningEnabled: true,
+    style: [
+      {
+        selector: 'node',
+        style: {
+          'background-color': '#6366f1',
+          'content': 'data(name)',
+          'color': '#fff',
+          'text-valign': 'center',
+          'text-halign': 'center',
+          'text-outline-width': 2,
+          'text-outline-color': '#6366f1',
+          'font-size': '11px',
+          'width': 'label',
+          'height': 'label',
+          'padding': '10px',
+          'shape': 'round-rectangle'
+        }
+      },
+      {
+        selector: 'node[?isRoot]',
+        style: {
+          'background-color': '#8b5cf6',
+          'text-outline-color': '#8b5cf6',
+          'font-weight': 'bold',
+          'font-size': '13px'
+        }
+      },
+      {
+        selector: 'node[kind = "development"]',
+        style: {
+          'background-color': '#64748b',
+          'text-outline-color': '#64748b'
+        }
+      },
+      {
+        selector: 'node:selected',
+        style: {
+          'border-width': 3,
+          'border-color': '#facc15'
+        }
+      },
+      {
+        selector: '.hover',
+        style: {
+          'border-width': 2,
+          'border-color': '#38bdf8'
+        }
+      },
+      {
+        selector: 'edge',
+        style: {
+          'width': 2,
+          'line-color': '#4b5563',
+          'target-arrow-color': '#4b5563',
+          'target-arrow-shape': 'triangle',
+          'curve-style': 'bezier',
+          'opacity': 0.8
+        }
+      },
+      {
+        selector: 'edge[kind = "development"]',
+        style: {
+          'line-style': 'dashed',
+          'opacity': 0.5
+        }
+      }
+    ],
+    layout: {
+      name: 'breadthfirst',
+      directed: true,
+      roots: '#{{ name }}',
+      padding: 30,
+      spacingFactor: 1.2,
+      avoidOverlap: true
+    }
+  });
+
+  cy.on('mouseover', 'node', function(evt) {
+    evt.target.addClass('hover');
+  });
+  cy.on('mouseout', 'node', function(evt) {
+    evt.target.removeClass('hover');
+  });
+
+  cy.on('tap', 'node', function(evt) {
+    cy.$('.highlighted').removeClass('highlighted');
+    evt.target.addClass('highlighted');
+  });
+  cy.on('tap', function(evt) {
+    if (evt.target === cy) {
+      cy.$('.highlighted').removeClass('highlighted');
+    }
+  });
+
+  document.getElementById('fit-btn').onclick = () => cy.fit(null, 30);
+  document.getElementById('center-btn').onclick = () => cy.center();
+});
+</script>
+
+<style>
+.dep-graph-section { margin-top: 2rem; }
+.cytoscape-container {
+  width: 100%;
+  height: 400px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.graph-controls {
+  margin-top: 0.5rem;
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.graph-controls button {
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--fg);
+  cursor: pointer;
+}
+.graph-controls button:hover {
+  background: rgba(99, 102, 241, 0.2);
+}
+</style>
+{% endif %}

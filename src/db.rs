@@ -4,13 +4,11 @@ use anyhow::{Context, Result};
 use rama::telemetry::tracing::{debug, error, info, warn};
 
 use crate::config::{BackoffStrategy, Config, DatabaseBackend};
-#[cfg(feature = "postgres")]
-use vein_adapter::PostgresCacheBackend;
-use vein_adapter::{CacheBackendKind, SqliteCacheBackend};
+use vein_adapter::CacheBackend;
 
 pub async fn connect_cache_backend(
     config: &Config,
-) -> Result<(Arc<CacheBackendKind>, DatabaseBackend)> {
+) -> Result<(Arc<CacheBackend>, DatabaseBackend)> {
     let backend = config.database.backend()?;
     let retry_config = &config.database.reliability.retry;
 
@@ -23,30 +21,33 @@ pub async fn connect_cache_backend(
         );
     }
 
-    let cache: CacheBackendKind = match &backend {
+    let cache = match &backend {
+        #[cfg(feature = "sqlite")]
         DatabaseBackend::Sqlite { path } => {
-            let backend = connect_with_retry(
-                || async { SqliteCacheBackend::connect(path).await },
+            connect_with_retry(
+                || async { CacheBackend::connect(path).await },
                 retry_config,
                 "sqlite",
             )
             .await
-            .context("connecting sqlite cache")?;
-            backend.into()
+            .context("connecting sqlite cache")?
+        }
+        #[cfg(not(feature = "sqlite"))]
+        DatabaseBackend::Sqlite { .. } => {
+            anyhow::bail!("SQLite support not compiled in. Rebuild with --features sqlite");
         }
         #[cfg(feature = "postgres")]
         DatabaseBackend::Postgres {
             url,
             max_connections,
         } => {
-            let backend = connect_with_retry(
-                || async { PostgresCacheBackend::connect(url, *max_connections).await },
+            connect_with_retry(
+                || async { CacheBackend::connect(url, *max_connections).await },
                 retry_config,
                 "postgres",
             )
             .await
-            .context("connecting postgres cache")?;
-            backend.into()
+            .context("connecting postgres cache")?
         }
         #[cfg(not(feature = "postgres"))]
         DatabaseBackend::Postgres { .. } => {

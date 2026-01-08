@@ -1,0 +1,7 @@
+{% macro form(gem, action, label, btn_class) %}
+<form method="post" action="/quarantine/{{ gem.name }}/{{ gem.version }}/{{ action }}" style="display:inline">
+  <input type="hidden" name="platform" value="{{ gem.platform_raw }}">
+  <input type="text" name="reason" placeholder="Reason">
+  <button type="submit" class="btn {{ btn_class }}">{{ label }}</button>
+</form>
+{% endmacro %}

@@ -1,32 +1,15 @@
-use std::sync::Arc;
-
 use anyhow::{Context, Result};
 use tracing::{error, info};
-use vein::{config::Config as VeinConfig, db, gem_metadata::indexer};
-use vein_adapter::CacheBackendKind;
+use vein::{config::Config as VeinConfig, gem_metadata::indexer};
+use vein_adapter::{CacheBackend, CacheBackendTrait};
+
+use crate::commands::AppContext;
 
 pub async fn run(name: String, version: Option<String>) -> Result<()> {
-    // Initialize logging
-    tracing_subscriber::fmt()
-        .with_target(false)
-        .with_level(true)
-        .init();
-
-    info!("Loading Vein configuration...");
-
-    // Load vein config
-    let config_path = std::env::var("VEIN_CONFIG_PATH")
-        .ok()
-        .map(std::path::PathBuf::from);
-    let config = Arc::new(VeinConfig::load(config_path).context("loading config")?);
-
-    // Initialize cache backend
-    let (cache, _backend) = db::connect_cache_backend(&config)
-        .await
-        .context("connecting to cache backend")?;
+    let ctx = AppContext::init().await?;
 
     // Run symbols migrations to ensure table exists
-    cache
+    ctx.cache
         .run_symbols_migrations()
         .await
         .context("running symbols migrations")?;
@@ -34,12 +17,12 @@ pub async fn run(name: String, version: Option<String>) -> Result<()> {
     if let Some(ver) = version {
         // Index specific version
         info!(gem = %name, version = %ver, "Indexing gem");
-        index_gem_version(&cache, &config, &name, &ver).await?;
+        index_gem_version(&ctx.cache, &ctx.config, &name, &ver).await?;
         info!(gem = %name, version = %ver, "✓ Indexed successfully");
     } else {
         // Get all cached versions for this gem
         info!(gem = %name, "Fetching cached versions");
-        let versions = get_gem_versions(&cache, &name).await?;
+        let versions = get_gem_versions(&ctx.cache, &name).await?;
 
         if versions.is_empty() {
             error!(gem = %name, "No cached versions found");
@@ -50,7 +33,7 @@ pub async fn run(name: String, version: Option<String>) -> Result<()> {
 
         for ver in &versions {
             info!(gem = %name, version = %ver, "Indexing");
-            match index_gem_version(&cache, &config, &name, ver).await {
+            match index_gem_version(&ctx.cache, &ctx.config, &name, ver).await {
                 Ok(_) => info!(gem = %name, version = %ver, "✓ Indexed"),
                 Err(e) => error!(gem = %name, version = %ver, error = %e, "✗ Failed to index"),
             }
@@ -63,7 +46,7 @@ pub async fn run(name: String, version: Option<String>) -> Result<()> {
 }
 
 async fn index_gem_version(
-    cache: &CacheBackendKind,
+    cache: &CacheBackend,
     config: &VeinConfig,
     name: &str,
     version: &str,
@@ -126,7 +109,7 @@ async fn index_gem_version(
     Ok(())
 }
 
-async fn get_gem_versions(cache: &CacheBackendKind, name: &str) -> Result<Vec<String>> {
+async fn get_gem_versions(cache: &CacheBackend, name: &str) -> Result<Vec<String>> {
     // Get all cached gems
     let all_gems = cache
         .get_all_gems()

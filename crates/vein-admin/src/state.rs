@@ -1,25 +1,42 @@
+//! Application state for vein-admin.
+
 use std::{path::PathBuf, sync::Arc};
 
-use crate::ruby::RubyStatus;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use tera::Tera;
 use vein::config::Config as VeinConfig;
 use vein_adapter::{
-    CacheBackendKind, GemMetadata, GemVersion, IndexStats, QuarantineStats, SbomCoverage,
+    CacheBackend, CacheBackendTrait, GemMetadata, GemVersion, IndexStats, QuarantineStats, SbomCoverage,
     VersionStatus,
 };
+
+use crate::ruby::RubyStatus;
+
+/// Main application state, passed to all handlers.
+#[derive(Clone)]
+pub struct AdminState {
+    pub resources: AdminResources,
+    pub tera: Arc<Tera>,
+}
+
+impl AdminState {
+    pub fn new(resources: AdminResources, tera: Arc<Tera>) -> Self {
+        Self { resources, tera }
+    }
+}
 
 #[derive(Clone)]
 pub struct AdminResources {
     config: Arc<VeinConfig>,
-    cache: Arc<CacheBackendKind>,
+    cache: Arc<CacheBackend>,
     ruby_status: Arc<RubyStatus>,
 }
 
 impl AdminResources {
     pub fn new(
         config: Arc<VeinConfig>,
-        cache: Arc<CacheBackendKind>,
+        cache: Arc<CacheBackend>,
         ruby_status: Arc<RubyStatus>,
     ) -> Self {
         Self {
@@ -56,6 +73,10 @@ impl AdminResources {
 
     pub async fn catalog_page(&self, offset: i64, limit: i64) -> Result<Vec<String>> {
         self.cache.catalog_page(offset, limit).await
+    }
+
+    pub async fn catalog_search(&self, query: &str, limit: i64) -> Result<Vec<String>> {
+        self.cache.catalog_search(query, limit).await
     }
 
     #[allow(dead_code)]

@@ -8,10 +8,6 @@ pub struct UpstreamConfig {
     pub url: Uri,
     #[serde(default, with = "serde_url_vec")]
     pub fallback_urls: Vec<Uri>,
-    #[serde(default = "default_timeout_secs")]
-    pub timeout_secs: u64,
-    #[serde(default = "default_pool_size")]
-    pub connection_pool_size: usize,
     #[serde(default)]
     pub reliability: ReliabilityConfig,
 }
@@ -21,8 +17,6 @@ impl Default for UpstreamConfig {
         Self {
             url: default_upstream_url(),
             fallback_urls: Vec::new(),
-            timeout_secs: default_timeout_secs(),
-            connection_pool_size: default_pool_size(),
             reliability: ReliabilityConfig::default(),
         }
     }
@@ -30,14 +24,6 @@ impl Default for UpstreamConfig {
 
 fn default_upstream_url() -> Uri {
     Uri::from_static("https://rubygems.org/")
-}
-
-fn default_timeout_secs() -> u64 {
-    30
-}
-
-fn default_pool_size() -> usize {
-    128
 }
 
 mod serde_url {

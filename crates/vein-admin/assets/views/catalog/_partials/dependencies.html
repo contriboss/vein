@@ -2,7 +2,7 @@
 <ul class="dependencies">
   {% for dep in metadata.dependencies %}
   <li>
-    <span class="name">{{ dep.name }}</span>
+    <a href="/catalog/{{ dep.name | urlencode }}" class="name">{{ dep.name }}</a>
     <span class="requirement">{{ dep.requirement }}</span>
     <span class="kind">{{ dep.kind }}</span>
   </li>

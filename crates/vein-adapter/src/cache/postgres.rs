@@ -6,7 +6,7 @@ use sqlx::{
 };
 
 use super::{
-    CacheBackend, GemVersion, QuarantineStats, VersionStatus,
+    CacheBackendTrait, GemVersion, QuarantineStats, VersionStatus,
     models::{DbGemMetadataRow, PostgresCachedAssetRow, PostgresGemVersionRow, format_timestamp},
     serialization::{hydrate_metadata_row, parse_language_rows, prepare_metadata_strings},
     types::{AssetKey, CachedAsset, GemMetadata, IndexStats, SbomCoverage},
@@ -88,7 +88,7 @@ impl PostgresCacheBackend {
             FROM gem_metadata
             WHERE name = $1
               AND version = $2
-              AND ((platform IS NULL AND $3 IS NULL) OR platform = $3)
+              AND platform = $3
             "#,
         )
         .bind(name)
@@ -223,7 +223,7 @@ impl PostgresCacheBackend {
         )
         .bind(&metadata.name)
         .bind(&metadata.version)
-        .bind(metadata.platform.as_deref())
+        .bind(&metadata.platform)
         .bind(metadata.summary.as_deref())
         .bind(metadata.description.as_deref())
         .bind(prepared.licenses_json)
@@ -259,7 +259,7 @@ impl PostgresCacheBackend {
     }
 }
 
-impl CacheBackend for PostgresCacheBackend {
+impl CacheBackendTrait for PostgresCacheBackend {
     async fn get(&self, key: &AssetKey<'_>) -> Result<Option<CachedAsset>> {
         let record = sqlx::query_as::<_, PostgresCachedAssetRow>(
             r#"
@@ -427,6 +427,25 @@ impl CacheBackend for PostgresCacheBackend {
         .fetch_all(&self.pool)
         .await
         .context("fetching catalog page (postgres)")?;
+        Ok(rows)
+    }
+
+    async fn catalog_search(&self, query: &str, limit: i64) -> Result<Vec<String>> {
+        let pattern = format!("%{}%", query);
+        let rows = sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT name
+            FROM catalog_gems
+            WHERE name LIKE $1
+            ORDER BY name
+            LIMIT $2
+            "#,
+        )
+        .bind(&pattern)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .context("searching catalog (postgres)")?;
         Ok(rows)
     }
 

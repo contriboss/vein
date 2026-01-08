@@ -4,8 +4,8 @@ mod tests {
     use serde_json::json;
     use sqlx::SqlitePool;
 
+    use crate::CacheBackendTrait;
     use crate::cache::{
-        CacheBackend,
         sqlite::SqliteCacheBackend,
         types::{AssetKey, AssetKind, CachedAsset, DependencyKind, GemDependency, GemMetadata},
     };
@@ -479,7 +479,7 @@ mod tests {
         GemMetadata {
             name: "rack".to_string(),
             version: "2.2.8".to_string(),
-            platform: None,
+            platform: "ruby".to_string(),
             summary: Some("Rack middleware toolkit".to_string()),
             description: Some("Minimal HTTP glue for Ruby web apps".to_string()),
             licenses: vec!["MIT".to_string()],
@@ -528,7 +528,7 @@ mod tests {
             .gem_metadata(
                 &metadata.name,
                 &metadata.version,
-                metadata.platform.as_deref(),
+                Some(&metadata.platform),
             )
             .await
             .expect("metadata fetch succeeds");
@@ -564,7 +564,7 @@ mod tests {
             .gem_metadata(
                 &metadata.name,
                 &metadata.version,
-                metadata.platform.as_deref(),
+                Some(&metadata.platform),
             )
             .await
             .expect("updated metadata fetch succeeds")

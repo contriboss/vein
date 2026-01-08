@@ -1,5 +1,5 @@
-use axum::response::{Html, IntoResponse, Response};
-use loco_rs::prelude::*;
+//! Catalog view helpers.
+
 use serde::Serialize;
 use tera::{Context, Tera};
 use vein_adapter::{DependencyKind, GemMetadata};
@@ -60,6 +60,7 @@ pub struct GemMetadataView {
     pub sbom: bool,
     pub sbom_json: Option<String>,
     pub sbom_download_url: Option<String>,
+    pub purl: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -67,6 +68,18 @@ pub struct DependencyView {
     pub name: String,
     pub requirement: String,
     pub kind: String,
+}
+
+fn purl_for_gem(name: &str, version: &str, platform: Option<&str>) -> String {
+    let base = format!(
+        "pkg:gem/{}@{}",
+        urlencoding::encode(name),
+        urlencoding::encode(version)
+    );
+    match platform {
+        Some(p) if p != "ruby" => format!("{}?platform={}", base, urlencoding::encode(p)),
+        _ => base,
+    }
 }
 
 impl From<&GemMetadata> for GemMetadataView {
@@ -100,9 +113,9 @@ impl From<&GemMetadata> for GemMetadataView {
                 urlencoding::encode(&meta.name),
                 urlencoding::encode(&meta.version)
             );
-            if let Some(platform) = &meta.platform {
+            if meta.platform != "ruby" {
                 url.push_str("&platform=");
-                url.push_str(&urlencoding::encode(platform));
+                url.push_str(&urlencoding::encode(&meta.platform));
             }
             Some(url)
         } else {
@@ -123,7 +136,7 @@ impl From<&GemMetadata> for GemMetadataView {
             bug_tracker_url: meta.bug_tracker_url.clone(),
             wiki_url: meta.wiki_url.clone(),
             funding_url: meta.funding_url.clone(),
-            platform: meta.platform.clone(),
+            platform: Some(meta.platform.clone()),
             built_at: meta.built_at.clone(),
             size_formatted: format_bytes(meta.size_bytes),
             sha256: meta.sha256.clone(),
@@ -153,6 +166,7 @@ impl From<&GemMetadata> for GemMetadataView {
             sbom,
             sbom_json,
             sbom_download_url,
+            purl: purl_for_gem(&meta.name, &meta.version, Some(&meta.platform)),
         }
     }
 }
@@ -175,8 +189,9 @@ fn format_bytes(bytes: u64) -> String {
     }
 }
 
-pub fn list(tera: &Tera, data: CatalogListData) -> Result<Response> {
+pub fn list(tera: &Tera, data: CatalogListData) -> anyhow::Result<String> {
     let mut context = Context::new();
+    context.insert("current_page", "catalog");
     context.insert("entries", &data.entries);
     context.insert("page", &data.page);
     context.insert("total_pages", &data.total_pages);
@@ -184,15 +199,12 @@ pub fn list(tera: &Tera, data: CatalogListData) -> Result<Response> {
     context.insert("selected_language", &data.selected_language);
     context.insert("languages", &data.languages);
 
-    let html = tera
-        .render("catalog/list.html", &context)
-        .map_err(|e| Error::Message(format!("Template error: {}", e)))?;
-
-    Ok(Html(html).into_response())
+    Ok(tera.render("catalog/list.html", &context)?)
 }
 
-pub fn detail(tera: &Tera, data: GemDetailData) -> Result<Response> {
+pub fn detail(tera: &Tera, data: GemDetailData) -> anyhow::Result<String> {
     let mut context = Context::new();
+    context.insert("current_page", "catalog");
     context.insert("name", &data.name);
     context.insert("versions", &data.versions);
     context.insert("selected_version", &data.selected_version);
@@ -200,9 +212,24 @@ pub fn detail(tera: &Tera, data: GemDetailData) -> Result<Response> {
     context.insert("platform_query", &data.platform_query);
     context.insert("metadata", &data.metadata);
 
-    let html = tera
-        .render("catalog/detail.html", &context)
-        .map_err(|e| Error::Message(format!("Template error: {}", e)))?;
+    Ok(tera.render("catalog/detail.html", &context)?)
+}
 
-    Ok(Html(html).into_response())
+pub fn search_results_html(results: &[String]) -> String {
+    let items: String = results
+        .iter()
+        .map(|name| {
+            let escaped = name
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;");
+            format!(
+                r#"<li><a href="/catalog/{}" class="gem-link">{}</a></li>"#,
+                urlencoding::encode(name),
+                escaped
+            )
+        })
+        .collect();
+
+    format!(r#"<ul id="gem-list" class="gem-list">{}</ul>"#, items)
 }
