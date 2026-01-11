@@ -1,0 +1,15 @@
+# Vein configuration for Docker/Podman deployment
+
+[server]
+host = "0.0.0.0"
+port = 8346
+
+[storage]
+path = "/data/gems"
+
+[database]
+url = "postgres://vein:vein@postgres/vein?sslmode=disable"
+max_connections = 4
+
+[logging]
+level = "info"

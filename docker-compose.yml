@@ -1,26 +1,50 @@
 services:
-  vein:
-    image: ghcr.io/contriboss/vein:latest
-    container_name: vein
-    ports:
-      - "8346:8346"
-    volumes:
-      # Persistent gem cache
-      - vein-gems:/data/gems
-      # Persistent database
-      - vein-db:/data/db
-      # Optional: custom configuration
-      # - ./vein.toml:/data/vein.toml:ro
+  postgres:
+    image: ghcr.io/seuros/postgis-with-extensions:18
+    container_name: vein-postgres
     environment:
-      - RUST_LOG=info
-    restart: unless-stopped
+      POSTGRES_DB: vein
+      POSTGRES_USER: vein
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vein}
+    volumes:
+      - vein-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vein -d vein"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - vein-network
+    restart: unless-stopped
+
+  vein:
+    build: .
+    image: ghcr.io/contriboss/vein:latest
+    container_name: vein
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8346:8346"
+    environment:
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - vein-gems:/data/gems
+      - ./vein.docker.toml:/data/vein.toml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8346/up"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    networks:
+      - vein-network
+    restart: unless-stopped
 
 volumes:
   vein-gems:
     driver: local
-  vein-db:
+  vein-pgdata:
     driver: local
 
 networks:

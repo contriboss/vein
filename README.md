@@ -268,18 +268,33 @@ docker run -d \
 docker logs -f vein
 ```
 
-### Using Docker Compose
+### Using Docker Compose (Recommended)
+
+The included `docker-compose.yml` spins up a **fully configured, production-ready** Vein proxy with PostgreSQL backend:
 
 ```bash
-# Start the service
-docker-compose up -d
+# Clone and start
+git clone https://github.com/contriboss/vein.git
+cd vein
+docker compose up -d
+
+# Verify health
+docker compose ps  # Both services should show "healthy"
 
 # View logs
-docker-compose logs -f
+docker compose logs -f vein
 
 # Stop the service
-docker-compose down
+docker compose down
 ```
+
+**What's included:**
+- PostgreSQL 18 with persistent storage
+- Vein proxy with auto-migrations (no manual setup)
+- Health checks for both services
+- Preconfigured networking
+
+Point your Bundler at `http://localhost:8346` and you're done.
 
 ### Custom Configuration
 

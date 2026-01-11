@@ -128,13 +128,7 @@ pub trait CacheBackendTrait: Send + Sync {
         name: &str,
     ) -> impl Future<Output = Result<Vec<GemVersion>>> + Send;
 
-    fn quarantine_table_exists(&self) -> impl Future<Output = Result<bool>> + Send;
-
-    fn run_quarantine_migrations(&self) -> impl Future<Output = Result<()>> + Send;
-
     // ==================== Symbol Indexing Methods ====================
-
-    fn run_symbols_migrations(&self) -> impl Future<Output = Result<()>> + Send;
 
     fn insert_symbols(
         &self,

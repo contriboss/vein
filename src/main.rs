@@ -303,13 +303,6 @@ fn run_server(config_path: PathBuf) -> Result<()> {
         .block_on(connect_cache_backend(config.as_ref()))
         .context("connecting to cache index")?;
 
-    // Ensure quarantine tables exist if enabled
-    rt.block_on(quarantine::ensure_tables(
-        index.as_ref(),
-        &config.delay_policy,
-    ))
-    .context("initializing quarantine tables")?;
-
     // Start quarantine promotion scheduler if enabled
     quarantine::spawn_promotion_scheduler(&config.delay_policy, index.clone(), None);
 
