@@ -20,8 +20,11 @@ COPY Cargo.toml ./
 COPY src ./src
 COPY crates ./crates
 
-# Build for native architecture with PostgreSQL support
+# Build vein proxy with PostgreSQL support
 RUN cargo build --release --no-default-features --features tls,postgres
+
+# Build vein-admin (uses SQLite)
+RUN cargo build --release --package vein-admin
 
 # Stage 2: Runtime
 FROM debian:bookworm-slim
@@ -35,8 +38,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && useradd -r -u 1000 -m vein
 
-# Copy binary from builder
+# Copy binaries from builder
 COPY --from=builder /build/target/release/vein /usr/local/bin/vein
+COPY --from=builder /build/target/release/vein-admin /usr/local/bin/vein-admin
 
 # Set working directory and permissions
 WORKDIR /data

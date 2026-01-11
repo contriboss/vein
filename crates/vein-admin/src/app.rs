@@ -2,7 +2,6 @@
 
 use std::sync::Arc;
 
-use sqlx::sqlite::SqlitePoolOptions;
 use tera::Tera;
 use tracing::warn;
 
@@ -22,17 +21,8 @@ pub async fn bootstrap(config: &AdminConfig) -> anyhow::Result<AdminState> {
         .await
         .ok();
 
-    // Connect cache backend
+    // Connect cache backend (migrations run automatically)
     let (cache_backend, _) = connect_cache_backend(&vein_config).await?;
-
-    // Run admin DB migrations
-    {
-        let db = SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect(&config.database.url)
-            .await?;
-        sqlx::migrate!("./migrations").run(&db).await?;
-    }
 
     // Load templates
     let tera = Arc::new(Tera::new("crates/vein-admin/assets/views/**/*.html")?);

@@ -135,6 +135,7 @@ fn default_database_path() -> PathBuf {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum DatabaseBackend {
     Sqlite { path: PathBuf },
     Postgres { url: String, max_connections: u32 },

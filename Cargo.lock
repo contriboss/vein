@@ -4715,7 +4715,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
- "sqlx",
  "tera",
  "tokio",
  "toml 0.8.23",

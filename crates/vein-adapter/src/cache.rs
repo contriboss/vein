@@ -148,4 +148,10 @@ pub trait CacheBackendTrait: Send + Sync {
         gem_version: &str,
         gem_platform: Option<&str>,
     ) -> impl Future<Output = Result<()>> + Send;
+
+    // ==================== Admin Settings Methods ====================
+
+    fn admin_setting_get(&self, key: &str) -> impl Future<Output = Result<Option<String>>> + Send;
+
+    fn admin_setting_set(&self, key: &str, value: &str) -> impl Future<Output = Result<()>> + Send;
 }

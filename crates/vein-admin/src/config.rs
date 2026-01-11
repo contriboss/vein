@@ -6,7 +6,6 @@ use std::path::Path;
 #[derive(Debug, Clone, Deserialize)]
 pub struct AdminConfig {
     pub server: ServerConfig,
-    pub database: DatabaseConfig,
     pub logging: LoggingConfig,
     pub vein: VeinSettings,
 }
@@ -15,11 +14,6 @@ pub struct AdminConfig {
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct DatabaseConfig {
-    pub url: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -896,6 +896,33 @@ impl CacheBackendTrait for PostgresCacheBackend {
 
         Ok(())
     }
+
+    async fn admin_setting_get(&self, key: &str) -> Result<Option<String>> {
+        let value = sqlx::query_scalar::<_, String>("SELECT value FROM admin_settings WHERE key = $1")
+            .bind(key)
+            .fetch_optional(&self.pool)
+            .await
+            .context("fetching admin setting (postgres)")?;
+        Ok(value)
+    }
+
+    async fn admin_setting_set(&self, key: &str, value: &str) -> Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO admin_settings(key, value, updated_at)
+            VALUES($1, $2, NOW())
+            ON CONFLICT(key) DO UPDATE SET
+                value = EXCLUDED.value,
+                updated_at = NOW()
+            "#,
+        )
+        .bind(key)
+        .bind(value)
+        .execute(&self.pool)
+        .await
+        .context("upserting admin setting (postgres)")?;
+        Ok(())
+    }
 }
 
 /// Compare two version strings using semver when possible.

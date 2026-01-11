@@ -3,20 +3,34 @@ CONFIG ?= vein.toml
 ADMIN_BIND ?= 127.0.0.1
 ADMIN_PORT ?= 9400
 
-.PHONY: help run admin dev stats cache-refresh check fmt clippy test build release
+.PHONY: help run admin dev stats cache-refresh check fmt clippy test build release pg pg-release pg-run pg-admin docker-build docker-up docker-down docker-logs
 
 help:
 	@echo "Available targets:"
-	@echo "  run            Start the Vein proxy (cargo run -- serve)"
+	@echo "  run            Start the Vein proxy (SQLite)"
+	@echo "  admin          Start the admin dashboard (SQLite)"
 	@echo "  stats          Show cache statistics"
-	@echo "  cache-refresh  Refresh the hot cache from SQLite"
-	@echo "  admin          Start the Loco admin dashboard"
-	@echo "  check          Type-check the workspace"
-	@echo "  fmt            Format the workspace"
-	@echo "  clippy         Lint with cargo clippy"
-	@echo "  test           Run the workspace tests"
-	@echo "  build          Build debug binaries"
-	@echo "  release        Build release binaries"
+	@echo "  cache-refresh  Refresh the hot cache"
+	@echo "  build          Build debug binaries (SQLite)"
+	@echo "  release        Build release binaries (SQLite)"
+	@echo ""
+	@echo "PostgreSQL targets:"
+	@echo "  pg             Build debug binaries (PostgreSQL)"
+	@echo "  pg-release     Build release binaries (PostgreSQL)"
+	@echo "  pg-run         Run proxy (PostgreSQL)"
+	@echo "  pg-admin       Run admin (PostgreSQL)"
+	@echo ""
+	@echo "Docker targets:"
+	@echo "  docker-build   Build Docker image"
+	@echo "  docker-up      Start containers"
+	@echo "  docker-down    Stop containers"
+	@echo "  docker-logs    View vein logs"
+	@echo ""
+	@echo "Dev targets:"
+	@echo "  check          Type-check workspace"
+	@echo "  fmt            Format workspace"
+	@echo "  clippy         Lint workspace"
+	@echo "  test           Run tests"
 
 run:
 	cargo run -- serve --config $(CONFIG)
@@ -54,3 +68,29 @@ build:
 
 release:
 	cargo build --release
+
+# PostgreSQL builds
+pg:
+	cargo build --no-default-features --features tls,postgres
+
+pg-release:
+	cargo build --release --no-default-features --features tls,postgres
+
+pg-run:
+	cargo run --no-default-features --features tls,postgres -- serve --config $(CONFIG)
+
+pg-admin:
+	cargo run -p vein-admin --no-default-features --features postgres -- --config $(CONFIG) --bind $(ADMIN_BIND) --port $(ADMIN_PORT)
+
+# Docker
+docker-build:
+	docker compose build
+
+docker-up:
+	docker compose up -d
+
+docker-down:
+	docker compose down
+
+docker-logs:
+	docker compose logs -f vein

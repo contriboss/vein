@@ -8,6 +8,17 @@ compile_error!("Either 'sqlite' or 'postgres' feature must be enabled.");
 mod cache;
 mod storage;
 
+/// Database re-exports from sqlx.
+pub mod db {
+    pub use sqlx::{Error, FromRow, Row};
+
+    #[cfg(feature = "sqlite")]
+    pub use sqlx::{Sqlite, SqlitePool};
+
+    #[cfg(feature = "postgres")]
+    pub use sqlx::{PgPool, Postgres};
+}
+
 // Core types (always available)
 pub use cache::{
     AssetKey, AssetKind, CachedAsset, CacheBackendTrait, DependencyKind, GemDependency,

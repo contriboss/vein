@@ -1,6 +1,18 @@
 [workspace]
 members = ["crates/vein-adapter", "crates/vein-admin"]
 
+[workspace.dependencies]
+anyhow = "1.0.95"
+chrono = { version = "0.4.38", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.135"
+sqlx = { version = "0.8.2", features = ["runtime-tokio", "chrono", "migrate"] }
+tokio = { version = "1.43", features = ["full"] }
+tracing = "0.1"
+semver = "1.0"
+vein-adapter = { path = "crates/vein-adapter", default-features = false }
+vein = { path = "." }
+
 [package]
 name = "vein"
 version = "0.4.0"
@@ -93,7 +105,7 @@ chrono-machines = "0.3.0"
 # Time handling
 chrono = { version = "0.4.38", features = ["serde"] }
 
-vein-adapter = { version = "0.3.0", path = "crates/vein-adapter", default-features = false }
+vein-adapter.workspace = true
 
 [dev-dependencies]
 tokio-test = "0.4.4"

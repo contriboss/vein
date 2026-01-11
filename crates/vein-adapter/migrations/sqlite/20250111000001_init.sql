@@ -93,3 +93,9 @@ CREATE TABLE gem_symbols (
 
 CREATE INDEX idx_gem_symbols_name ON gem_symbols(symbol_name);
 CREATE INDEX idx_gem_symbols_gem ON gem_symbols(gem_name, gem_version);
+
+CREATE TABLE admin_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);

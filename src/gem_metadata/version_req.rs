@@ -1,3 +1,8 @@
+#![allow(
+    clippy::manual_strip,
+    clippy::let_and_return,
+    clippy::if_same_then_else
+)]
 //! Ruby-style version requirement parsing and matching.
 //!
 //! Supports:

@@ -3,20 +3,26 @@ use std::path::Path;
 use tokio::task;
 use vein_adapter::GemMetadata;
 
+#[allow(dead_code)]
 mod analyzer;
 mod parser;
+#[allow(dead_code)]
 mod sbom;
+#[allow(dead_code)]
 pub mod binary_arch;
+#[allow(dead_code)]
 pub mod indexer;
+#[allow(dead_code)]
 pub mod symbols;
+#[allow(dead_code)]
 pub mod version_req;
 
 #[cfg(test)]
 mod tests;
 
+#[allow(unused_imports)]
 pub use analyzer::{validate_binary_architectures, ArchValidation};
 pub use parser::parse_gem_metadata;
-pub use sbom::generate_cyclonedx_sbom_recursive;
 
 /// Extract structured metadata from a cached gem archive.
 ///
