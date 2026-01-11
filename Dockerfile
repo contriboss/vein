@@ -20,24 +20,36 @@ COPY Cargo.toml ./
 COPY src ./src
 COPY crates ./crates
 
-# Build for native architecture
-RUN cargo build --release
+# Build for native architecture with PostgreSQL support
+RUN cargo build --release --no-default-features --features tls,postgres
 
-# Stage 2: Runtime - Distroless
-FROM gcr.io/distroless/cc-debian12:nonroot
+# Stage 2: Runtime
+FROM debian:bookworm-slim
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl3 \
+    zlib1g \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -r -u 1000 -m vein
 
 # Copy binary from builder
 COPY --from=builder /build/target/release/vein /usr/local/bin/vein
 
-# Set working directory
+# Set working directory and permissions
 WORKDIR /data
+RUN chown vein:vein /data
+
+USER vein
 
 # Expose port
 EXPOSE 8346
 
 # Container healthcheck hitting Vein's liveness endpoint
-HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
-    CMD ["/usr/local/bin/vein", "health"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -fsS http://localhost:8346/up || exit 1
 
 # Run vein
 ENTRYPOINT ["/usr/local/bin/vein"]

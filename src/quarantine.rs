@@ -90,30 +90,6 @@ pub fn spawn_promotion_scheduler(
     });
 }
 
-/// Ensures quarantine database tables exist.
-///
-/// Should be called during startup before using quarantine features.
-pub async fn ensure_tables(index: &CacheBackend, config: &DelayPolicyConfig) -> Result<()> {
-    if !config.enabled {
-        return Ok(());
-    }
-
-    if !index
-        .quarantine_table_exists()
-        .await
-        .context("checking quarantine table")?
-    {
-        tracing::info!("Creating quarantine database tables");
-        index
-            .run_quarantine_migrations()
-            .await
-            .context("running quarantine migrations")?;
-        tracing::info!("Quarantine tables created");
-    }
-
-    Ok(())
-}
-
 /// Manually triggers promotion of expired quarantines.
 ///
 /// Useful for CLI commands.

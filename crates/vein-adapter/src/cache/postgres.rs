@@ -21,9 +21,19 @@ impl PostgresCacheBackend {
     pub async fn connect(url: &str, max_connections: u32) -> Result<Self> {
         let pool = PgPoolOptions::new()
             .max_connections(max_connections.max(1))
+            .acquire_timeout(std::time::Duration::from_secs(5))
+            .idle_timeout(std::time::Duration::from_secs(60))
+            .test_before_acquire(true)
             .connect(url)
             .await
             .with_context(|| format!("connecting to postgres database {}", url))?;
+
+        // Run migrations
+        sqlx::migrate!("./migrations/postgres")
+            .run(&pool)
+            .await
+            .context("running postgres migrations")?;
+
         Ok(Self { pool })
     }
 
@@ -360,7 +370,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
                 .context("counting unique gems (postgres)")?;
 
         let total_size_bytes: i64 =
-            sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0) FROM cached_assets")
+            sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0)::BIGINT FROM cached_assets")
                 .fetch_one(&self.pool)
                 .await
                 .context("summing cached asset sizes (postgres)")?;
@@ -816,113 +826,6 @@ impl CacheBackendTrait for PostgresCacheBackend {
         .context("fetching gem versions for index (postgres)")?;
 
         Ok(rows.into_iter().map(Into::into).collect())
-    }
-
-    async fn quarantine_table_exists(&self) -> Result<bool> {
-        let exists: bool = sqlx::query_scalar(
-            r#"
-            SELECT EXISTS (
-                SELECT FROM information_schema.tables
-                WHERE table_name = 'gem_versions'
-            )
-            "#,
-        )
-        .fetch_one(&self.pool)
-        .await
-        .context("checking quarantine table exists (postgres)")?;
-
-        Ok(exists)
-    }
-
-    async fn run_quarantine_migrations(&self) -> Result<()> {
-        // Create gem_versions table
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS gem_versions (
-                id BIGSERIAL PRIMARY KEY,
-                name TEXT NOT NULL,
-                version TEXT NOT NULL,
-                platform TEXT,
-                sha256 TEXT,
-                published_at TIMESTAMPTZ NOT NULL,
-                available_after TIMESTAMPTZ NOT NULL,
-                status TEXT NOT NULL DEFAULT 'quarantine',
-                status_reason TEXT,
-                upstream_yanked BOOLEAN NOT NULL DEFAULT FALSE,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                CONSTRAINT gem_versions_unique UNIQUE (name, version, platform)
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating gem_versions table (postgres)")?;
-
-        // Create indexes
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_gem_versions_name ON gem_versions(name)",
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating name index (postgres)")?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_gem_versions_status ON gem_versions(status)",
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating status index (postgres)")?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_gv_available ON gem_versions(available_after)",
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating available_after index (postgres)")?;
-
-        Ok(())
-    }
-
-    async fn run_symbols_migrations(&self) -> Result<()> {
-        // Create gem_symbols table
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS gem_symbols (
-                id BIGSERIAL PRIMARY KEY,
-                gem_name TEXT NOT NULL,
-                gem_version TEXT NOT NULL,
-                gem_platform TEXT,
-                file_path TEXT NOT NULL,
-                symbol_type TEXT NOT NULL,
-                symbol_name TEXT NOT NULL,
-                parent_name TEXT,
-                line_number INTEGER,
-                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                CONSTRAINT gem_symbols_unique UNIQUE (gem_name, gem_version, gem_platform, file_path, symbol_name)
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating gem_symbols table (postgres)")?;
-
-        // Create indexes
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_gem_symbols_name ON gem_symbols(symbol_name)",
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating symbol_name index (postgres)")?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_gem_symbols_gem ON gem_symbols(gem_name, gem_version)",
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating gem index (postgres)")?;
-
-        Ok(())
     }
 
     async fn insert_symbols(

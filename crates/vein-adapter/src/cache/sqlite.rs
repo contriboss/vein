@@ -24,7 +24,7 @@ impl SqliteCacheBackend {
                 .with_context(|| format!("creating database directory {}", parent.display()))?;
         }
         let conn_str = format!(
-            "sqlite://{}",
+            "sqlite://{}?mode=rwc",
             path.to_str().context("database path not UTF-8")?
         );
         let pool = SqlitePoolOptions::new()
@@ -32,9 +32,14 @@ impl SqliteCacheBackend {
             .connect(&conn_str)
             .await
             .with_context(|| format!("connecting to sqlite database {}", path.display()))?;
-        let backend = Self { pool };
-        backend.init_schema().await?;
-        Ok(backend)
+
+        // Run migrations
+        sqlx::migrate!("./migrations/sqlite")
+            .run(&pool)
+            .await
+            .context("running sqlite migrations")?;
+
+        Ok(Self { pool })
     }
 
     pub async fn connect_memory() -> Result<Self> {
@@ -43,129 +48,14 @@ impl SqliteCacheBackend {
             .connect("sqlite::memory:")
             .await
             .context("connecting to in-memory sqlite database")?;
-        let backend = Self { pool };
-        backend.init_schema().await?;
-        Ok(backend)
-    }
 
-    async fn init_schema(&self) -> Result<()> {
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS cached_assets (
-                kind TEXT NOT NULL,
-                name TEXT NOT NULL,
-                version TEXT NOT NULL,
-                platform TEXT,
-                path TEXT NOT NULL,
-                sha256 TEXT NOT NULL,
-                size_bytes INTEGER NOT NULL,
-                last_accessed TIMESTAMP DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-                PRIMARY KEY (kind, name, version, platform)
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating cached_assets table (sqlite)")?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS catalog_gems (
-                name TEXT PRIMARY KEY,
-                latest_version TEXT,
-                synced_at TIMESTAMP DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating catalog_gems table (sqlite)")?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS catalog_meta (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating catalog_meta table (sqlite)")?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS gem_metadata (
-                name TEXT NOT NULL,
-                version TEXT NOT NULL,
-                platform TEXT,
-                summary TEXT,
-                description TEXT,
-                licenses TEXT,
-                authors TEXT,
-                emails TEXT,
-                homepage TEXT,
-                documentation_url TEXT,
-                changelog_url TEXT,
-                source_code_url TEXT,
-                bug_tracker_url TEXT,
-                wiki_url TEXT,
-                funding_url TEXT,
-                metadata_json TEXT,
-                dependencies_json TEXT NOT NULL,
-                executables_json TEXT,
-                extensions_json TEXT,
-                native_languages_json TEXT,
-                has_native_extensions INTEGER NOT NULL,
-                has_embedded_binaries INTEGER NOT NULL,
-                required_ruby_version TEXT,
-                required_rubygems_version TEXT,
-                rubygems_version TEXT,
-                specification_version INTEGER,
-                built_at TEXT,
-                size_bytes INTEGER,
-                sha256 TEXT,
-                sbom_json TEXT,
-                PRIMARY KEY (name, version, platform)
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating gem_metadata table (sqlite)")?;
-
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS gem_symbols (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                gem_name TEXT NOT NULL,
-                gem_version TEXT NOT NULL,
-                gem_platform TEXT,
-                file_path TEXT NOT NULL,
-                symbol_type TEXT NOT NULL,
-                symbol_name TEXT NOT NULL,
-                parent_name TEXT,
-                line_number INTEGER,
-                created_at TIMESTAMP DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-                UNIQUE(gem_name, gem_version, gem_platform, file_path, symbol_name)
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating gem_symbols table (sqlite)")?;
-
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_gem_symbols_name ON gem_symbols(symbol_name)")
-            .execute(&self.pool)
+        // Run migrations
+        sqlx::migrate!("./migrations/sqlite")
+            .run(&pool)
             .await
-            .context("creating idx_gem_symbols_name index (sqlite)")?;
+            .context("running sqlite migrations")?;
 
-        sqlx::query("CREATE INDEX IF NOT EXISTS idx_gem_symbols_gem ON gem_symbols(gem_name, gem_version)")
-            .execute(&self.pool)
-            .await
-            .context("creating idx_gem_symbols_gem index (sqlite)")?;
-
-        Ok(())
+        Ok(Self { pool })
     }
 
     async fn touch(&self, key: &AssetKey<'_>) -> Result<()> {
@@ -982,76 +872,6 @@ impl CacheBackendTrait for SqliteCacheBackend {
         .context("fetching gem versions for index (sqlite)")?;
 
         Ok(rows.into_iter().map(Into::into).collect())
-    }
-
-    async fn quarantine_table_exists(&self) -> Result<bool> {
-        let exists: i64 = sqlx::query_scalar(
-            r#"
-            SELECT COUNT(*)
-            FROM sqlite_master
-            WHERE type = 'table' AND name = 'gem_versions'
-            "#,
-        )
-        .fetch_one(&self.pool)
-        .await
-        .context("checking quarantine table exists (sqlite)")?;
-
-        Ok(exists > 0)
-    }
-
-    async fn run_quarantine_migrations(&self) -> Result<()> {
-        // Create gem_versions table
-        sqlx::query(
-            r#"
-            CREATE TABLE IF NOT EXISTS gem_versions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                version TEXT NOT NULL,
-                platform TEXT,
-                sha256 TEXT,
-                published_at TEXT NOT NULL,
-                available_after TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'quarantine',
-                status_reason TEXT,
-                upstream_yanked INTEGER NOT NULL DEFAULT 0,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                UNIQUE(name, version, platform)
-            )
-            "#,
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating gem_versions table (sqlite)")?;
-
-        // Create indexes
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_gem_versions_name ON gem_versions(name)",
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating name index (sqlite)")?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_gem_versions_status ON gem_versions(status)",
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating status index (sqlite)")?;
-
-        sqlx::query(
-            "CREATE INDEX IF NOT EXISTS idx_gv_available ON gem_versions(available_after)",
-        )
-        .execute(&self.pool)
-        .await
-        .context("creating available_after index (sqlite)")?;
-
-        Ok(())
-    }
-
-    async fn run_symbols_migrations(&self) -> Result<()> {
-        // Symbols migrations are already in init_schema
-        Ok(())
     }
 
     async fn insert_symbols(

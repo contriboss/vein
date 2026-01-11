@@ -8,12 +8,6 @@ use crate::commands::AppContext;
 pub async fn run(name: String, version: Option<String>) -> Result<()> {
     let ctx = AppContext::init().await?;
 
-    // Run symbols migrations to ensure table exists
-    ctx.cache
-        .run_symbols_migrations()
-        .await
-        .context("running symbols migrations")?;
-
     if let Some(ver) = version {
         // Index specific version
         info!(gem = %name, version = %ver, "Indexing gem");
