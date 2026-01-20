@@ -14,6 +14,7 @@ fn test_default_config() {
     assert_eq!(config.server.workers, num_cpus::get());
     assert!(config.upstream.is_none());
     assert_eq!(config.storage.path, PathBuf::from("./gems"));
+    #[cfg(feature = "sqlite")]
     assert_eq!(config.database.path, PathBuf::from("./vein.db"));
     assert!(config.database.url.is_none());
     assert_eq!(config.logging.level, "info");
@@ -43,6 +44,7 @@ fn test_default_storage_config() {
 #[test]
 fn test_default_database_config() {
     let db = DatabaseConfig::default();
+    #[cfg(feature = "sqlite")]
     assert_eq!(db.path, PathBuf::from("./vein.db"));
     assert!(db.url.is_none());
 }
@@ -102,6 +104,7 @@ fn test_parse_full_config() {
     assert_eq!(upstream.url.to_string(), "https://example.com/");
 
     assert_eq!(config.storage.path, PathBuf::from("/var/lib/vein/gems"));
+    #[cfg(feature = "sqlite")]
     assert_eq!(
         config.database.path,
         PathBuf::from("/var/lib/vein/db.sqlite")
@@ -227,6 +230,7 @@ fn test_storage_path_normalization_absolute() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_database_path_normalization_relative() {
     let mut db = DatabaseConfig {
         path: PathBuf::from("vein.db"),
@@ -238,6 +242,7 @@ fn test_database_path_normalization_relative() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_database_path_normalization_absolute() {
     let mut db = DatabaseConfig {
         path: PathBuf::from("/absolute/path/db.sqlite"),
@@ -347,6 +352,7 @@ fn test_config_sqlite_url_sets_path() {
 // === VALIDATION TESTS ===
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_validate_https_upstream() {
     let config = Config {
         upstream: Some(UpstreamConfig {
@@ -359,6 +365,7 @@ fn test_validate_https_upstream() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_validate_http_upstream() {
     let config = Config {
         upstream: Some(UpstreamConfig {
@@ -388,6 +395,7 @@ fn test_validate_invalid_scheme() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_validate_no_upstream() {
     let config = Config {
         upstream: None,
@@ -551,6 +559,7 @@ fn test_high_port_number() {
 // === INTEGRATION TESTS ===
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_full_workflow_load_validate() {
     let temp_dir = tempdir().unwrap();
     let config_path = temp_dir.path().join("vein.toml");
@@ -590,6 +599,7 @@ fn test_full_workflow_load_validate() {
 
     // Paths should be normalized relative to config file location
     assert_eq!(config.storage.path, temp_dir.path().join("gems"));
+    #[cfg(feature = "sqlite")]
     assert_eq!(config.database.path, temp_dir.path().join("vein.db"));
 }
 
