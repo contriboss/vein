@@ -249,33 +249,26 @@ fn test_database_path_normalization_absolute() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_database_backend_sqlite_default() {
     let backend = DatabaseConfig::default().backend().unwrap();
-    match backend {
-        DatabaseBackend::Sqlite { path } => assert_eq!(path, PathBuf::from("./vein.db")),
-        _ => panic!("expected sqlite backend"),
-    }
+    assert_eq!(backend.path, PathBuf::from("./vein.db"));
 }
 
 #[test]
+#[cfg(feature = "postgres")]
 fn test_database_backend_postgres() {
     let db = DatabaseConfig {
-        path: PathBuf::from("./vein.db"),
         url: Some("postgres://user:pass@localhost/vein".to_string()),
         ..DatabaseConfig::default()
     };
-    match db.backend().unwrap() {
-        DatabaseBackend::Postgres { url } => {
-            assert_eq!(url, "postgres://user:pass@localhost/vein");
-        }
-        other => panic!("expected postgres backend, got {other:?}"),
-    }
+    let backend = db.backend().unwrap();
+    assert_eq!(backend.url, "postgres://user:pass@localhost/vein");
 }
 
 #[test]
 fn test_database_backend_invalid_scheme() {
     let db = DatabaseConfig {
-        path: PathBuf::from("./vein.db"),
         url: Some("mysql://localhost/db".to_string()),
         ..DatabaseConfig::default()
     };
@@ -283,36 +276,31 @@ fn test_database_backend_invalid_scheme() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_database_backend_sqlite_url_absolute() {
     let db = DatabaseConfig {
         path: PathBuf::from("./vein.db"),
         url: Some("sqlite:///var/lib/vein/cache.db".to_string()),
         ..DatabaseConfig::default()
     };
-    match db.backend().unwrap() {
-        DatabaseBackend::Sqlite { path } => {
-            assert_eq!(path, PathBuf::from("/var/lib/vein/cache.db"));
-        }
-        other => panic!("expected sqlite backend, got {other:?}"),
-    }
+    let backend = db.backend().unwrap();
+    assert_eq!(backend.path, PathBuf::from("/var/lib/vein/cache.db"));
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_database_backend_sqlite_url_localhost() {
     let db = DatabaseConfig {
         path: PathBuf::from("./vein.db"),
         url: Some("sqlite://localhost/var/lib/vein/cache.db".to_string()),
         ..DatabaseConfig::default()
     };
-    match db.backend().unwrap() {
-        DatabaseBackend::Sqlite { path } => {
-            assert_eq!(path, PathBuf::from("/var/lib/vein/cache.db"));
-        }
-        other => panic!("expected sqlite backend, got {other:?}"),
-    }
+    let backend = db.backend().unwrap();
+    assert_eq!(backend.path, PathBuf::from("/var/lib/vein/cache.db"));
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_config_normalizes_paths_on_load() {
     let temp_dir = tempdir().unwrap();
     let config_path = temp_dir.path().join("test.toml");
@@ -334,6 +322,7 @@ fn test_config_normalizes_paths_on_load() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_config_sqlite_url_sets_path() {
     let temp_dir = tempdir().unwrap();
     let config_path = temp_dir.path().join("vein.toml");
@@ -349,14 +338,10 @@ fn test_config_sqlite_url_sets_path() {
     let expected = temp_dir.path().join("db/vein.sqlite");
     assert!(config.database.path.is_absolute());
     assert!(config.database.path.ends_with("db/vein.sqlite"));
-    match config.database.backend().unwrap() {
-        DatabaseBackend::Sqlite { path } => {
-            assert!(path.is_absolute());
-            assert!(path.ends_with("db/vein.sqlite"));
-            assert_eq!(path, expected);
-        }
-        other => panic!("expected sqlite backend, got {other:?}"),
-    }
+    let backend = config.database.backend().unwrap();
+    assert!(backend.path.is_absolute());
+    assert!(backend.path.ends_with("db/vein.sqlite"));
+    assert_eq!(backend.path, expected);
 }
 
 // === VALIDATION TESTS ===
