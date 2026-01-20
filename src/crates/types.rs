@@ -35,14 +35,21 @@ impl Default for IndexConfig {
 /// - 2 chars: `2/{name}`
 /// - 3 chars: `3/{first_char}/{name}`
 /// - 4+ chars: `{first_two}/{next_two}/{name}`
-pub fn index_path(name: &str) -> String {
+///
+/// Returns `None` for empty crate names.
+pub fn index_path(name: &str) -> Option<String> {
     let name_lower = name.to_lowercase();
     match name_lower.len() {
-        0 => panic!("empty crate name"),
-        1 => format!("1/{}", name_lower),
-        2 => format!("2/{}", name_lower),
-        3 => format!("3/{}/{}", &name_lower[..1], name_lower),
-        _ => format!("{}/{}/{}", &name_lower[..2], &name_lower[2..4], name_lower),
+        0 => None,
+        1 => Some(format!("1/{}", name_lower)),
+        2 => Some(format!("2/{}", name_lower)),
+        3 => Some(format!("3/{}/{}", &name_lower[..1], name_lower)),
+        _ => Some(format!(
+            "{}/{}/{}",
+            &name_lower[..2],
+            &name_lower[2..4],
+            name_lower
+        )),
     }
 }
 
@@ -52,11 +59,12 @@ mod tests {
 
     #[test]
     fn test_index_path() {
-        assert_eq!(index_path("a"), "1/a");
-        assert_eq!(index_path("ab"), "2/ab");
-        assert_eq!(index_path("abc"), "3/a/abc");
-        assert_eq!(index_path("abcd"), "ab/cd/abcd");
-        assert_eq!(index_path("serde"), "se/rd/serde");
-        assert_eq!(index_path("Tokio"), "to/ki/tokio");
+        assert_eq!(index_path("a"), Some("1/a".to_string()));
+        assert_eq!(index_path("ab"), Some("2/ab".to_string()));
+        assert_eq!(index_path("abc"), Some("3/a/abc".to_string()));
+        assert_eq!(index_path("abcd"), Some("ab/cd/abcd".to_string()));
+        assert_eq!(index_path("serde"), Some("se/rd/serde".to_string()));
+        assert_eq!(index_path("Tokio"), Some("to/ki/tokio".to_string()));
+        assert_eq!(index_path(""), None);
     }
 }

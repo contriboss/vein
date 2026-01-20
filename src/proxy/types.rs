@@ -87,7 +87,7 @@ impl CacheableRequest {
     pub fn from_crate_download_path(path: &str) -> Option<Self> {
         let parts = path.strip_prefix("/api/v1/crates/")?;
         let segments: Vec<&str> = parts.split('/').collect();
-        if segments.len() < 3 || segments[2] != "download" {
+        if segments.len() != 3 || segments[2] != "download" {
             return None;
         }
         let name = segments[0];

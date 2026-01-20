@@ -150,8 +150,12 @@ impl VeinProxy {
                         self.storage.clone(),
                         self.index.clone(),
                     ).await {
-                        Ok(resp) => {
-                            ctx.cache = CacheStatus::Hit; // May be revalidated, but close enough
+                        Ok((resp, outcome)) => {
+                            ctx.cache = match outcome {
+                                CacheOutcome::Miss => CacheStatus::Miss,
+                                CacheOutcome::Revalidated => CacheStatus::Revalidated,
+                                CacheOutcome::Pass => CacheStatus::Pass,
+                            };
                             return Ok(resp);
                         }
                         Err(err) => {

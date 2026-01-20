@@ -11,7 +11,7 @@ use rama::http::{
 use rama::Service;
 use vein_adapter::{CacheBackend, FilesystemStorage};
 
-use crate::http_cache::{fetch_cached_text, MetaStoreMode};
+use crate::http_cache::{fetch_cached_text, CachedFetchResult, CacheOutcome, MetaStoreMode};
 use super::types::{index_path, IndexConfig};
 
 const UA: &str = concat!("vein/", env!("CARGO_PKG_VERSION"));
@@ -20,16 +20,17 @@ const UA: &str = concat!("vein/", env!("CARGO_PKG_VERSION"));
 ///
 /// Path: `/index/{prefix}/{crate}` or `/index/config.json`
 ///
-/// Caches index entries with ETag/Last-Modified revalidation
+/// Caches index entries with ETag/Last-Modified revalidation.
+/// Returns both the response and the cache outcome.
 pub async fn handle_sparse_index(
     path: &str,
     our_base: &str,
     storage: Arc<FilesystemStorage>,
     index: Arc<CacheBackend>,
-) -> Result<Response<Body>> {
+) -> Result<(Response<Body>, CacheOutcome)> {
     // Handle config.json specially - serve our own
     if path == "/index/config.json" || path == "config.json" {
-        return serve_index_config(our_base);
+        return serve_index_config(our_base).map(|r| (r, CacheOutcome::Pass));
     }
 
     // Extract crate name from path
@@ -41,11 +42,14 @@ pub async fn handle_sparse_index(
         .context("invalid index path")?;
 
     // Validate the path matches expected prefix
-    let expected_path = index_path(crate_name);
+    let expected_path = match index_path(crate_name) {
+        Some(p) => p,
+        None => return respond_text(StatusCode::BAD_REQUEST, "invalid crate name").map(|r| (r, CacheOutcome::Pass)),
+    };
     let clean_path = path.trim_start_matches("/index/");
 
     if clean_path != expected_path {
-        return respond_text(StatusCode::NOT_FOUND, "crate not found");
+        return respond_text(StatusCode::NOT_FOUND, "crate not found").map(|r| (r, CacheOutcome::Pass));
     }
 
     let storage_path = format!("crates_index/{}", expected_path);
@@ -67,7 +71,7 @@ pub async fn handle_sparse_index(
     )
     .await?;
 
-    Ok(result.response)
+    Ok((result.response, result.outcome))
 }
 
 /// Fetch from upstream with optional headers
