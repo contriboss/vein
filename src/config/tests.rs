@@ -16,7 +16,6 @@ fn test_default_config() {
     assert_eq!(config.storage.path, PathBuf::from("./gems"));
     assert_eq!(config.database.path, PathBuf::from("./vein.db"));
     assert!(config.database.url.is_none());
-    assert_eq!(config.database.max_connections, 16);
     assert_eq!(config.logging.level, "info");
     assert!(!config.logging.json);
 }
@@ -46,7 +45,6 @@ fn test_default_database_config() {
     let db = DatabaseConfig::default();
     assert_eq!(db.path, PathBuf::from("./vein.db"));
     assert!(db.url.is_none());
-    assert_eq!(db.max_connections, 16);
 }
 
 #[test]
@@ -109,7 +107,6 @@ fn test_parse_full_config() {
         PathBuf::from("/var/lib/vein/db.sqlite")
     );
     assert!(config.database.url.is_none());
-    assert_eq!(config.database.max_connections, 16);
 
     assert_eq!(config.logging.level, "debug");
     assert!(config.logging.json);
@@ -265,16 +262,11 @@ fn test_database_backend_postgres() {
     let db = DatabaseConfig {
         path: PathBuf::from("./vein.db"),
         url: Some("postgres://user:pass@localhost/vein".to_string()),
-        max_connections: 32,
         ..DatabaseConfig::default()
     };
     match db.backend().unwrap() {
-        DatabaseBackend::Postgres {
-            url,
-            max_connections,
-        } => {
+        DatabaseBackend::Postgres { url } => {
             assert_eq!(url, "postgres://user:pass@localhost/vein");
-            assert_eq!(max_connections, 32);
         }
         other => panic!("expected postgres backend, got {other:?}"),
     }
@@ -285,7 +277,6 @@ fn test_database_backend_invalid_scheme() {
     let db = DatabaseConfig {
         path: PathBuf::from("./vein.db"),
         url: Some("mysql://localhost/db".to_string()),
-        max_connections: 8,
         ..DatabaseConfig::default()
     };
     assert!(db.backend().is_err());
@@ -296,7 +287,6 @@ fn test_database_backend_sqlite_url_absolute() {
     let db = DatabaseConfig {
         path: PathBuf::from("./vein.db"),
         url: Some("sqlite:///var/lib/vein/cache.db".to_string()),
-        max_connections: 16,
         ..DatabaseConfig::default()
     };
     match db.backend().unwrap() {
@@ -312,7 +302,6 @@ fn test_database_backend_sqlite_url_localhost() {
     let db = DatabaseConfig {
         path: PathBuf::from("./vein.db"),
         url: Some("sqlite://localhost/var/lib/vein/cache.db".to_string()),
-        max_connections: 16,
         ..DatabaseConfig::default()
     };
     match db.backend().unwrap() {

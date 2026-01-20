@@ -5,6 +5,7 @@ use serde_json::Value as JsonValue;
 pub enum AssetKind {
     Gem,
     Spec,
+    Crate,
 }
 
 impl AssetKind {
@@ -12,6 +13,7 @@ impl AssetKind {
         match self {
             AssetKind::Gem => "gem",
             AssetKind::Spec => "gemspec",
+            AssetKind::Crate => "crate",
         }
     }
 }

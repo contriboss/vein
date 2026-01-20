@@ -9,8 +9,6 @@ pub struct DatabaseConfig {
     pub path: PathBuf,
     #[serde(default)]
     pub url: Option<String>,
-    #[serde(default = "DatabaseConfig::default_max_connections")]
-    pub max_connections: u32,
     #[serde(default = "DatabaseConfig::default_reliability")]
     pub reliability: ReliabilityConfig,
 }
@@ -49,10 +47,6 @@ impl DatabaseConfig {
         Ok(())
     }
 
-    fn default_max_connections() -> u32 {
-        16
-    }
-
     pub fn backend(&self) -> Result<DatabaseBackend> {
         if let Some(raw_url) = &self.url {
             let trimmed = raw_url.trim();
@@ -61,7 +55,6 @@ impl DatabaseConfig {
             match scheme {
                 "postgres" | "postgresql" => Ok(DatabaseBackend::Postgres {
                     url: trimmed.to_string(),
-                    max_connections: self.max_connections.max(1),
                 }),
                 "sqlite" => {
                     let parsed_path = Self::sqlite_path_from_url(trimmed)?;
@@ -124,7 +117,6 @@ impl Default for DatabaseConfig {
         Self {
             path: default_database_path(),
             url: None,
-            max_connections: Self::default_max_connections(),
             reliability: Self::default_reliability(),
         }
     }
@@ -137,5 +129,5 @@ fn default_database_path() -> PathBuf {
 #[derive(Debug, Clone)]
 pub enum DatabaseBackend {
     Sqlite { path: PathBuf },
-    Postgres { url: String, max_connections: u32 },
+    Postgres { url: String },
 }

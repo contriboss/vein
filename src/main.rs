@@ -9,8 +9,10 @@
 
 mod catalog;
 mod config;
+mod crates;
 mod db;
 mod gem_metadata;
+mod http_cache;
 mod proxy;
 mod quarantine;
 mod upstream;
