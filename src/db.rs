@@ -37,12 +37,10 @@ pub async fn connect_cache_backend(
             anyhow::bail!("SQLite support not compiled in. Rebuild with --features sqlite");
         }
         #[cfg(feature = "postgres")]
-        DatabaseBackend::Postgres {
-            url,
-            max_connections,
-        } => {
+        DatabaseBackend::Postgres { url } => {
+            const DEFAULT_MAX_CONNECTIONS: u32 = 10;
             connect_with_retry(
-                || async { CacheBackend::connect(url, *max_connections).await },
+                || async { CacheBackend::connect(url, DEFAULT_MAX_CONNECTIONS).await },
                 retry_config,
                 "postgres",
             )
