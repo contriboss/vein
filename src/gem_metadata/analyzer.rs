@@ -1,10 +1,7 @@
-use std::{collections::BTreeSet, fs::File, io::Read, path::Path};
+use std::{collections::BTreeSet, io::Read};
 
 use anyhow::{Context, Result};
-use flate2::read::GzDecoder;
 use tar::Archive;
-
-use super::binary_arch::{detect_binary_arch, matches_platform, BinaryInfo};
 
 const EMBEDDED_BINARY_DIR_PREFIXES: &[&str] = &["vendor/", "libexec/", "resources/"];
 
@@ -107,87 +104,4 @@ pub fn detect_language_from_path(path: &str) -> Option<&'static str> {
         Some("so") | Some("dll") | Some("dylib") | Some("bundle") => Some("Native Binary"),
         _ => None,
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct ArchValidation {
-    pub claimed_platform: Option<String>,
-    pub detected_binaries: Vec<(String, BinaryInfo)>,
-    pub is_valid: bool,
-    pub mismatches: Vec<String>,
-}
-
-/// Validate that binary architectures in a gem match its claimed platform
-pub fn validate_binary_architectures(
-    gem_path: &Path,
-    claimed_platform: Option<&str>,
-) -> Result<ArchValidation> {
-    let file = File::open(gem_path)
-        .with_context(|| format!("opening gem file: {}", gem_path.display()))?;
-    let mut archive = Archive::new(file);
-
-    let mut detected_binaries = Vec::new();
-    let mut mismatches = Vec::new();
-
-    // Find data.tar.gz in the outer archive
-    for entry in archive.entries()? {
-        let entry = entry?;
-        let path = entry.path()?.into_owned();
-
-        if path.as_os_str().to_string_lossy() == "data.tar.gz" {
-            let decoder = GzDecoder::new(entry);
-            let mut data_archive = Archive::new(decoder);
-
-            // Scan all files in data.tar.gz for binaries
-            for data_entry in data_archive.entries()? {
-                let mut data_entry = data_entry?;
-                let file_path = data_entry.path()?.into_owned();
-                let path_str = file_path.to_string_lossy();
-
-                // Check if this might be a binary file by extension or location
-                let path_str_lower = path_str.to_ascii_lowercase();
-                let might_be_binary = file_path
-                    .extension()
-                    .and_then(|s| s.to_str())
-                    .map(|ext| matches!(ext, "so" | "dll" | "dylib" | "bundle" | "exe"))
-                    .unwrap_or(false)
-                    || path_str_lower.starts_with("exe/")
-                    || path_str_lower.starts_with("bin/");
-
-                if might_be_binary {
-                    // Read the file contents
-                    let mut contents = Vec::new();
-                    if let Err(err) = data_entry.read_to_end(&mut contents) {
-                        eprintln!(
-                            "Warning: failed to read binary file '{}': {}",
-                            path_str, err
-                        );
-                        continue; // Skip files we can't read
-                    }
-
-                    // Detect architecture; only treat as binary if parsing succeeds
-                    if let Ok(binary_info) = detect_binary_arch(&contents) {
-                        let is_match = matches_platform(claimed_platform, &binary_info);
-
-                        if !is_match {
-                            mismatches.push(path_str.to_string());
-                        }
-
-                        detected_binaries.push((path_str.to_string(), binary_info));
-                    }
-                }
-            }
-
-            break;
-        }
-    }
-
-    let is_valid = mismatches.is_empty();
-
-    Ok(ArchValidation {
-        claimed_platform: claimed_platform.map(|s| s.to_string()),
-        detected_binaries,
-        is_valid,
-        mismatches,
-    })
 }

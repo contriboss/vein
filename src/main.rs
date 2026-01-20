@@ -9,8 +9,10 @@
 
 mod catalog;
 mod config;
+mod crates;
 mod db;
 mod gem_metadata;
+mod http_cache;
 mod proxy;
 mod quarantine;
 mod upstream;
@@ -54,7 +56,7 @@ use rama::{
 };
 use vein_adapter::{CacheBackendTrait, FilesystemStorage};
 
-use crate::config::{Config, DatabaseBackend};
+use crate::config::Config;
 use crate::db::connect_cache_backend;
 use crate::proxy::VeinProxy;
 
@@ -378,14 +380,10 @@ fn run_stats(config_path: PathBuf) -> Result<()> {
 
     drop(rt);
 
-    match backend_kind {
-        DatabaseBackend::Sqlite { path } => {
-            println!("SQLite cache: {}", path.display());
-        }
-        DatabaseBackend::Postgres { url, .. } => {
-            println!("PostgreSQL cache: {}", url);
-        }
-    }
+    #[cfg(feature = "sqlite")]
+    println!("SQLite cache: {}", backend_kind.path.display());
+    #[cfg(feature = "postgres")]
+    println!("PostgreSQL cache: {}", backend_kind.url);
     println!("  total assets: {}", index_stats.total_assets);
     println!("  gem assets: {}", index_stats.gem_assets);
     println!("  gemspec assets: {}", index_stats.spec_assets);

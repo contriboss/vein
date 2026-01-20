@@ -1,16 +1,17 @@
 use crate::config::reliability::{ReliabilityConfig, RetryConfig};
 use anyhow::{Result, bail};
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "sqlite")]
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DatabaseConfig {
+    #[cfg(feature = "sqlite")]
     #[serde(default = "default_database_path")]
     pub path: PathBuf,
     #[serde(default)]
     pub url: Option<String>,
-    #[serde(default = "DatabaseConfig::default_max_connections")]
-    pub max_connections: u32,
     #[serde(default = "DatabaseConfig::default_reliability")]
     pub reliability: ReliabilityConfig,
 }
@@ -27,6 +28,7 @@ impl DatabaseConfig {
         }
     }
 
+    #[cfg(feature = "sqlite")]
     pub fn normalize_paths(&mut self, base_dir: &Path) {
         if let Some(raw_url) = &self.url {
             let trimmed = raw_url.trim();
@@ -42,6 +44,10 @@ impl DatabaseConfig {
         }
     }
 
+    #[cfg(not(feature = "sqlite"))]
+    pub fn normalize_paths(&mut self, _base_dir: &Path) {}
+
+    #[cfg(feature = "sqlite")]
     pub fn ensure_directories(&self) -> std::io::Result<()> {
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -49,8 +55,9 @@ impl DatabaseConfig {
         Ok(())
     }
 
-    fn default_max_connections() -> u32 {
-        16
+    #[cfg(not(feature = "sqlite"))]
+    pub fn ensure_directories(&self) -> std::io::Result<()> {
+        Ok(())
     }
 
     pub fn backend(&self) -> Result<DatabaseBackend> {
@@ -59,10 +66,15 @@ impl DatabaseConfig {
             let scheme = Self::parse_scheme(trimmed).unwrap_or_default();
 
             match scheme {
-                "postgres" | "postgresql" => Ok(DatabaseBackend::Postgres {
+                #[cfg(feature = "postgres")]
+                "postgres" | "postgresql" => Ok(DatabaseBackend {
                     url: trimmed.to_string(),
-                    max_connections: self.max_connections.max(1),
                 }),
+                #[cfg(not(feature = "postgres"))]
+                "postgres" | "postgresql" => {
+                    bail!("PostgreSQL support not compiled in. Rebuild with --features postgres")
+                }
+                #[cfg(feature = "sqlite")]
                 "sqlite" => {
                     let parsed_path = Self::sqlite_path_from_url(trimmed)?;
                     let path = if self.path.is_absolute() {
@@ -70,14 +82,25 @@ impl DatabaseConfig {
                     } else {
                         parsed_path
                     };
-                    Ok(DatabaseBackend::Sqlite { path })
+                    Ok(DatabaseBackend { path })
+                }
+                #[cfg(not(feature = "sqlite"))]
+                "sqlite" => {
+                    bail!("SQLite support not compiled in. Rebuild with --features sqlite")
                 }
                 other => bail!("unsupported database url scheme {other}"),
             }
         } else {
-            Ok(DatabaseBackend::Sqlite {
-                path: self.path.clone(),
-            })
+            #[cfg(feature = "sqlite")]
+            {
+                Ok(DatabaseBackend {
+                    path: self.path.clone(),
+                })
+            }
+            #[cfg(not(feature = "sqlite"))]
+            {
+                bail!("No database URL provided. Set database.url for postgres")
+            }
         }
     }
 
@@ -85,13 +108,12 @@ impl DatabaseConfig {
         url.find("://").map(|idx| &url[..idx])
     }
 
+    #[cfg(feature = "sqlite")]
     fn sqlite_path_from_url(url: &str) -> Result<PathBuf> {
-        // Format: sqlite://[host]/path or sqlite:///path
         let after_scheme = url
             .strip_prefix("sqlite://")
             .ok_or_else(|| anyhow::anyhow!("invalid sqlite url"))?;
 
-        // Check for host part
         let (host, path_part) = if let Some(slash_idx) = after_scheme.find('/') {
             (&after_scheme[..slash_idx], &after_scheme[slash_idx..])
         } else {
@@ -107,11 +129,8 @@ impl DatabaseConfig {
         }
 
         let path = if host == "." {
-            // sqlite://./relative/path -> relative/path
             PathBuf::from(path_part.trim_start_matches('/'))
         } else {
-            // sqlite:///absolute/path -> /absolute/path
-            // sqlite://localhost/path -> /path
             PathBuf::from(path_part)
         };
 
@@ -122,20 +141,27 @@ impl DatabaseConfig {
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
+            #[cfg(feature = "sqlite")]
             path: default_database_path(),
             url: None,
-            max_connections: Self::default_max_connections(),
             reliability: Self::default_reliability(),
         }
     }
 }
 
+#[cfg(feature = "sqlite")]
 fn default_database_path() -> PathBuf {
     PathBuf::from("./vein.db")
 }
 
+#[cfg(feature = "sqlite")]
 #[derive(Debug, Clone)]
-pub enum DatabaseBackend {
-    Sqlite { path: PathBuf },
-    Postgres { url: String, max_connections: u32 },
+pub struct DatabaseBackend {
+    pub path: PathBuf,
+}
+
+#[cfg(feature = "postgres")]
+#[derive(Debug, Clone)]
+pub struct DatabaseBackend {
+    pub url: String,
 }

@@ -76,9 +76,44 @@ impl CacheableRequest {
             Self::from_gem_path(path.strip_prefix("/gems/")?)
         } else if path.starts_with("/quick/Marshal.4.8/") {
             Self::from_spec_path(path.strip_prefix("/quick/Marshal.4.8/")?)
+        } else if path.starts_with("/api/v1/crates/") {
+            Self::from_crate_download_path(path)
         } else {
             None
         }
+    }
+
+    /// Parse crate download path: /api/v1/crates/{name}/{version}/download
+    pub fn from_crate_download_path(path: &str) -> Option<Self> {
+        let parts = path.strip_prefix("/api/v1/crates/")?;
+        let segments: Vec<&str> = parts.split('/').collect();
+        if segments.len() < 3 || segments[2] != "download" {
+            return None;
+        }
+        let name = segments[0];
+        let version = segments[1];
+
+        // Validate - no path traversal
+        if name.contains("..")
+            || name.contains('/')
+            || version.contains("..")
+            || version.contains('/')
+        {
+            tracing::warn!(name = %name, version = %version, "Rejected path traversal in crate request");
+            return None;
+        }
+
+        let file_name = format!("{}-{}.crate", name, version);
+        let relative_path = format!("crates/{}/{}", name, file_name);
+
+        Some(Self {
+            kind: AssetKind::Crate,
+            name: name.to_string(),
+            version: version.to_string(),
+            platform: None,
+            file_name,
+            relative_path,
+        })
     }
 
     pub fn from_gem_path(file: &str) -> Option<Self> {
@@ -154,6 +189,7 @@ impl CacheableRequest {
         match self.kind {
             AssetKind::Gem => "application/octet-stream",
             AssetKind::Spec => "application/x-deflate",
+            AssetKind::Crate => "application/gzip",
         }
     }
 }

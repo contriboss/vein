@@ -36,9 +36,6 @@ rama = { version = "0.3.0-alpha.4", features = ["http-full", "tcp", "opentelemet
 # Async runtime
 tokio = { version = "1.43", features = ["full"] }
 
-# Database (features controlled by workspace features)
-sqlx = { version = "0.8.2", features = ["sqlite", "chrono"] }
-
 # Serialization
 serde = { version = "1.0.217", features = ["derive"] }
 serde_json = "1.0.135"
@@ -46,38 +43,22 @@ serde_yaml = "0.9"
 toml = "0.9"
 
 # File handling and hashing
-tokio-util = { version = "0.7.17", features = ["io"] }
 sha2 = "0.10.8"
-bytes = "1.11.0"
-futures-util = "0.3.31"
 
-# Version parsing for RubyGems
-semver = "1.0"
+# Archive handling
 num_cpus = "1.16.0"
 hex = "0.4.3"
 flate2 = "1.0.32"
 tar = "0.4.41"
 cyclonedx-bom = "0.8.0"
 
-# Tree-sitter for Ruby code analysis
-tree-sitter = "0.26.3"
-tree-sitter-ruby = "0.23.1"
-
-# Binary parsing for architecture validation
-goblin = "0.10"
-
 # Error handling
 anyhow = "1.0.95"
-thiserror = "2.0.9"
 
 # CLI
 clap = { version = "4.5.53", features = ["derive"] }
 
-# Path handling
-path-clean = "1.0.1"
-
 # Utilities
-once_cell = "1.20.2"
 parking_lot = "0.12.3"
 percent-encoding = "2.3"
 rand = "0.9"

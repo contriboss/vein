@@ -14,9 +14,9 @@ fn test_default_config() {
     assert_eq!(config.server.workers, num_cpus::get());
     assert!(config.upstream.is_none());
     assert_eq!(config.storage.path, PathBuf::from("./gems"));
+    #[cfg(feature = "sqlite")]
     assert_eq!(config.database.path, PathBuf::from("./vein.db"));
     assert!(config.database.url.is_none());
-    assert_eq!(config.database.max_connections, 16);
     assert_eq!(config.logging.level, "info");
     assert!(!config.logging.json);
 }
@@ -44,9 +44,9 @@ fn test_default_storage_config() {
 #[test]
 fn test_default_database_config() {
     let db = DatabaseConfig::default();
+    #[cfg(feature = "sqlite")]
     assert_eq!(db.path, PathBuf::from("./vein.db"));
     assert!(db.url.is_none());
-    assert_eq!(db.max_connections, 16);
 }
 
 #[test]
@@ -104,12 +104,12 @@ fn test_parse_full_config() {
     assert_eq!(upstream.url.to_string(), "https://example.com/");
 
     assert_eq!(config.storage.path, PathBuf::from("/var/lib/vein/gems"));
+    #[cfg(feature = "sqlite")]
     assert_eq!(
         config.database.path,
         PathBuf::from("/var/lib/vein/db.sqlite")
     );
     assert!(config.database.url.is_none());
-    assert_eq!(config.database.max_connections, 16);
 
     assert_eq!(config.logging.level, "debug");
     assert!(config.logging.json);
@@ -230,6 +230,7 @@ fn test_storage_path_normalization_absolute() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_database_path_normalization_relative() {
     let mut db = DatabaseConfig {
         path: PathBuf::from("vein.db"),
@@ -241,6 +242,7 @@ fn test_database_path_normalization_relative() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_database_path_normalization_absolute() {
     let mut db = DatabaseConfig {
         path: PathBuf::from("/absolute/path/db.sqlite"),
@@ -252,78 +254,58 @@ fn test_database_path_normalization_absolute() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_database_backend_sqlite_default() {
     let backend = DatabaseConfig::default().backend().unwrap();
-    match backend {
-        DatabaseBackend::Sqlite { path } => assert_eq!(path, PathBuf::from("./vein.db")),
-        _ => panic!("expected sqlite backend"),
-    }
+    assert_eq!(backend.path, PathBuf::from("./vein.db"));
 }
 
 #[test]
+#[cfg(feature = "postgres")]
 fn test_database_backend_postgres() {
     let db = DatabaseConfig {
-        path: PathBuf::from("./vein.db"),
         url: Some("postgres://user:pass@localhost/vein".to_string()),
-        max_connections: 32,
         ..DatabaseConfig::default()
     };
-    match db.backend().unwrap() {
-        DatabaseBackend::Postgres {
-            url,
-            max_connections,
-        } => {
-            assert_eq!(url, "postgres://user:pass@localhost/vein");
-            assert_eq!(max_connections, 32);
-        }
-        other => panic!("expected postgres backend, got {other:?}"),
-    }
+    let backend = db.backend().unwrap();
+    assert_eq!(backend.url, "postgres://user:pass@localhost/vein");
 }
 
 #[test]
 fn test_database_backend_invalid_scheme() {
     let db = DatabaseConfig {
-        path: PathBuf::from("./vein.db"),
         url: Some("mysql://localhost/db".to_string()),
-        max_connections: 8,
         ..DatabaseConfig::default()
     };
     assert!(db.backend().is_err());
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_database_backend_sqlite_url_absolute() {
     let db = DatabaseConfig {
         path: PathBuf::from("./vein.db"),
         url: Some("sqlite:///var/lib/vein/cache.db".to_string()),
-        max_connections: 16,
         ..DatabaseConfig::default()
     };
-    match db.backend().unwrap() {
-        DatabaseBackend::Sqlite { path } => {
-            assert_eq!(path, PathBuf::from("/var/lib/vein/cache.db"));
-        }
-        other => panic!("expected sqlite backend, got {other:?}"),
-    }
+    let backend = db.backend().unwrap();
+    assert_eq!(backend.path, PathBuf::from("/var/lib/vein/cache.db"));
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_database_backend_sqlite_url_localhost() {
     let db = DatabaseConfig {
         path: PathBuf::from("./vein.db"),
         url: Some("sqlite://localhost/var/lib/vein/cache.db".to_string()),
-        max_connections: 16,
         ..DatabaseConfig::default()
     };
-    match db.backend().unwrap() {
-        DatabaseBackend::Sqlite { path } => {
-            assert_eq!(path, PathBuf::from("/var/lib/vein/cache.db"));
-        }
-        other => panic!("expected sqlite backend, got {other:?}"),
-    }
+    let backend = db.backend().unwrap();
+    assert_eq!(backend.path, PathBuf::from("/var/lib/vein/cache.db"));
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_config_normalizes_paths_on_load() {
     let temp_dir = tempdir().unwrap();
     let config_path = temp_dir.path().join("test.toml");
@@ -345,6 +327,7 @@ fn test_config_normalizes_paths_on_load() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_config_sqlite_url_sets_path() {
     let temp_dir = tempdir().unwrap();
     let config_path = temp_dir.path().join("vein.toml");
@@ -360,19 +343,16 @@ fn test_config_sqlite_url_sets_path() {
     let expected = temp_dir.path().join("db/vein.sqlite");
     assert!(config.database.path.is_absolute());
     assert!(config.database.path.ends_with("db/vein.sqlite"));
-    match config.database.backend().unwrap() {
-        DatabaseBackend::Sqlite { path } => {
-            assert!(path.is_absolute());
-            assert!(path.ends_with("db/vein.sqlite"));
-            assert_eq!(path, expected);
-        }
-        other => panic!("expected sqlite backend, got {other:?}"),
-    }
+    let backend = config.database.backend().unwrap();
+    assert!(backend.path.is_absolute());
+    assert!(backend.path.ends_with("db/vein.sqlite"));
+    assert_eq!(backend.path, expected);
 }
 
 // === VALIDATION TESTS ===
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_validate_https_upstream() {
     let config = Config {
         upstream: Some(UpstreamConfig {
@@ -385,6 +365,7 @@ fn test_validate_https_upstream() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_validate_http_upstream() {
     let config = Config {
         upstream: Some(UpstreamConfig {
@@ -414,6 +395,7 @@ fn test_validate_invalid_scheme() {
 }
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_validate_no_upstream() {
     let config = Config {
         upstream: None,
@@ -577,6 +559,7 @@ fn test_high_port_number() {
 // === INTEGRATION TESTS ===
 
 #[test]
+#[cfg(feature = "sqlite")]
 fn test_full_workflow_load_validate() {
     let temp_dir = tempdir().unwrap();
     let config_path = temp_dir.path().join("vein.toml");
@@ -616,6 +599,7 @@ fn test_full_workflow_load_validate() {
 
     // Paths should be normalized relative to config file location
     assert_eq!(config.storage.path, temp_dir.path().join("gems"));
+    #[cfg(feature = "sqlite")]
     assert_eq!(config.database.path, temp_dir.path().join("vein.db"));
 }
 

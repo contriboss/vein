@@ -18,9 +18,15 @@ use rama::{
         Body, HeaderMap, HeaderValue, Method, Request, Response, StatusCode, body::util::BodyExt,
     },
 };
-use tokio::io::AsyncWriteExt;
 
-use crate::{config::Config, upstream::UpstreamClient};
+use crate::{
+    config::Config,
+    http_cache::{CacheOutcome, MetaStoreMode, fetch_cached_text},
+    upstream::UpstreamClient,
+};
+
+// Import crates module (renamed to avoid keyword conflict)
+use super::crates as crates_registry;
 use vein_adapter::{CacheBackend, CacheBackendTrait, FilesystemStorage};
 
 // Re-export public types
@@ -72,27 +78,6 @@ impl CompactRequest {
 
     fn content_type(&self) -> &'static str {
         "text/plain"
-    }
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-pub struct CompactEntryMeta {
-    etag: Option<String>,
-    last_modified: Option<String>,
-}
-
-impl CompactEntryMeta {
-    fn from_headers(headers: &header::HeaderMap) -> Self {
-        Self {
-            etag: headers
-                .get(header::ETAG)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string()),
-            last_modified: headers
-                .get(header::LAST_MODIFIED)
-                .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string()),
-        }
     }
 }
 
@@ -156,6 +141,29 @@ impl VeinProxy {
                     ctx.cache = CacheStatus::Pass;
                     return response::respond_homepage(&self.config);
                 }
+                // Crates.io sparse index (with caching)
+                p if p.starts_with("/index/") => {
+                    let our_base = format!("http://{}:{}", self.config.server.host, self.config.server.port);
+                    match crates_registry::handle_sparse_index(
+                        p,
+                        &our_base,
+                        self.storage.clone(),
+                        self.index.clone(),
+                    ).await {
+                        Ok(resp) => {
+                            ctx.cache = CacheStatus::Hit; // May be revalidated, but close enough
+                            return Ok(resp);
+                        }
+                        Err(err) => {
+                            error!(error = %err, "crates index request failed");
+                            ctx.cache = CacheStatus::Error;
+                            return response::respond_text(StatusCode::BAD_GATEWAY, "upstream error");
+                        }
+                    }
+                }
+                // Crates.io download API - handled via caching flow below
+                // Path: /api/v1/crates/{name}/{version}/download
+                // Falls through to try_handle_cached_request which handles Crate assets
                 _ => {}
             }
         }
@@ -262,157 +270,56 @@ impl VeinProxy {
         &self,
         req: &Request<Body>,
         compact: CompactRequest,
-        ctx: &mut RequestContext,
+        _ctx: &mut RequestContext,
     ) -> Result<Option<(Response<Body>, CacheStatus)>> {
         let storage_path = compact.storage_path();
-        let cached_bytes = tokio::fs::read(self.storage.resolve(&storage_path))
-            .await
-            .ok();
-
         let meta_key = compact.meta_key();
-        let cached_meta: Option<CompactEntryMeta> = self
-            .index
-            .catalog_meta_get(&meta_key)
-            .await?
-            .and_then(|raw| serde_json::from_str(&raw).ok());
+        let content_type = compact.content_type();
+        let info_name = match &compact {
+            CompactRequest::Info { name } => Some(name.clone()),
+            _ => None,
+        };
 
-        let mut headers = HeaderMap::new();
-        if let Some(meta) = &cached_meta {
-            if let Some(etag) = &meta.etag
-                && let Ok(value) = HeaderValue::from_str(etag)
-            {
-                headers.insert(header::IF_NONE_MATCH, value);
-            }
-            if let Some(last_modified) = &meta.last_modified
-                && let Ok(value) = HeaderValue::from_str(last_modified)
-            {
-                headers.insert(header::IF_MODIFIED_SINCE, value);
-            }
-        }
+        let delay_policy = &self.config.delay_policy;
+        let index = self.index.as_ref();
 
-        let response = self
-            .fetch_with_fallback(req, Some(&headers))
-            .await
-            .context("requesting compact index")?;
+        let result = fetch_cached_text(
+            &self.storage,
+            index,
+            &storage_path,
+            &meta_key,
+            content_type,
+            "public, max-age=300",
+            true,
+            MetaStoreMode::Strict,
+            true,
+            |headers| async move { self.fetch_with_fallback(req, Some(&headers)).await },
+            move |body| async move {
+                if let Some(name) = info_name {
+                    match quarantine::filter_compact_info(delay_policy, index, &name, &body).await {
+                        Ok(filtered) => Ok(filtered),
+                        Err(err) => {
+                            warn!(
+                                error = %err,
+                                gem = %name,
+                                "Failed to filter quarantined versions"
+                            );
+                            Ok(body)
+                        }
+                    }
+                } else {
+                    Ok(body)
+                }
+            },
+        )
+        .await?;
 
-        let status = response.status();
-
-        if status == StatusCode::NOT_MODIFIED && cached_bytes.is_some() {
-            let meta = cached_meta.unwrap_or_default();
-            let body = cached_bytes.as_deref().unwrap_or_default();
-
-            // Apply quarantine filtering for /info/{gem} requests
-            let filtered_body = match &compact {
-                CompactRequest::Info { name } => quarantine::filter_compact_info(
-                    &self.config.delay_policy,
-                    self.index.as_ref(),
-                    name,
-                    body,
-                )
-                .await
-                .unwrap_or_else(|err| {
-                    warn!(error = %err, gem = %name, "Failed to filter quarantined versions");
-                    body.to_vec()
-                }),
-                _ => body.to_vec(),
-            };
-
-            let resp =
-                self.write_compact_response(&filtered_body, &meta, compact.content_type())?;
-            ctx.cache = CacheStatus::Revalidated;
-            return Ok(Some((resp, CacheStatus::Revalidated)));
-            // If we got a 304 but have no cache, fall through to refetch below
-        }
-
-        if status.is_success() {
-            let headers = response.headers().clone();
-            let body = response
-                .into_body()
-                .collect()
-                .await
-                .context("reading compact index body")?
-                .to_bytes();
-            let meta = CompactEntryMeta::from_headers(&headers);
-
-            let mut temp = self
-                .storage
-                .create_temp_writer(&storage_path)
-                .await
-                .context("creating compact index temp file")?;
-            temp.file_mut()
-                .write_all(&body)
-                .await
-                .context("writing compact index body")?;
-            temp.commit()
-                .await
-                .context("committing compact index body")?;
-
-            let meta_json = serde_json::to_string(&meta).context("serializing compact meta")?;
-            self.index
-                .catalog_meta_set(&meta_key, &meta_json)
-                .await
-                .context("persisting compact meta")?;
-
-            // Apply quarantine filtering for /info/{gem} requests
-            let filtered_body = match &compact {
-                CompactRequest::Info { name } => quarantine::filter_compact_info(
-                    &self.config.delay_policy,
-                    self.index.as_ref(),
-                    name,
-                    &body,
-                )
-                .await
-                .unwrap_or_else(|err| {
-                    warn!(error = %err, gem = %name, "Failed to filter quarantined versions");
-                    body.to_vec()
-                }),
-                _ => body.to_vec(),
-            };
-
-            let resp =
-                self.write_compact_response(&filtered_body, &meta, compact.content_type())?;
-            let cache_status = if cached_bytes.is_some() {
-                CacheStatus::Revalidated
-            } else {
-                CacheStatus::Miss
-            };
-            ctx.cache = cache_status;
-            return Ok(Some((resp, cache_status)));
-        }
-
-        // Propagate non-success upstream status to client
-        ctx.cache = CacheStatus::Pass;
-        let resp = self.forward_response(response).await?;
-        Ok(Some((resp, CacheStatus::Pass)))
-    }
-
-    fn write_compact_response(
-        &self,
-        body: &[u8],
-        meta: &CompactEntryMeta,
-        content_type: &str,
-    ) -> Result<Response<Body>> {
-        let mut builder = Response::builder().status(StatusCode::OK);
-        let headers = builder.headers_mut().expect("headers mut");
-        headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(content_type)?);
-        headers.insert(
-            header::CONTENT_LENGTH,
-            HeaderValue::from_str(&body.len().to_string())?,
-        );
-        headers.insert(
-            header::CACHE_CONTROL,
-            HeaderValue::from_static("public, max-age=300"),
-        );
-        if let Some(etag) = &meta.etag {
-            headers.insert(header::ETAG, HeaderValue::from_str(etag)?);
-        }
-        if let Some(last_modified) = &meta.last_modified {
-            headers.insert(header::LAST_MODIFIED, HeaderValue::from_str(last_modified)?);
-        }
-
-        builder
-            .body(Body::from(body.to_vec()))
-            .context("building compact response")
+        let cache_status = match result.outcome {
+            CacheOutcome::Miss => CacheStatus::Miss,
+            CacheOutcome::Revalidated => CacheStatus::Revalidated,
+            CacheOutcome::Pass => CacheStatus::Pass,
+        };
+        Ok(Some((result.response, cache_status)))
     }
 
     async fn fetch_and_stream(
@@ -421,10 +328,14 @@ impl VeinProxy {
         cacheable: &types::CacheableRequest,
         treating_as_revalidation: bool,
     ) -> Result<Response<Body>> {
-        let response = self
-            .fetch_with_fallback(req, None)
-            .await
-            .context("requesting upstream")?;
+        // For crates, use crates.io CDN directly instead of configured upstreams
+        let response = if cacheable.kind == vein_adapter::AssetKind::Crate {
+            self.fetch_crate(&cacheable.name, &cacheable.version).await?
+        } else {
+            self.fetch_with_fallback(req, None)
+                .await
+                .context("requesting upstream")?
+        };
 
         if !response.status().is_success() {
             warn!(
@@ -477,6 +388,48 @@ impl VeinProxy {
 
     fn request_summary(&self, ctx: &RequestContext) -> String {
         format!("{} {}", ctx.method.as_str(), ctx.path)
+    }
+
+    /// Fetch a crate from crates.io CDN
+    async fn fetch_crate(&self, name: &str, version: &str) -> Result<Response<Body>> {
+        use rama::http::client::EasyHttpWebClient;
+
+        let url = format!(
+            "https://static.crates.io/crates/{}/{}-{}.crate",
+            name, name, version
+        );
+
+        let client = EasyHttpWebClient::default();
+
+        let request = Request::builder()
+            .method(Method::GET)
+            .uri(&url)
+            .header(header::USER_AGENT, HeaderValue::from_static(concat!("vein/", env!("CARGO_PKG_VERSION"))))
+            .body(Body::empty())
+            .context("building crate request")?;
+
+        let response = client.serve(request).await
+            .map_err(|e| anyhow!("crate fetch failed: {e}"))?;
+
+        // Rebuild response with collected body to match expected type
+        let status = response.status();
+        let headers = response.headers().clone();
+        let body_bytes = response.into_body().collect().await
+            .context("reading crate response body")?
+            .to_bytes();
+
+        let mut builder = Response::builder().status(status);
+        {
+            let resp_headers = builder.headers_mut()
+                .ok_or_else(|| anyhow!("cannot get headers mut"))?;
+            for (name, value) in headers.iter() {
+                resp_headers.insert(name, value.clone());
+            }
+        }
+
+        builder
+            .body(Body::from(body_bytes))
+            .context("building crate response")
     }
 
     async fn forward_response(&self, response: Response<Body>) -> Result<Response<Body>> {

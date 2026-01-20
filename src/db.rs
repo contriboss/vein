@@ -21,38 +21,25 @@ pub async fn connect_cache_backend(
         );
     }
 
-    let cache = match &backend {
-        #[cfg(feature = "sqlite")]
-        DatabaseBackend::Sqlite { path } => {
-            connect_with_retry(
-                || async { CacheBackend::connect(path).await },
-                retry_config,
-                "sqlite",
-            )
-            .await
-            .context("connecting sqlite cache")?
-        }
-        #[cfg(not(feature = "sqlite"))]
-        DatabaseBackend::Sqlite { .. } => {
-            anyhow::bail!("SQLite support not compiled in. Rebuild with --features sqlite");
-        }
-        #[cfg(feature = "postgres")]
-        DatabaseBackend::Postgres {
-            url,
-            max_connections,
-        } => {
-            connect_with_retry(
-                || async { CacheBackend::connect(url, *max_connections).await },
-                retry_config,
-                "postgres",
-            )
-            .await
-            .context("connecting postgres cache")?
-        }
-        #[cfg(not(feature = "postgres"))]
-        DatabaseBackend::Postgres { .. } => {
-            anyhow::bail!("PostgreSQL support not compiled in. Rebuild with --features postgres");
-        }
+    #[cfg(feature = "sqlite")]
+    let cache = connect_with_retry(
+        || async { CacheBackend::connect(&backend.path).await },
+        retry_config,
+        "sqlite",
+    )
+    .await
+    .context("connecting sqlite cache")?;
+
+    #[cfg(feature = "postgres")]
+    let cache = {
+        const DEFAULT_MAX_CONNECTIONS: u32 = 10;
+        connect_with_retry(
+            || async { CacheBackend::connect(&backend.url, DEFAULT_MAX_CONNECTIONS).await },
+            retry_config,
+            "postgres",
+        )
+        .await
+        .context("connecting postgres cache")?
     };
     Ok((Arc::new(cache), backend))
 }
