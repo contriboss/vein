@@ -1,6 +1,6 @@
 [package]
 name = "vein-admin"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 license = "AGPL-3.0-only"
 authors = ["Abdelkader Boudih <oss@seuros.com>"]
@@ -27,8 +27,8 @@ serde_json = "1.0.135"
 serde_yaml = "0.9"
 tokio = { version = "1.43", features = ["rt-multi-thread", "macros", "signal"] }
 tracing = "0.1.41"
-vein = { version = "0.4.0", path = "../.." }
-vein-adapter = { version = "0.3.0", path = "../vein-adapter" }
+vein = { version = "0.5.0", path = "../.." }
+vein-adapter = { version = "0.5.0", path = "../vein-adapter" }
 
 [dev-dependencies]
 http-body-util = "0.1"
