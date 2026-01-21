@@ -3,7 +3,7 @@ members = ["crates/vein-adapter", "crates/vein-admin"]
 
 [package]
 name = "vein"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2024"
 authors = ["Abdelkader Boudih <oss@seuros.com>"]
 description = "A fast, intelligent RubyGems proxy/mirror server written in Rust"
@@ -74,7 +74,7 @@ chrono-machines = "0.3.0"
 # Time handling
 chrono = { version = "0.4.38", features = ["serde"] }
 
-vein-adapter = { version = "0.3.0", path = "crates/vein-adapter", default-features = false }
+vein-adapter = { version = "0.5.0", path = "crates/vein-adapter", default-features = false }
 
 [dev-dependencies]
 tokio-test = "0.4.4"
