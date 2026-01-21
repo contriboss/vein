@@ -13,6 +13,7 @@ pub mod crates;
 pub mod db;
 pub mod gem_metadata;
 pub mod http_cache;
+pub mod npm;
 pub mod proxy;
 pub mod quarantine;
 pub mod upstream;

@@ -6,6 +6,7 @@ pub enum AssetKind {
     Gem,
     Spec,
     Crate,
+    NpmPackage,
 }
 
 impl AssetKind {
@@ -14,6 +15,7 @@ impl AssetKind {
             AssetKind::Gem => "gem",
             AssetKind::Spec => "gemspec",
             AssetKind::Crate => "crate",
+            AssetKind::NpmPackage => "npm",
         }
     }
 }

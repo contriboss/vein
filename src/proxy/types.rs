@@ -190,6 +190,7 @@ impl CacheableRequest {
             AssetKind::Gem => "application/octet-stream",
             AssetKind::Spec => "application/x-deflate",
             AssetKind::Crate => "application/gzip",
+            AssetKind::NpmPackage => "application/gzip",
         }
     }
 }

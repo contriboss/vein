@@ -11,7 +11,7 @@ use rama::http::{
 use rama::Service;
 use vein_adapter::{CacheBackend, FilesystemStorage};
 
-use crate::http_cache::{fetch_cached_text, CachedFetchResult, CacheOutcome, MetaStoreMode};
+use crate::http_cache::{fetch_cached_text, CacheOutcome, MetaStoreMode};
 use super::types::{index_path, IndexConfig};
 
 const UA: &str = concat!("vein/", env!("CARGO_PKG_VERSION"));

@@ -34,6 +34,7 @@ pub enum MetaStoreMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CacheOutcome {
+    Hit,
     Miss,
     Revalidated,
     Pass,

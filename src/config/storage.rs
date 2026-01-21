@@ -29,5 +29,5 @@ impl Default for StorageConfig {
 }
 
 fn default_storage_path() -> PathBuf {
-    PathBuf::from("./gems")
+    PathBuf::from("./cache")
 }

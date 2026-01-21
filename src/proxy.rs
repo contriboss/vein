@@ -1,8 +1,8 @@
-mod cache;
+pub(crate) mod cache;
 mod handlers;
 mod quarantine;
 mod response;
-mod types;
+pub(crate) mod types;
 mod utils;
 
 use std::sync::Arc;
@@ -27,6 +27,7 @@ use crate::{
 
 // Import crates module (renamed to avoid keyword conflict)
 use super::crates as crates_registry;
+use super::npm as npm_registry;
 use vein_adapter::{CacheBackend, CacheBackendTrait, FilesystemStorage};
 
 // Re-export public types
@@ -124,6 +125,33 @@ impl VeinProxy {
         let method = req.method().clone();
         let path = req.uri().path().to_owned();
 
+        // NPM requests detected by header (npm-command, npm user-agent, or npm Accept)
+        // Must check before path-based routing since npm uses same paths as other registries
+        if npm_registry::is_npm_request(&req) {
+            let our_base = format!("http://{}:{}", self.config.server.host, self.config.server.port);
+            match npm_registry::handle_npm_request(
+                req,
+                &our_base,
+                self.storage.clone(),
+                self.index.clone(),
+            ).await {
+                Ok((resp, outcome)) => {
+                    ctx.cache = match outcome {
+                        CacheOutcome::Hit => CacheStatus::Hit,
+                        CacheOutcome::Miss => CacheStatus::Miss,
+                        CacheOutcome::Revalidated => CacheStatus::Revalidated,
+                        CacheOutcome::Pass => CacheStatus::Pass,
+                    };
+                    return Ok(resp);
+                }
+                Err(err) => {
+                    error!(error = %err, "npm request failed");
+                    ctx.cache = CacheStatus::Error;
+                    return response::respond_text(StatusCode::BAD_GATEWAY, "npm upstream error");
+                }
+            }
+        }
+
         if method == Method::GET {
             match path.as_str() {
                 "/up" => {
@@ -152,6 +180,7 @@ impl VeinProxy {
                     ).await {
                         Ok((resp, outcome)) => {
                             ctx.cache = match outcome {
+                                CacheOutcome::Hit => CacheStatus::Hit,
                                 CacheOutcome::Miss => CacheStatus::Miss,
                                 CacheOutcome::Revalidated => CacheStatus::Revalidated,
                                 CacheOutcome::Pass => CacheStatus::Pass,
@@ -319,6 +348,7 @@ impl VeinProxy {
         .await?;
 
         let cache_status = match result.outcome {
+            CacheOutcome::Hit => CacheStatus::Hit,
             CacheOutcome::Miss => CacheStatus::Miss,
             CacheOutcome::Revalidated => CacheStatus::Revalidated,
             CacheOutcome::Pass => CacheStatus::Pass,

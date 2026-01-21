@@ -40,7 +40,7 @@ COPY --from=builder /build/target/release/vein /usr/local/bin/vein
 
 # Set working directory and permissions
 WORKDIR /data
-RUN chown vein:vein /data
+RUN chown -R vein:vein /data
 
 USER vein
 
