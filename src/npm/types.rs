@@ -39,14 +39,14 @@ impl NpmPackageRequest {
             return None;
         }
 
-        // Reject path traversal and invalid separators after decoding
-        if is_invalid_path(decoded) {
-            return None;
-        }
-
         // Check if this is a tarball request (contains /-/)
         if decoded.contains("/-/") {
             return Self::parse_tarball_path(decoded);
+        }
+
+        // Reject path traversal and invalid separators after decoding for non-tarball paths
+        if is_invalid_path(decoded) {
+            return None;
         }
 
         // Parse as metadata request
