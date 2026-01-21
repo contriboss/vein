@@ -13,6 +13,7 @@ mod crates;
 mod db;
 mod gem_metadata;
 mod http_cache;
+mod npm;
 mod proxy;
 mod quarantine;
 mod upstream;
@@ -209,10 +210,10 @@ fn run_init(output: PathBuf, force: bool) -> Result<()> {
 
 fn generate_default_config() -> String {
     #[cfg(target_os = "android")]
-    let (storage_path, db_path) = ("/sdcard/vein/gems", "/sdcard/vein/vein.db");
+    let (storage_path, db_path) = ("/sdcard/vein/cache", "/sdcard/vein/vein.db");
 
     #[cfg(not(target_os = "android"))]
-    let (storage_path, db_path) = ("./gems", "./vein.db");
+    let (storage_path, db_path) = ("./cache", "./vein.db");
 
     format!(
         r#"# Vein Configuration

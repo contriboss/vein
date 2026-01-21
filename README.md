@@ -1,24 +1,29 @@
 # Vein 💎
 
-A fast, intelligent RubyGems proxy/mirror server. Part of the ore ecosystem alongside [ore-light](https://github.com/contriboss/ore-light).
+A fast, intelligent multi-ecosystem package proxy/mirror server (RubyGems, crates.io, npm; Python next).
+
+**Single endpoint:** Bundler and Ore point to the same Vein URL. The same base URL can also serve Cargo (sparse index + crate downloads) and npm (metadata + tarballs) via path/header detection. Upstream configuration applies to RubyGems only; crates.io and npm use fixed upstreams.
 
 ## What is Vein?
 
-Vein is a **smart caching proxy** for RubyGems that:
+Vein is a **smart caching proxy** for multiple package ecosystems that:
 
-- Proxies rubygems.org with local caching
-- Serves gems from local cache when available
-- Only fetches from upstream on cache miss
+- Proxies RubyGems via a configurable upstream
+- Mirrors crates.io (sparse index + crate downloads) with caching
+- Proxies npm registry metadata and tarballs with caching
+- Serves cached artifacts from local storage on repeat requests
+- Runs in cache-only mode when no RubyGems upstream is configured
 - Built on Rama (modular service framework)
-- Zero configuration - just works™
+- Minimal configuration - just works for common setups
 
 ## Why Vein?
 
 - **Blazing Fast**: High-performance proxy with Rama
-- **Smart Caching**: Proxy once, serve forever from local cache
-- **Supply Chain Protection**: Optional quarantine delays for new gem versions
-- **Minimal Config**: Works out of the box, configure only what you need
+- **Smart Caching**: Cache artifacts once and serve locally thereafter
+- **Supply Chain Protection**: Quarantine system (RubyGems today; expanding across ecosystems)
+- **Minimal Config**: Cache-only by default; enable RubyGems upstream when needed
 - **Simple Deployment**: Single binary, no complex dependencies
+- **Multi-registry endpoint**: RubyGems + crates.io + npm on one base URL
 - **Ore Integration**: Works seamlessly with ore-light's fallback mechanism
 
 ## Quick Start
@@ -41,31 +46,32 @@ cargo build --release
 ```
 Client Request → Vein → Local Cache?
                      ├─ Hit  → Serve from filesystem
-                     └─ Miss → Fetch from rubygems.org
+                     └─ Miss → Fetch from upstream (RubyGems / crates.io / npm)
                                  ├─ Cache locally
                                  └─ Serve to client
 ```
 
-**Permanent Caching**: Once a gem is cached, it's served locally forever. No re-fetching.
+**Permanent Caching**: Artifact files (gems, crates, npm tarballs) are cached on first fetch and served locally thereafter. Index/metadata endpoints are cached with TTL + revalidation.
 
-**Simple Architecture**: SQLite for metadata + filesystem for gem files.
+**Simple Architecture**: SQLite (default) or PostgreSQL for metadata + filesystem for cached artifacts (default storage root: `./cache`).
 
 ## Features
 
 - [x] Rama-based HTTP proxy
-- [x] SQLite gem inventory (persistent metadata)
-- [x] Filesystem storage (`./gems/`)
+- [x] SQLite/PostgreSQL inventory (persistent metadata)
+- [x] Filesystem storage (default `./cache/` with per-ecosystem subfolders)
 - [x] Smart cache resolver
 - [x] Stream-through caching (cache while serving)
 - [x] SHA256 verification
 - [x] Minimal configuration
 - [x] Docker image
-- [x] Gem name/version/platform parsing
+- [x] Package name/version/platform parsing
 - [x] Request logging with metrics
 - [x] Cache revalidation on corruption
-- [x] Legacy API rejection (with monitoring)
-- [x] CycloneDX SBOM extraction with admin preview & download API
-- [x] Quarantine system (supply chain attack protection)
+- [x] crates.io sparse index + crate download caching
+- [x] npm registry metadata + tarball caching
+- [x] CycloneDX SBOM extraction with admin preview & download API (RubyGems today; expanding)
+- [x] Quarantine system (supply chain attack protection, RubyGems today; expanding)
 
 ### Usage
 
@@ -77,16 +83,16 @@ host = "0.0.0.0"
 port = 8346
 
 [upstream]
-url = "https://rubygems.org"
+url = "https://rubygems.org"  # RubyGems only (crates.io + npm are fixed upstreams)
 
 [storage]
-path = "./gems"
+path = "./cache"
 
 [database]
 path = "./vein.db"
 TOML
 
-# Start the proxy (streams uncached gems through Rama)
+# Start the proxy (streams uncached artifacts through Rama)
 cargo run -- serve --config vein.toml
 
 # Inspect cache statistics
@@ -95,11 +101,15 @@ cargo run -- stats --config vein.toml
 
 ### CycloneDX SBOM access
 
+**Scope:** SBOMs are currently generated for cached RubyGems. The roadmap is to extend SBOM generation to all supported ecosystems (crates.io, npm, and Python).
+
 - **Admin dashboard**: start `make admin` then browse to `http://127.0.0.1:9400/catalog/<gem>?version=<version>` to preview the generated SBOM and download the JSON directly from the UI.
 - **Proxy endpoint**: any client can fetch the SBOM without the admin UI by calling `GET /.well-known/vein/sbom?name=<gem>&version=<version>[&platform=<platform>]` against the running Vein proxy. The response is a CycloneDX 1.5 document with `Content-Type: application/json` and a download-friendly filename. Omit the `platform` query for default `ruby` builds; supply it for native variants (e.g. `arm64-darwin`).
 - SBOMs are generated automatically the first time a gem is cached and refreshed whenever the gem is re-fetched.
 
 ### Quarantine (Supply Chain Protection)
+
+**Scope:** Quarantine is currently applied to RubyGems metadata/index responses. The roadmap is to apply the same protection to crates.io, npm, and Python.
 
 Vein can delay new gem versions from appearing in Bundler's index, giving the community time to catch malicious packages before they reach your CI/CD.
 
@@ -121,15 +131,18 @@ Vein can delay new gem versions from appearing in Bundler's index, giving the co
 enabled = true
 default_delay_days = 3
 skip_weekends = true        # Don't release on Sat/Sun
+business_hours_only = true  # Only release during business hours
 release_hour_utc = 10       # Release at 10:00 UTC
 
 # Per-gem overrides (glob patterns supported)
 [[delay_policy.gems]]
-pattern = "rails*"
+name = "rails*"
+pattern = true
 delay_days = 7              # Extra scrutiny for Rails ecosystem
 
 [[delay_policy.gems]]
-pattern = "internal-*"
+name = "internal-*"
+pattern = true
 delay_days = 0              # Trust internal gems
 
 # Pin specific versions for immediate availability
@@ -170,10 +183,10 @@ Minimal config (most settings have sensible defaults):
 port = 8346  # default
 
 [upstream]
-url = "https://rubygems.org"  # default
+url = "https://rubygems.org"  # RubyGems only (optional)
 
 [storage]
-path = "./gems"  # default
+path = "./cache"  # default
 ```
 
 Full config options:
@@ -182,44 +195,39 @@ Full config options:
 [server]
 host = "0.0.0.0"
 port = 8346
-threads = 4  # Rama worker threads
+workers = 4  # Rama worker threads
 
 [upstream]
-url = "https://rubygems.org"
-timeout_secs = 30
-connection_pool_size = 100
+url = "https://rubygems.org"  # RubyGems only (optional)
+fallback_urls = []
 
 [storage]
-path = "./gems"
+path = "./cache"
 
 [database]
 path = "vein.db"  # SQLite inventory
 
 [logging]
 level = "info"  # debug, info, warn, error
-
-[hotcache]
-# Automatic refresh schedule (cron format: "sec min hour day month weekday year")
-refresh_schedule = "0 0 * * * *"  # Every hour (default)
-# refresh_schedule = "0 */30 * * * *"  # Every 30 minutes
-# refresh_schedule = ""  # Disabled
+json = false
 
 [delay_policy]
 enabled = false              # Enable quarantine system
 default_delay_days = 3       # Default quarantine period
 skip_weekends = true         # Don't release on weekends
-release_hour_utc = 10        # Hour to release (0-23)
+business_hours_only = true   # Only release during business hours
+release_hour_utc = 9         # Hour to release (0-23)
 ```
 
 ### Storage Architecture
 
-Vein uses a **dual-database architecture** for optimal performance:
+Vein uses a **database + filesystem** architecture for optimal performance:
 
-#### SQLite (`vein.db`) - Persistent Metadata Store
-**Purpose**: Authoritative source of truth for all cached gems
+#### SQLite (`vein.db`) or PostgreSQL - Persistent Metadata Store
+**Purpose**: Authoritative source of truth for all cached packages
 
 **Stores**:
-- Full gem metadata (name, version, platform)
+- Full package metadata (name, version, platform)
 - Filesystem paths
 - SHA256 checksums
 - File sizes
@@ -227,7 +235,7 @@ Vein uses a **dual-database architecture** for optimal performance:
 
 **When Used**:
 - On cache misses to verify if gem needs fetching
-- On gem cache to store metadata
+- On cache writes to store metadata
 
 ## Development
 
@@ -259,8 +267,7 @@ docker pull ghcr.io/contriboss/vein:latest
 docker run -d \
   --name vein \
   -p 8346:8346 \
-  -v vein-gems:/data/gems \
-  -v vein-db:/data/db \
+  -v vein-data:/data \
   -e RUST_LOG=info \
   ghcr.io/contriboss/vein:latest
 
@@ -294,7 +301,7 @@ docker compose down
 - Health checks for both services
 - Preconfigured networking
 
-Point your Bundler at `http://localhost:8346` and you're done.
+Point Bundler, Cargo, or npm at `http://localhost:8346` and you're done.
 
 ### Custom Configuration
 
@@ -308,8 +315,7 @@ docker run -d \
   --name vein \
   -p 8346:8346 \
   -v $(pwd)/vein.toml:/data/vein.toml:ro \
-  -v vein-gems:/data/gems \
-  -v vein-db:/data/db \
+  -v vein-data:/data \
   vein:latest serve --config /data/vein.toml
 ```
 
@@ -319,7 +325,7 @@ docker run -d \
 
 ```ini
 [Unit]
-Description=Vein RubyGems Proxy
+Description=Vein Package Proxy
 After=network.target
 
 [Service]
@@ -341,7 +347,7 @@ upstream vein {
 
 server {
     listen 443 ssl http2;
-    server_name gems.company.com;
+    server_name packages.company.com;
 
     location / {
         proxy_pass http://vein;
@@ -354,7 +360,7 @@ server {
 ## Relationship to ore-light
 
 - **ore-light**: Go-based Bundler alternative (client-side gem management)
-- **Vein**: RubyGems proxy/server (server-side gem hosting)
+- **Vein**: Multi-ecosystem proxy/server (server-side package hosting)
 
 Together they provide a complete, modern Ruby dependency management ecosystem:
 - ore-light handles dependency resolution and installation
@@ -380,7 +386,7 @@ Vein is built on [Rama](https://github.com/plabayo/rama), a modular service fram
 
 **Project Status**: Vein is a **side project** and will remain free and open source. It is not commercialized.
 
-**HTTP Features**: Intentionally basic. Vein does what it needs to do: proxy, cache, serve gems. No plans to add complex HTTP features or enterprise-grade capabilities.
+**HTTP Features**: Intentionally basic. Vein does what it needs to do: proxy, cache, serve packages. No plans to add complex HTTP features or enterprise-grade capabilities.
 
 **Need More?** Companies requiring additional features (advanced routing, auth, monitoring, protocol extensions) should **hire Plabayo directly** to extend Vein:
 - Extensions can be public (contributed upstream) or private (internal forks)

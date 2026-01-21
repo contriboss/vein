@@ -13,7 +13,7 @@ fn test_default_config() {
     assert_eq!(config.server.port, 8346);
     assert_eq!(config.server.workers, num_cpus::get());
     assert!(config.upstream.is_none());
-    assert_eq!(config.storage.path, PathBuf::from("./gems"));
+    assert_eq!(config.storage.path, PathBuf::from("./cache"));
     #[cfg(feature = "sqlite")]
     assert_eq!(config.database.path, PathBuf::from("./vein.db"));
     assert!(config.database.url.is_none());
@@ -38,7 +38,7 @@ fn test_default_upstream_config() {
 #[test]
 fn test_default_storage_config() {
     let storage = StorageConfig::default();
-    assert_eq!(storage.path, PathBuf::from("./gems"));
+    assert_eq!(storage.path, PathBuf::from("./cache"));
 }
 
 #[test]
