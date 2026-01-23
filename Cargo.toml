@@ -28,19 +28,20 @@ tls = ["rama/rustls", "vein-adapter/tls"]
 sqlite = ["vein-adapter/sqlite"]
 postgres = ["vein-adapter/postgres"]
 android = []
+inspect = []
 
 [dependencies]
 # Rama network framework (conditional TLS via feature)
 rama = { version = "0.3.0-alpha.4", features = ["http-full", "tcp", "opentelemetry"] }
 
 # Async runtime
-tokio = { version = "1.43", features = ["full"] }
+tokio = { version = "1.50.0", features = ["full"] }
 
 # Serialization
-serde = { version = "1.0.217", features = ["derive"] }
-serde_json = "1.0.135"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
 serde_yaml = "0.9"
-toml = "0.9"
+toml = "1.0.7"
 
 # File handling and hashing
 sha2 = "0.10.8"
@@ -53,36 +54,36 @@ tar = "0.4.41"
 cyclonedx-bom = "0.8.0"
 
 # Error handling
-anyhow = "1.0.95"
+anyhow = "1.0.102"
 
 # CLI
-clap = { version = "4.5.53", features = ["derive"] }
+clap = { version = "4.6.0", features = ["derive"] }
 
 # Utilities
 parking_lot = "0.12.3"
 percent-encoding = "2.3"
-rand = "0.9"
+rand = "0.10.0"
 
 # Scheduling
 tokio-cron-scheduler = "0.15.1"
 
 # State machines
-state-machines = { version = "0.7.0", features = ["typestate"] }
-breaker-machines = "0.7.2"
-chrono-machines = "0.3.0"
+state-machines = { version = "0.8.1", features = ["typestate"] }
+breaker-machines = "0.7.5"
+chrono-machines = "0.3.1"
 
 # Time handling
-chrono = { version = "0.4.38", features = ["serde"] }
+chrono = { version = "0.4.44", features = ["serde"] }
 
 vein-adapter = { version = "0.3.0", path = "crates/vein-adapter", default-features = false }
 
 [dev-dependencies]
-tokio-test = "0.4.4"
-tempfile = "3.14.0"
+tokio-test = "0.4.5"
+tempfile = "3.27.0"
 
 # Android-specific dependencies with bundled SQLite
 [target.'cfg(target_os = "android")'.dependencies]
-sqlx = { version = "0.8.2", features = ["runtime-tokio", "sqlite", "chrono"] }
+sqlx = { version = "0.8.6", features = ["runtime-tokio", "sqlite", "chrono"] }
 
 [profile.release]
 lto = true

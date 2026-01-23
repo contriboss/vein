@@ -92,7 +92,10 @@ impl UpstreamClient {
 
         let client = (TraceLayer::new_for_http(),).into_layer(EasyHttpWebClient::default());
         let mut attempt: u8 = 0;
-        let mut rng = SmallRng::from_os_rng();
+        let mut rng = {
+            let mut seed_rng = rand::rng();
+            SmallRng::from_rng(&mut seed_rng)
+        };
         let start_time = std::time::Instant::now();
         let max_attempts = self.backoff.max_attempts();
 
