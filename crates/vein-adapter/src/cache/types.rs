@@ -2,6 +2,23 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ecosystem {
+    RubyGems,
+    CratesIo,
+    Npm,
+}
+
+impl Ecosystem {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Ecosystem::RubyGems => "rubygems",
+            Ecosystem::CratesIo => "crates",
+            Ecosystem::Npm => "npm",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetKind {
     Gem,
     Spec,
@@ -16,6 +33,14 @@ impl AssetKind {
             AssetKind::Spec => "gemspec",
             AssetKind::Crate => "crate",
             AssetKind::NpmPackage => "npm",
+        }
+    }
+
+    pub fn ecosystem(&self) -> Ecosystem {
+        match self {
+            AssetKind::Gem | AssetKind::Spec => Ecosystem::RubyGems,
+            AssetKind::Crate => Ecosystem::CratesIo,
+            AssetKind::NpmPackage => Ecosystem::Npm,
         }
     }
 }
@@ -105,9 +130,10 @@ pub struct GemMetadata {
 #[derive(Debug, Clone)]
 pub struct IndexStats {
     pub total_assets: u64,
-    pub gem_assets: u64,
-    pub spec_assets: u64,
-    pub unique_gems: u64,
+    pub rubygems_assets: u64,
+    pub crate_assets: u64,
+    pub npm_assets: u64,
+    pub unique_packages: u64,
     pub total_size_bytes: u64,
     pub last_accessed: Option<String>,
 }

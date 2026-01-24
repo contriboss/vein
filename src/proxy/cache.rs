@@ -5,7 +5,9 @@ use rama::http::{Body, Response, StatusCode, body::util::BodyExt, header};
 use rama::telemetry::tracing::{debug, warn};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
-use vein_adapter::{AssetKind, CacheBackend, CacheBackendTrait, CachedAsset, FilesystemStorage, TempFile};
+use vein_adapter::{
+    AssetKind, CacheBackend, CacheBackendTrait, CachedAsset, FilesystemStorage, TempFile,
+};
 
 use super::types::CacheableRequest;
 

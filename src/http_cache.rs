@@ -212,10 +212,7 @@ fn build_cached_response(
     {
         let headers = builder.headers_mut().context("getting headers")?;
         headers.insert(header::CONTENT_TYPE, HeaderValue::from_str(content_type)?);
-        headers.insert(
-            header::CACHE_CONTROL,
-            HeaderValue::from_str(cache_control)?,
-        );
+        headers.insert(header::CACHE_CONTROL, HeaderValue::from_str(cache_control)?);
         if include_content_length {
             headers.insert(
                 header::CONTENT_LENGTH,
@@ -280,10 +277,7 @@ mod tests {
             last_modified: Some("Wed, 01 Jan 2025 00:00:00 GMT".to_string()),
         };
         let headers = build_conditional_headers(&Some(meta));
-        assert_eq!(
-            headers.get(header::IF_NONE_MATCH).unwrap(),
-            "\"abc\""
-        );
+        assert_eq!(headers.get(header::IF_NONE_MATCH).unwrap(), "\"abc\"");
         assert_eq!(
             headers.get(header::IF_MODIFIED_SINCE).unwrap(),
             "Wed, 01 Jan 2025 00:00:00 GMT"

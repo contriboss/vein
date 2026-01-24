@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 use tera::Tera;
 use vein::config::Config as VeinConfig;
 use vein_adapter::{
-    CacheBackend, CacheBackendTrait, GemMetadata, GemVersion, IndexStats, QuarantineStats, SbomCoverage,
-    VersionStatus,
+    CacheBackend, CacheBackendTrait, GemMetadata, GemVersion, IndexStats, QuarantineStats,
+    SbomCoverage, VersionStatus,
 };
 
 use crate::ruby::RubyStatus;
@@ -77,11 +77,6 @@ impl AdminResources {
 
     pub async fn catalog_search(&self, query: &str, limit: i64) -> Result<Vec<String>> {
         self.cache.catalog_search(query, limit).await
-    }
-
-    #[allow(dead_code)]
-    pub async fn catalog_languages(&self) -> Result<Vec<String>> {
-        self.cache.catalog_languages().await
     }
 
     pub async fn catalog_page_by_language(
@@ -170,16 +165,6 @@ impl AdminResources {
                 Some(format!("blocked: {}", reason)),
             )
             .await
-    }
-
-    #[allow(dead_code)]
-    pub async fn get_gem_version(
-        &self,
-        name: &str,
-        version: &str,
-        platform: Option<&str>,
-    ) -> Result<Option<GemVersion>> {
-        self.cache.get_gem_version(name, version, platform).await
     }
 }
 

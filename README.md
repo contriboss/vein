@@ -1,18 +1,18 @@
 # Vein 💎
 
-A fast, intelligent multi-ecosystem package proxy/mirror server (RubyGems, crates.io, npm; Python next).
+A fast, intelligent multi-ecosystem package proxy/cache for RubyGems, crates.io, and npm.
 
-**Single endpoint:** Bundler and Ore point to the same Vein URL. The same base URL can also serve Cargo (sparse index + crate downloads) and npm (metadata + tarballs) via path/header detection. Upstream configuration applies to RubyGems only; crates.io and npm use fixed upstreams.
+**Single endpoint:** Bundler, ore-light, Cargo, and npm can all point at the same Vein base URL. The same server handles RubyGems, crates.io sparse index + crate downloads, and npm metadata + tarballs via path/header detection. Upstream configuration is currently configurable for RubyGems; crates.io and npm use fixed upstreams.
 
 ## What is Vein?
 
 Vein is a **smart caching proxy** for multiple package ecosystems that:
 
 - Proxies RubyGems via a configurable upstream
-- Mirrors crates.io (sparse index + crate downloads) with caching
+- Mirrors crates.io sparse index and crate downloads with caching
 - Proxies npm registry metadata and tarballs with caching
 - Serves cached artifacts from local storage on repeat requests
-- Runs in cache-only mode when no RubyGems upstream is configured
+- Can run without a RubyGems upstream; crates.io and npm still use their built-in upstreams
 - Built on Rama (modular service framework)
 - Minimal configuration - just works for common setups
 
@@ -21,7 +21,7 @@ Vein is a **smart caching proxy** for multiple package ecosystems that:
 - **Blazing Fast**: High-performance proxy with Rama
 - **Smart Caching**: Cache artifacts once and serve locally thereafter
 - **Supply Chain Protection**: Quarantine system (RubyGems today; expanding across ecosystems)
-- **Minimal Config**: Cache-only by default; enable RubyGems upstream when needed
+- **Minimal Config**: crates.io and npm work out of the box; add a RubyGems upstream when you want Vein to fetch new gems
 - **Simple Deployment**: Single binary, no complex dependencies
 - **Multi-registry endpoint**: RubyGems + crates.io + npm on one base URL
 - **Ore Integration**: Works seamlessly with ore-light's fallback mechanism
@@ -68,8 +68,10 @@ Client Request → Vein → Local Cache?
 - [x] Package name/version/platform parsing
 - [x] Request logging with metrics
 - [x] Cache revalidation on corruption
+- [x] RubyGems proxying with configurable upstream
 - [x] crates.io sparse index + crate download caching
 - [x] npm registry metadata + tarball caching
+- [x] Admin dashboard for catalog, quarantine, and SBOM inspection
 - [x] CycloneDX SBOM extraction with admin preview & download API (RubyGems today; expanding)
 - [x] Quarantine system (supply chain attack protection, RubyGems today; expanding)
 
@@ -82,17 +84,18 @@ cat <<'TOML' > vein.toml
 host = "0.0.0.0"
 port = 8346
 
-[upstream]
-url = "https://rubygems.org"  # RubyGems only (crates.io + npm are fixed upstreams)
-
 [storage]
 path = "./cache"
 
 [database]
 path = "./vein.db"
+
+# Optional: enable RubyGems fetching for uncached gems
+# [upstream]
+# url = "https://rubygems.org"
 TOML
 
-# Start the proxy (streams uncached artifacts through Rama)
+# Start the proxy (RubyGems, crates.io, and npm on one endpoint)
 cargo run -- serve --config vein.toml
 
 # Inspect cache statistics
@@ -101,7 +104,7 @@ cargo run -- stats --config vein.toml
 
 ### CycloneDX SBOM access
 
-**Scope:** SBOMs are currently generated for cached RubyGems. The roadmap is to extend SBOM generation to all supported ecosystems (crates.io, npm, and Python).
+**Scope:** SBOMs are currently generated for cached RubyGems. The roadmap is to extend SBOM generation across Vein's other supported ecosystems, including crates.io and npm.
 
 - **Admin dashboard**: start `make admin` then browse to `http://127.0.0.1:9400/catalog/<gem>?version=<version>` to preview the generated SBOM and download the JSON directly from the UI.
 - **Proxy endpoint**: any client can fetch the SBOM without the admin UI by calling `GET /.well-known/vein/sbom?name=<gem>&version=<version>[&platform=<platform>]` against the running Vein proxy. The response is a CycloneDX 1.5 document with `Content-Type: application/json` and a download-friendly filename. Omit the `platform` query for default `ruby` builds; supply it for native variants (e.g. `arm64-darwin`).
@@ -109,7 +112,7 @@ cargo run -- stats --config vein.toml
 
 ### Quarantine (Supply Chain Protection)
 
-**Scope:** Quarantine is currently applied to RubyGems metadata/index responses. The roadmap is to apply the same protection to crates.io, npm, and Python.
+**Scope:** Quarantine is currently applied to RubyGems metadata/index responses. The roadmap is to apply the same protection to Vein's other supported ecosystems, including crates.io and npm.
 
 Vein can delay new gem versions from appearing in Bundler's index, giving the community time to catch malicious packages before they reach your CI/CD.
 
@@ -175,18 +178,19 @@ vein quarantine block badgem 1.0.0 --reason "Malware detected"
 
 ### Configuration
 
-Minimal config (most settings have sensible defaults):
+Minimal config (crates.io and npm work with defaults; configure RubyGems upstream when needed):
 
 ```toml
 # vein.toml
 [server]
 port = 8346  # default
 
-[upstream]
-url = "https://rubygems.org"  # RubyGems only (optional)
-
 [storage]
 path = "./cache"  # default
+
+# Optional: enable RubyGems fetching for uncached gems
+# [upstream]
+# url = "https://rubygems.org"
 ```
 
 Full config options:
@@ -198,7 +202,7 @@ port = 8346
 workers = 4  # Rama worker threads
 
 [upstream]
-url = "https://rubygems.org"  # RubyGems only (optional)
+url = "https://rubygems.org"  # Optional RubyGems upstream
 fallback_urls = []
 
 [storage]
@@ -234,7 +238,7 @@ Vein uses a **database + filesystem** architecture for optimal performance:
 - Last accessed timestamps
 
 **When Used**:
-- On cache misses to verify if gem needs fetching
+- On cache misses to verify if a package needs fetching
 - On cache writes to store metadata
 
 ## Development
@@ -360,11 +364,10 @@ server {
 ## Relationship to ore-light
 
 - **ore-light**: Go-based Bundler alternative (client-side gem management)
-- **Vein**: Multi-ecosystem proxy/server (server-side package hosting)
+- **Vein**: Multi-ecosystem package proxy/cache (server-side package delivery)
 
-Together they provide a complete, modern Ruby dependency management ecosystem:
-- ore-light handles dependency resolution and installation
-- Vein provides fast, cached gem delivery
+ore-light is one client that can use Vein's RubyGems side.
+Vein itself is broader: it also serves crates.io and npm traffic from the same base URL.
 
 ## Why Rama (and not Pingora)
 

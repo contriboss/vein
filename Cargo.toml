@@ -6,12 +6,12 @@ name = "vein"
 version = "0.4.0"
 edition = "2024"
 authors = ["Abdelkader Boudih <oss@seuros.com>"]
-description = "A fast, intelligent RubyGems proxy/mirror server written in Rust"
+description = "A fast, intelligent multi-ecosystem package proxy/cache"
 license = "AGPL-3.0-only"
 repository = "https://github.com/contriboss/vein"
 homepage = "https://github.com/contriboss/vein"
 readme = "README.md"
-keywords = ["rubygems", "proxy", "cache", "mirror", "ruby"]
+keywords = ["rubygems", "crates", "npm", "proxy", "cache"]
 categories = ["development-tools", "caching", "network-programming"]
 
 [lib]

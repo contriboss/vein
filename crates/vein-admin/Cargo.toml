@@ -4,10 +4,10 @@ version = "0.3.0"
 edition = "2024"
 license = "AGPL-3.0-only"
 authors = ["Abdelkader Boudih <oss@seuros.com>"]
-description = "Admin web interface for Vein RubyGems proxy server"
+description = "Admin web interface for the Vein multi-ecosystem package proxy"
 repository = "https://github.com/contriboss/vein"
 homepage = "https://github.com/contriboss/vein"
-keywords = ["rubygems", "admin", "web"]
+keywords = ["admin", "proxy", "cache"]
 categories = ["development-tools", "web-programming"]
 
 [dependencies]

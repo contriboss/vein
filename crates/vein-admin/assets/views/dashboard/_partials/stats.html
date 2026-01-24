@@ -2,19 +2,31 @@
   <article class="card">
     <h2>Total Assets</h2>
     <div class="metric">{{ total_assets }}</div>
-    <p class="detail">Includes gems and gemspecs cached locally.</p>
+    <p class="detail">Tracked package artifacts across RubyGems, crates.io, and npm.</p>
   </article>
 
   <article class="card">
-    <h2>Cached Gems</h2>
-    <div class="metric">{{ gems }}</div>
-    <p class="detail">Unique gem files stored on disk.</p>
+    <h2>RubyGems Assets</h2>
+    <div class="metric">{{ rubygems_assets }}</div>
+    <p class="detail">Gem files and gemspecs tracked in the cache index.</p>
+  </article>
+
+  <article class="card">
+    <h2>crates.io Assets</h2>
+    <div class="metric">{{ crate_assets }}</div>
+    <p class="detail">Cached <code>.crate</code> archives tracked in the cache index.</p>
+  </article>
+
+  <article class="card">
+    <h2>npm Assets</h2>
+    <div class="metric">{{ npm_assets }}</div>
+    <p class="detail">Cached npm tarballs tracked in the cache index.</p>
   </article>
 
   <article class="card">
     <h2>Unique Packages</h2>
-    <div class="metric">{{ unique }}</div>
-    <p class="detail">Distinct gem names currently cached.</p>
+    <div class="metric">{{ unique_packages }}</div>
+    <p class="detail">Distinct package names, scoped by ecosystem.</p>
   </article>
 
   <article class="card">
@@ -26,7 +38,7 @@
   <article class="card">
     <h2>Catalogue Size</h2>
     <div class="metric">{{ catalog_total }}</div>
-    <p class="detail">Upstream gem names synced. <a href="/catalog">Browse catalogue</a>.</p>
+    <p class="detail">RubyGems package names synced. <a href="/catalog">Browse the Ruby catalogue</a>.</p>
   </article>
 
   <article class="card">
@@ -41,12 +53,5 @@
     <p><strong>Security maintenance:</strong> {{ ruby_security }}</p>
     <p><strong>Recent EOL:</strong> {{ ruby_eol }}</p>
     <p class="detail">Fetched {{ ruby_updated }}</p>
-  </article>
-
-  <article class="card">
-    <h2>Access Control</h2>
-    <p><strong>Status:</strong> Entitlements design draft</p>
-    <p>SSH-signed tokens will gate premium gems and version ranges.</p>
-    <p class="detail"><a href="/permissions">Review entitlement plan</a></p>
   </article>
 </section>

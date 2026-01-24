@@ -70,6 +70,34 @@ pub struct DependencyView {
     pub kind: String,
 }
 
+impl CatalogListData {
+    fn context(&self) -> Context {
+        let mut context = Context::new();
+        context.insert("current_page", "catalog");
+        context.insert("entries", &self.entries);
+        context.insert("page", &self.page);
+        context.insert("total_pages", &self.total_pages);
+        context.insert("total_label", &self.total_label);
+        context.insert("selected_language", &self.selected_language);
+        context.insert("languages", &self.languages);
+        context
+    }
+}
+
+impl GemDetailData {
+    fn context(&self) -> Context {
+        let mut context = Context::new();
+        context.insert("current_page", "catalog");
+        context.insert("name", &self.name);
+        context.insert("versions", &self.versions);
+        context.insert("selected_version", &self.selected_version);
+        context.insert("platform", &self.platform);
+        context.insert("platform_query", &self.platform_query);
+        context.insert("metadata", &self.metadata);
+        context
+    }
+}
+
 fn purl_for_gem(name: &str, version: &str, platform: Option<&str>) -> String {
     let base = format!(
         "pkg:gem/{}@{}",
@@ -84,48 +112,12 @@ fn purl_for_gem(name: &str, version: &str, platform: Option<&str>) -> String {
 
 impl From<&GemMetadata> for GemMetadataView {
     fn from(meta: &GemMetadata) -> Self {
-        let description_paragraphs = meta
-            .description
-            .as_ref()
-            .map(|desc| {
-                desc.split("\n\n")
-                    .map(|segment| segment.replace('\n', "<br />"))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let metadata_json = if !meta.metadata.is_null() {
-            serde_json::to_string_pretty(&meta.metadata).ok()
-        } else {
-            None
-        };
-
-        let (sbom, sbom_json) = if let Some(sbom) = &meta.sbom {
-            let json = serde_json::to_string_pretty(sbom).ok();
-            (true, json)
-        } else {
-            (false, None)
-        };
-
-        let sbom_download_url = if meta.sbom.is_some() {
-            let mut url = format!(
-                "/catalog/{}/sbom?version={}",
-                urlencoding::encode(&meta.name),
-                urlencoding::encode(&meta.version)
-            );
-            if meta.platform != "ruby" {
-                url.push_str("&platform=");
-                url.push_str(&urlencoding::encode(&meta.platform));
-            }
-            Some(url)
-        } else {
-            None
-        };
+        let (sbom, sbom_json) = sbom_payload(meta);
 
         Self {
             summary: meta.summary.clone(),
             description: meta.description.clone(),
-            description_paragraphs,
+            description_paragraphs: description_paragraphs(meta.description.as_deref()),
             authors: meta.authors.clone(),
             licenses: meta.licenses.clone(),
             emails: meta.emails.clone(),
@@ -147,28 +139,72 @@ impl From<&GemMetadata> for GemMetadataView {
             executables: meta.executables.clone(),
             extensions: meta.extensions.clone(),
             native_languages: meta.native_languages.clone(),
-            dependencies: meta
-                .dependencies
-                .iter()
-                .map(|dep| DependencyView {
-                    name: dep.name.clone(),
-                    requirement: dep.requirement.clone(),
-                    kind: match dep.kind {
-                        DependencyKind::Runtime => "runtime",
-                        DependencyKind::Development => "development",
-                        DependencyKind::Optional => "optional",
-                        DependencyKind::Unknown => "unknown",
-                    }
-                    .to_string(),
-                })
-                .collect(),
-            metadata_json,
+            dependencies: dependency_views(meta),
+            metadata_json: pretty_json(&meta.metadata),
             sbom,
             sbom_json,
-            sbom_download_url,
+            sbom_download_url: sbom_download_url(meta),
             purl: purl_for_gem(&meta.name, &meta.version, Some(&meta.platform)),
         }
     }
+}
+
+fn description_paragraphs(description: Option<&str>) -> Vec<String> {
+    description
+        .map(|text| {
+            text.split("\n\n")
+                .map(|segment| segment.replace('\n', "<br />"))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn dependency_views(meta: &GemMetadata) -> Vec<DependencyView> {
+    meta.dependencies
+        .iter()
+        .map(|dep| DependencyView {
+            name: dep.name.clone(),
+            requirement: dep.requirement.clone(),
+            kind: dependency_kind_label(&dep.kind).to_string(),
+        })
+        .collect()
+}
+
+fn dependency_kind_label(kind: &DependencyKind) -> &'static str {
+    match kind {
+        DependencyKind::Runtime => "runtime",
+        DependencyKind::Development => "development",
+        DependencyKind::Optional => "optional",
+        DependencyKind::Unknown => "unknown",
+    }
+}
+
+fn pretty_json(value: &serde_json::Value) -> Option<String> {
+    (!value.is_null())
+        .then(|| serde_json::to_string_pretty(value).ok())
+        .flatten()
+}
+
+fn sbom_payload(meta: &GemMetadata) -> (bool, Option<String>) {
+    match meta.sbom.as_ref() {
+        Some(sbom) => (true, serde_json::to_string_pretty(sbom).ok()),
+        None => (false, None),
+    }
+}
+
+fn sbom_download_url(meta: &GemMetadata) -> Option<String> {
+    meta.sbom.as_ref()?;
+
+    let mut url = format!(
+        "/catalog/{}/sbom?version={}",
+        urlencoding::encode(&meta.name),
+        urlencoding::encode(&meta.version)
+    );
+    if meta.platform != "ruby" {
+        url.push_str("&platform=");
+        url.push_str(&urlencoding::encode(&meta.platform));
+    }
+    Some(url)
 }
 
 fn format_bytes(bytes: u64) -> String {
@@ -190,29 +226,11 @@ fn format_bytes(bytes: u64) -> String {
 }
 
 pub fn list(tera: &Tera, data: CatalogListData) -> anyhow::Result<String> {
-    let mut context = Context::new();
-    context.insert("current_page", "catalog");
-    context.insert("entries", &data.entries);
-    context.insert("page", &data.page);
-    context.insert("total_pages", &data.total_pages);
-    context.insert("total_label", &data.total_label);
-    context.insert("selected_language", &data.selected_language);
-    context.insert("languages", &data.languages);
-
-    Ok(tera.render("catalog/list.html", &context)?)
+    Ok(tera.render("catalog/list.html", &data.context())?)
 }
 
 pub fn detail(tera: &Tera, data: GemDetailData) -> anyhow::Result<String> {
-    let mut context = Context::new();
-    context.insert("current_page", "catalog");
-    context.insert("name", &data.name);
-    context.insert("versions", &data.versions);
-    context.insert("selected_version", &data.selected_version);
-    context.insert("platform", &data.platform);
-    context.insert("platform_query", &data.platform_query);
-    context.insert("metadata", &data.metadata);
-
-    Ok(tera.render("catalog/detail.html", &context)?)
+    Ok(tera.render("catalog/detail.html", &data.context())?)
 }
 
 pub fn search_results_html(results: &[String]) -> String {

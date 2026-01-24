@@ -7,6 +7,10 @@ use sqlx::{
 
 use super::{
     CacheBackendTrait, GemVersion, QuarantineStats, VersionStatus,
+    backend_common::{
+        build_index_stats, build_quarantine_stats, build_sbom_coverage, into_gem_versions,
+        json_array_like_pattern, latest_gem_version, search_like_pattern,
+    },
     models::{DbGemMetadataRow, PostgresCachedAssetRow, PostgresGemVersionRow, format_timestamp},
     serialization::{hydrate_metadata_row, parse_language_rows, prepare_metadata_strings},
     types::{AssetKey, CachedAsset, GemMetadata, IndexStats, SbomCoverage},
@@ -131,10 +135,7 @@ impl PostgresCacheBackend {
         .await
         .context("querying SBOM coverage (postgres)")?;
 
-        Ok(SbomCoverage {
-            metadata_rows: total.max(0) as u64,
-            with_sbom: with_sbom.max(0) as u64,
-        })
+        Ok(build_sbom_coverage(total, with_sbom))
     }
 
     pub async fn catalog_languages_list(&self) -> Result<Vec<String>> {
@@ -351,23 +352,41 @@ impl CacheBackendTrait for PostgresCacheBackend {
             .await
             .context("counting cached assets (postgres)")?;
 
-        let gem_assets: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM cached_assets WHERE kind = 'gem'")
-                .fetch_one(&self.pool)
-                .await
-                .context("counting gem assets (postgres)")?;
+        let rubygems_assets: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM cached_assets WHERE kind IN ('gem', 'gemspec')",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .context("counting rubygems assets (postgres)")?;
 
-        let spec_assets: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM cached_assets WHERE kind = 'gemspec'")
+        let crate_assets: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM cached_assets WHERE kind = 'crate'")
                 .fetch_one(&self.pool)
                 .await
-                .context("counting gemspec assets (postgres)")?;
+                .context("counting crate assets (postgres)")?;
 
-        let unique_gems: i64 =
-            sqlx::query_scalar("SELECT COUNT(DISTINCT name) FROM cached_assets WHERE kind = 'gem'")
+        let npm_assets: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM cached_assets WHERE kind = 'npm'")
                 .fetch_one(&self.pool)
                 .await
-                .context("counting unique gems (postgres)")?;
+                .context("counting npm assets (postgres)")?;
+
+        let unique_packages: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(
+                DISTINCT CASE
+                    WHEN kind IN ('gem', 'gemspec') THEN 'rubygems:' || name
+                    WHEN kind = 'crate' THEN 'crates:' || name
+                    WHEN kind = 'npm' THEN 'npm:' || name
+                    ELSE NULL
+                END
+            )
+            FROM cached_assets
+            "#,
+        )
+        .fetch_one(&self.pool)
+        .await
+        .context("counting unique cached packages (postgres)")?;
 
         let total_size_bytes: i64 =
             sqlx::query_scalar("SELECT COALESCE(SUM(size_bytes), 0)::BIGINT FROM cached_assets")
@@ -381,14 +400,15 @@ impl CacheBackendTrait for PostgresCacheBackend {
                 .await
                 .context("fetching last access timestamp (postgres)")?;
 
-        Ok(IndexStats {
-            total_assets: total_assets.max(0) as u64,
-            gem_assets: gem_assets.max(0) as u64,
-            spec_assets: spec_assets.max(0) as u64,
-            unique_gems: unique_gems.max(0) as u64,
-            total_size_bytes: total_size_bytes.max(0) as u64,
-            last_accessed: last_accessed.map(format_timestamp),
-        })
+        Ok(build_index_stats(
+            total_assets,
+            rubygems_assets,
+            crate_assets,
+            npm_assets,
+            unique_packages,
+            total_size_bytes,
+            last_accessed.map(format_timestamp),
+        ))
     }
 
     async fn catalog_upsert_names(&self, names: &[String]) -> Result<()> {
@@ -441,7 +461,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
     }
 
     async fn catalog_search(&self, query: &str, limit: i64) -> Result<Vec<String>> {
-        let pattern = format!("%{}%", query);
+        let pattern = search_like_pattern(query);
         let rows = sqlx::query_scalar::<_, String>(
             r#"
             SELECT name
@@ -512,7 +532,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         offset: i64,
         limit: i64,
     ) -> Result<Vec<String>> {
-        let pattern = format!("%\"{}\"%", language);
+        let pattern = json_array_like_pattern(language);
         let rows = sqlx::query_scalar::<_, String>(
             r#"
             SELECT DISTINCT name
@@ -532,7 +552,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
     }
 
     async fn catalog_total_by_language(&self, language: &str) -> Result<u64> {
-        let pattern = format!("%\"{}\"%", language);
+        let pattern = json_array_like_pattern(language);
         let total: i64 = sqlx::query_scalar(
             r#"
             SELECT COUNT(DISTINCT name)
@@ -636,11 +656,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         .await
         .context("fetching available versions (postgres)")?;
 
-        // Find the latest version using semver comparison
-        let mut versions: Vec<GemVersion> = rows.into_iter().map(Into::into).collect();
-        versions.sort_by(|a, b| compare_versions(&b.version, &a.version));
-
-        Ok(versions.into_iter().next())
+        Ok(latest_gem_version(rows))
     }
 
     async fn get_quarantined_versions(
@@ -665,7 +681,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         .await
         .context("fetching quarantined versions (postgres)")?;
 
-        Ok(rows.into_iter().map(Into::into).collect())
+        Ok(into_gem_versions(rows))
     }
 
     async fn update_version_status(
@@ -748,7 +764,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         .await
         .context("fetching all quarantined (postgres)")?;
 
-        Ok(rows.into_iter().map(Into::into).collect())
+        Ok(into_gem_versions(rows))
     }
 
     async fn quarantine_stats(&self) -> Result<QuarantineStats> {
@@ -800,14 +816,14 @@ impl CacheBackendTrait for PostgresCacheBackend {
         .await
         .context("counting versions releasing this week (postgres)")?;
 
-        Ok(QuarantineStats {
-            total_quarantined: quarantined.max(0) as u64,
-            total_available: available.max(0) as u64,
-            total_yanked: yanked.max(0) as u64,
-            total_pinned: pinned.max(0) as u64,
-            versions_releasing_today: releasing_today.max(0) as u64,
-            versions_releasing_this_week: releasing_week.max(0) as u64,
-        })
+        Ok(build_quarantine_stats(
+            quarantined,
+            available,
+            yanked,
+            pinned,
+            releasing_today,
+            releasing_week,
+        ))
     }
 
     async fn get_gem_versions_for_index(&self, name: &str) -> Result<Vec<GemVersion>> {
@@ -825,7 +841,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         .await
         .context("fetching gem versions for index (postgres)")?;
 
-        Ok(rows.into_iter().map(Into::into).collect())
+        Ok(into_gem_versions(rows))
     }
 
     async fn insert_symbols(
@@ -895,15 +911,5 @@ impl CacheBackendTrait for PostgresCacheBackend {
         .context("clearing gem symbols (postgres)")?;
 
         Ok(())
-    }
-}
-
-/// Compare two version strings using semver when possible.
-fn compare_versions(a: &str, b: &str) -> std::cmp::Ordering {
-    // Try semver parsing first
-    match (semver::Version::parse(a), semver::Version::parse(b)) {
-        (Ok(va), Ok(vb)) => va.cmp(&vb),
-        // Fall back to string comparison if semver fails
-        _ => a.cmp(b),
     }
 }

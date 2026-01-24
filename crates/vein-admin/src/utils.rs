@@ -1,4 +1,4 @@
-use rama::futures::stream::{unfold, Stream};
+use rama::futures::stream::{Stream, unfold};
 use tokio::sync::mpsc;
 
 /// Convert a tokio mpsc::Receiver into a Stream

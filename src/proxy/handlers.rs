@@ -24,7 +24,10 @@ pub async fn handle_health(
                 "component": "cache_index",
                 "status": "ok",
                 "total_assets": stats.total_assets,
-                "unique_gems": stats.unique_gems,
+                "unique_packages": stats.unique_packages,
+                "rubygems_assets": stats.rubygems_assets,
+                "crates_assets": stats.crate_assets,
+                "npm_assets": stats.npm_assets,
             }));
         }
         Err(err) => {

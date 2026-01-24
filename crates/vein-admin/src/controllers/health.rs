@@ -1,8 +1,8 @@
 //! Health check endpoints.
 
+use rama::http::StatusCode;
 use rama::http::service::web::extract::State;
 use rama::http::service::web::response::IntoResponse;
-use rama::http::StatusCode;
 
 use crate::state::AdminState;
 

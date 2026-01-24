@@ -1,6 +1,8 @@
 use anyhow::{Result, anyhow};
 use breaker_machines::CircuitBreaker;
-use chrono_machines::{BackoffPolicy, BackoffStrategy, ConstantBackoff, ExponentialBackoff, FibonacciBackoff};
+use chrono_machines::{
+    BackoffPolicy, BackoffStrategy, ConstantBackoff, ExponentialBackoff, FibonacciBackoff,
+};
 use parking_lot::Mutex;
 use rama::{
     Service,

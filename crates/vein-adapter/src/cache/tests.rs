@@ -346,9 +346,10 @@ mod tests {
 
         let stats = backend.stats().await.expect("Stats should succeed");
         assert_eq!(stats.total_assets, 0);
-        assert_eq!(stats.gem_assets, 0);
-        assert_eq!(stats.spec_assets, 0);
-        assert_eq!(stats.unique_gems, 0);
+        assert_eq!(stats.rubygems_assets, 0);
+        assert_eq!(stats.crate_assets, 0);
+        assert_eq!(stats.npm_assets, 0);
+        assert_eq!(stats.unique_packages, 0);
         assert_eq!(stats.total_size_bytes, 0);
         assert!(stats.last_accessed.is_none());
     }
@@ -357,7 +358,7 @@ mod tests {
     async fn test_stats_with_data() {
         let backend = setup_test_db().await;
 
-        let gems = vec![
+        let assets = vec![
             AssetKey {
                 kind: AssetKind::Gem,
                 name: "rails",
@@ -376,9 +377,21 @@ mod tests {
                 version: "7.1.0",
                 platform: None,
             },
+            AssetKey {
+                kind: AssetKind::Crate,
+                name: "serde",
+                version: "1.0.0",
+                platform: None,
+            },
+            AssetKey {
+                kind: AssetKind::NpmPackage,
+                name: "lodash",
+                version: "4.17.21",
+                platform: None,
+            },
         ];
 
-        for key in &gems {
+        for key in &assets {
             backend
                 .insert_or_replace(key, "/cache/test", "hash", 1_000)
                 .await
@@ -386,11 +399,12 @@ mod tests {
         }
 
         let stats = backend.stats().await.expect("Stats should succeed");
-        assert_eq!(stats.total_assets, 3);
-        assert_eq!(stats.gem_assets, 2);
-        assert_eq!(stats.spec_assets, 1);
-        assert_eq!(stats.unique_gems, 1);
-        assert_eq!(stats.total_size_bytes, 3_000);
+        assert_eq!(stats.total_assets, 5);
+        assert_eq!(stats.rubygems_assets, 3);
+        assert_eq!(stats.crate_assets, 1);
+        assert_eq!(stats.npm_assets, 1);
+        assert_eq!(stats.unique_packages, 3);
+        assert_eq!(stats.total_size_bytes, 5_000);
         assert!(stats.last_accessed.is_some());
     }
 
@@ -525,11 +539,7 @@ mod tests {
             .expect("metadata insert succeeds");
 
         let fetched = backend
-            .gem_metadata(
-                &metadata.name,
-                &metadata.version,
-                Some(&metadata.platform),
-            )
+            .gem_metadata(&metadata.name, &metadata.version, Some(&metadata.platform))
             .await
             .expect("metadata fetch succeeds");
 
@@ -561,11 +571,7 @@ mod tests {
             .expect("update insert");
 
         let fetched = backend
-            .gem_metadata(
-                &metadata.name,
-                &metadata.version,
-                Some(&metadata.platform),
-            )
+            .gem_metadata(&metadata.name, &metadata.version, Some(&metadata.platform))
             .await
             .expect("updated metadata fetch succeeds")
             .expect("metadata should exist");

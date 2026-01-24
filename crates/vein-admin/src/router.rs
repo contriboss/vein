@@ -1,8 +1,8 @@
 //! HTTP router configuration for vein-admin.
 
-use rama::http::service::web::response::DatastarScript;
 use rama::http::service::web::Router;
-use rama::utils::include_dir::{include_dir, Dir};
+use rama::http::service::web::response::DatastarScript;
+use rama::utils::include_dir::{Dir, include_dir};
 
 use crate::controllers;
 use crate::state::AdminState;
@@ -44,8 +44,4 @@ pub fn build(state: AdminState) -> Router<AdminState> {
         // Health
         .with_get("/up", controllers::health::up)
         .with_get("/debug", controllers::health::debug)
-        // Static pages
-        .with_get("/changelog", controllers::changelog::index)
-        .with_get("/permissions", controllers::permissions::index)
-        .with_get("/security", controllers::security::index)
 }

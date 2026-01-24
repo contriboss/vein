@@ -1,16 +1,19 @@
 {% extends "_base.html" %}
 
-{% block title %}Vein Catalogue{% endblock %}
+{% block title %}Vein Ruby Catalogue{% endblock %}
 
 {% block content %}
 <header class="page-header">
-  <h1>Vein Catalogue</h1>
-  <span class="text-dim">Total gems: {{ total_label }}</span>
+  <div>
+    <h1>Vein Ruby Catalogue</h1>
+    <span class="text-dim">Indexed RubyGems package names: {{ total_label }}</span>
+  </div>
 </header>
+<p class="text-dim mb-lg">This view tracks the RubyGems catalogue. crates.io and npm traffic shows up in the dashboard metrics, not here.</p>
 <div class="search">
   <input
     type="text"
-    placeholder="Search gems..."
+    placeholder="Search Ruby gems..."
     data-bind-search
     data-on-click="@get('/catalog/search')"
   />

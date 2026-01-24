@@ -1,5 +1,5 @@
 use anyhow::Result;
-use rama::http::{header, Body, Response, StatusCode};
+use rama::http::{Body, Response, StatusCode, header};
 
 use crate::config::Config;
 
@@ -176,23 +176,25 @@ pub fn respond_homepage(config: &Config) -> Result<Response<Body>> {
     <main>
       <h1>Vein is online</h1>
       <p>
-        This node is proxying RubyGems traffic from
+        This node is serving RubyGems, crates.io, and npm traffic from
         <code>http://{host}:{port}</code>.
       </p>
       <p>
-        Feed it to <strong>ore-light</strong>, Bundler, or your CI runners and cached
-        gems will be served from local storage on subsequent requests.
+        Point <strong>Bundler</strong>, <strong>Cargo</strong>, <strong>npm</strong>, or your CI
+        runners at this base URL and cached artifacts will be served from local
+        storage on subsequent requests.
       </p>
       <ul>
-        <li><span>1</span>Point clients at this URL as the primary gem source</li>
-        <li><span>2</span>Watch the cache fill under <code>./gems</code></li>
+        <li><span>1</span>Point clients at this URL as their package source or registry</li>
+        <li><span>2</span>Watch the cache fill under <code>{storage_root}</code></li>
       </ul>
     </main>
   </body>
 </html>
 "#,
         host = config.server.host,
-        port = config.server.port
+        port = config.server.port,
+        storage_root = config.storage.path.display()
     );
 
     Response::builder()

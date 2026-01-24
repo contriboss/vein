@@ -7,7 +7,8 @@ use anyhow::Result;
 use chrono::Utc;
 use rama::telemetry::tracing::{debug, warn};
 use vein_adapter::{
-    CacheBackend, CacheBackendTrait, GemVersion, VersionStatus, calculate_availability, is_version_available,
+    CacheBackend, CacheBackendTrait, GemVersion, VersionStatus, calculate_availability,
+    is_version_available,
 };
 
 use crate::config::DelayPolicyConfig;
@@ -187,34 +188,6 @@ fn format_version_key(version: &str, platform: Option<&str>) -> String {
         Some(p) if p != "ruby" => format!("{}:{}", version, p),
         _ => version.to_string(),
     }
-}
-
-/// Filters quarantined versions from a `/versions` response.
-///
-/// The versions format is:
-/// ```text
-/// created_at: 2026-01-01T00:00:00Z
-/// ---
-/// gem_name 1.0.0,1.1.0,1.2.0 checksum
-/// other_gem 2.0.0 checksum
-/// ```
-///
-/// This is more complex because we'd need to filter per-gem.
-/// For now, we pass through unfiltered - the `/info/{gem}` filtering is sufficient.
-#[allow(dead_code, clippy::unused_async)]
-pub async fn filter_compact_versions(
-    config: &DelayPolicyConfig,
-    _index: &CacheBackend,
-    body: &[u8],
-) -> Result<Vec<u8>> {
-    if !config.enabled {
-        return Ok(body.to_vec());
-    }
-
-    // TODO: Implement versions filtering if needed.
-    // The /info/{gem} filtering should be sufficient for most use cases
-    // since bundle/bundler will still query /info/{gem} for the actual versions.
-    Ok(body.to_vec())
 }
 
 #[cfg(test)]

@@ -10,7 +10,7 @@ mod storage;
 
 // Core types (always available)
 pub use cache::{
-    AssetKey, AssetKind, CachedAsset, CacheBackendTrait, DependencyKind, GemDependency,
+    AssetKey, AssetKind, CacheBackendTrait, CachedAsset, DependencyKind, GemDependency,
     GemMetadata, IndexStats, SbomCoverage,
 };
 
@@ -25,6 +25,6 @@ pub use storage::{FileHandle, FilesystemStorage, TempFile};
 
 // Quarantine types
 pub use cache::{
-    calculate_availability, is_version_available, is_version_downloadable, DelayPolicy,
-    GemVersion, QuarantineInfo, QuarantineStats, VersionStatus,
+    DelayPolicy, GemVersion, QuarantineInfo, QuarantineStats, VersionStatus,
+    calculate_availability, is_version_available, is_version_downloadable,
 };

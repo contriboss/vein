@@ -5,12 +5,12 @@ use std::time::Duration;
 use rama::futures::StreamExt;
 use rama::http::service::web::extract::{Query, State};
 use rama::http::service::web::response::{Html, IntoResponse, Sse};
-use rama::http::sse::server::{KeepAlive, KeepAliveStream};
 use rama::http::sse::Event;
+use rama::http::sse::server::{KeepAlive, KeepAliveStream};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
-use crate::state::AdminState;
+use crate::state::{AdminResources, AdminState};
 use crate::utils::receiver_stream;
 use crate::views;
 
@@ -26,40 +26,29 @@ pub async fn index(
 ) -> impl IntoResponse {
     tracing::info!("Dashboard index requested");
 
-    let snapshot = match state.resources.snapshot().await {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to get snapshot");
-            return Html(format!("<h1>Error: {}</h1>", e));
-        }
+    let data = match load_dashboard_data(&state.resources, query.upstream.is_some()).await {
+        Ok(data) => data,
+        Err(err) => return page_error(err),
     };
-
-    let show_upstream = query.upstream.is_some();
-    let data = views::dashboard::DashboardData::from_snapshot(&snapshot, show_upstream);
 
     match views::dashboard::index(&state.tera, data) {
         Ok(html) => Html(html),
         Err(e) => {
             tracing::error!(error = %e, "Failed to render template");
-            Html(format!("<h1>Template Error: {}</h1>", e))
+            page_error(format!("Template Error: {e}"))
         }
     }
 }
 
 pub async fn stats(State(state): State<AdminState>) -> impl IntoResponse {
-    let snapshot = match state.resources.snapshot().await {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::error!(error = %e, "Failed to get snapshot");
-            return Html(format!("<div>Error: {}</div>", e));
-        }
+    let data = match load_dashboard_data(&state.resources, false).await {
+        Ok(data) => data,
+        Err(err) => return fragment_error(err),
     };
-
-    let data = views::dashboard::DashboardData::from_snapshot(&snapshot, false);
 
     match views::dashboard::stats(&state.tera, data) {
         Ok(html) => Html(html),
-        Err(e) => Html(format!("<div>Error: {}</div>", e)),
+        Err(e) => fragment_error(e),
     }
 }
 
@@ -110,11 +99,28 @@ pub async fn stats_stream(State(state): State<AdminState>) -> impl IntoResponse 
 }
 
 async fn get_stats_event_inner(
-    resources: &crate::state::AdminResources,
+    resources: &AdminResources,
     tera: &std::sync::Arc<tera::Tera>,
 ) -> anyhow::Result<String> {
-    let snapshot = resources.snapshot().await?;
-    let data = views::dashboard::DashboardData::from_snapshot(&snapshot, false);
+    let data = load_dashboard_data(resources, false).await?;
     views::dashboard::stats_fragment(tera, data)
 }
 
+async fn load_dashboard_data(
+    resources: &AdminResources,
+    show_upstream: bool,
+) -> anyhow::Result<views::dashboard::DashboardData> {
+    let snapshot = resources.snapshot().await?;
+    Ok(views::dashboard::DashboardData::from_snapshot(
+        &snapshot,
+        show_upstream,
+    ))
+}
+
+fn page_error(err: impl std::fmt::Display) -> Html<String> {
+    Html(format!("<h1>Error: {}</h1>", err))
+}
+
+fn fragment_error(err: impl std::fmt::Display) -> Html<String> {
+    Html(format!("<div>Error: {}</div>", err))
+}

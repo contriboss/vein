@@ -2,7 +2,7 @@ use super::*;
 use rama::http::Uri;
 use std::io::Write;
 use std::{fs, str::FromStr};
-use tempfile::{tempdir, NamedTempFile};
+use tempfile::{NamedTempFile, tempdir};
 
 // === DEFAULT VALUE TESTS ===
 
@@ -388,10 +388,12 @@ fn test_validate_invalid_scheme() {
     };
     let result = config.validate();
     assert!(result.is_err());
-    assert!(result
-        .unwrap_err()
-        .to_string()
-        .contains("unsupported upstream scheme"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("unsupported upstream scheme")
+    );
 }
 
 #[test]

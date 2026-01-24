@@ -160,14 +160,9 @@ impl NpmPackageRequest {
         let safe_name = sanitize_segment(&self.name);
         if self.is_tarball {
             // npm/{name}/{tarball}
-            let safe_tarball = sanitize_segment(
-                self.tarball_name.as_deref().unwrap_or("unknown.tgz"),
-            );
-            format!(
-                "npm/{}/{}",
-                safe_name,
-                safe_tarball
-            )
+            let safe_tarball =
+                sanitize_segment(self.tarball_name.as_deref().unwrap_or("unknown.tgz"));
+            format!("npm/{}/{}", safe_name, safe_tarball)
         } else {
             // npm_index/{name}/metadata.json or npm_index/{name}/versions/{version}.json
             if let Some(version) = self.version.as_deref() {
@@ -196,9 +191,10 @@ impl NpmPackageRequest {
 }
 
 fn is_invalid_path(decoded: &str) -> bool {
-    decoded.contains('\\') || decoded.split('/').any(|segment| {
-        segment.is_empty() || segment == "." || segment == ".."
-    })
+    decoded.contains('\\')
+        || decoded
+            .split('/')
+            .any(|segment| segment.is_empty() || segment == "." || segment == "..")
 }
 
 fn is_valid_version_segment(segment: &str) -> bool {
@@ -326,10 +322,7 @@ mod tests {
     #[test]
     fn test_storage_path_metadata_version() {
         let req = NpmPackageRequest::from_path("/lodash/4.17.21").unwrap();
-        assert_eq!(
-            req.storage_path(),
-            "npm_index/lodash/versions/4.17.21.json"
-        );
+        assert_eq!(req.storage_path(), "npm_index/lodash/versions/4.17.21.json");
     }
 
     #[test]

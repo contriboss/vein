@@ -1,6 +1,6 @@
 //! CycloneDX SBOM generation.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use cyclonedx_bom::{
     models::{
         component::{Classification, Component},

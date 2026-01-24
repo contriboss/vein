@@ -1,3 +1,4 @@
+mod backend_common;
 pub mod models;
 #[cfg(feature = "postgres")]
 pub mod postgres;
@@ -22,8 +23,8 @@ pub use types::{
 
 // Re-export quarantine types
 pub use quarantine::{
-    calculate_availability, is_version_available, is_version_downloadable, DelayPolicy,
-    GemVersion, QuarantineInfo, QuarantineStats, VersionStatus,
+    DelayPolicy, GemVersion, QuarantineInfo, QuarantineStats, VersionStatus,
+    calculate_availability, is_version_available, is_version_downloadable,
 };
 
 // Re-export backend implementations (conditional)
@@ -47,12 +48,17 @@ pub trait CacheBackendTrait: Send + Sync {
     fn stats(&self) -> impl Future<Output = Result<IndexStats>> + Send;
     fn catalog_upsert_names(&self, names: &[String]) -> impl Future<Output = Result<()>> + Send;
     fn catalog_total(&self) -> impl Future<Output = Result<u64>> + Send;
-    fn catalog_page(&self, offset: i64, limit: i64)
-        -> impl Future<Output = Result<Vec<String>>> + Send;
-    fn catalog_search(&self, query: &str, limit: i64)
-        -> impl Future<Output = Result<Vec<String>>> + Send;
-    fn catalog_meta_get(&self, key: &str)
-        -> impl Future<Output = Result<Option<String>>> + Send;
+    fn catalog_page(
+        &self,
+        offset: i64,
+        limit: i64,
+    ) -> impl Future<Output = Result<Vec<String>>> + Send;
+    fn catalog_search(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> impl Future<Output = Result<Vec<String>>> + Send;
+    fn catalog_meta_get(&self, key: &str) -> impl Future<Output = Result<Option<String>>> + Send;
     fn catalog_meta_set(&self, key: &str, value: &str) -> impl Future<Output = Result<()>> + Send;
     fn upsert_metadata(&self, metadata: &GemMetadata) -> impl Future<Output = Result<()>> + Send;
     fn gem_metadata(
@@ -70,7 +76,7 @@ pub trait CacheBackendTrait: Send + Sync {
         limit: i64,
     ) -> impl Future<Output = Result<Vec<String>>> + Send;
     fn catalog_total_by_language(&self, language: &str)
-        -> impl Future<Output = Result<u64>> + Send;
+    -> impl Future<Output = Result<u64>> + Send;
 
     // ==================== Quarantine Methods ====================
 

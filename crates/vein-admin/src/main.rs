@@ -4,7 +4,6 @@ mod app;
 mod commands;
 mod config;
 mod controllers;
-mod error;
 mod router;
 mod ruby;
 mod state;
@@ -15,13 +14,8 @@ use std::time::Duration;
 
 use clap::{Parser, Subcommand};
 use rama::{
-    graceful::Shutdown,
-    http::server::HttpServer,
-    layer::ConsumeErrLayer,
-    rt::Executor,
-    tcp::server::TcpListener,
-    tls::rustls::dep::rustls,
-    Layer,
+    Layer, graceful::Shutdown, http::server::HttpServer, layer::ConsumeErrLayer, rt::Executor,
+    tcp::server::TcpListener, tls::rustls::dep::rustls,
 };
 
 #[derive(Debug, Parser)]
@@ -47,9 +41,9 @@ enum Commands {
         #[arg(long)]
         port: Option<u16>,
     },
-    /// Sync a gem from upstream to local cache
+    /// Sync a RubyGems package from upstream to local cache
     Sync {
-        /// Gem name to sync
+        /// Ruby gem name to sync
         name: String,
 
         /// Specific version to sync (syncs all if not provided)
@@ -59,24 +53,6 @@ enum Commands {
         /// Platform variant (e.g., ruby, java, x86_64-linux)
         #[arg(short, long)]
         platform: Option<String>,
-    },
-    /// Index Ruby symbols from cached gems
-    Index {
-        /// Gem name to index
-        name: String,
-
-        /// Specific version to index (indexes all cached if not provided)
-        #[arg(short, long)]
-        version: Option<String>,
-    },
-    /// Validate binary architecture matches gem platform
-    Validate {
-        /// Gem name to validate
-        name: String,
-
-        /// Specific version to validate (validates all cached if not provided)
-        #[arg(short, long)]
-        version: Option<String>,
     },
 }
 
@@ -100,8 +76,7 @@ async fn run_server(
     graceful.spawn_task_fn(move |guard| async move {
         let tcp = TcpListener::build().bind(&addr).await.expect("bind tcp");
         let exec = Executor::graceful(guard.clone());
-        let service = HttpServer::auto(exec)
-            .service(ConsumeErrLayer::default().into_layer(router));
+        let service = HttpServer::auto(exec).service(ConsumeErrLayer::default().into_layer(router));
         tcp.serve_graceful(guard, service).await;
     });
 
@@ -137,13 +112,7 @@ async fn main() -> anyhow::Result<()> {
             version,
             platform,
         }) => {
-            commands::sync::run(name, version, platform).await?;
-        }
-        Some(Commands::Index { name, version }) => {
-            commands::index::run(name, version).await?;
-        }
-        Some(Commands::Validate { name, version }) => {
-            commands::validate::run(name, version).await?;
+            commands::sync::run(&cfg.vein.config_path, name, version, platform).await?;
         }
     }
 
