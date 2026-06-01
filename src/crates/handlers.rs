@@ -13,7 +13,7 @@ use rama::http::{
 use vein_adapter::{CacheBackend, FilesystemStorage};
 
 use super::types::{IndexConfig, index_path};
-use crate::http_cache::{CacheOutcome, MetaStoreMode, fetch_cached_text};
+use crate::http_cache::{CacheOutcome, CachedTextOptions, MetaStoreMode, fetch_cached_text};
 
 const CRATES_INDEX_BASE: &str = "https://index.crates.io";
 const UA: &str = concat!("vein/", env!("CARGO_PKG_VERSION"));
@@ -85,13 +85,15 @@ async fn handle_sparse_index_from(
     let result = fetch_cached_text(
         storage.as_ref(),
         index.as_ref(),
-        &storage_path,
-        &meta_key,
-        "text/plain; charset=utf-8",
-        "public, max-age=60",
-        false,
-        MetaStoreMode::BestEffort,
-        false,
+        CachedTextOptions {
+            storage_path: &storage_path,
+            meta_key: &meta_key,
+            content_type: "text/plain; charset=utf-8",
+            cache_control: "public, max-age=60",
+            include_content_length: false,
+            meta_mode: MetaStoreMode::BestEffort,
+            strip_transfer_encoding: false,
+        },
         |headers| async move { fetch_with_headers(&upstream_url, &headers).await },
         |body| async move { Ok(body) },
     )

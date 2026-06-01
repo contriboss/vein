@@ -11,7 +11,7 @@ mod storage;
 // Core types (always available)
 pub use cache::{
     AssetKey, AssetKind, CacheBackendTrait, CachedAsset, DependencyKind, GemDependency,
-    GemMetadata, IndexStats, SbomCoverage,
+    GemMetadata, GemSymbolRecord, IndexStats, SbomCoverage,
 };
 
 // Backend type alias - compile-time selection

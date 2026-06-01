@@ -5,7 +5,7 @@ use rama::{
     telemetry::tracing::warn,
 };
 
-use crate::http_cache::{CacheOutcome, MetaStoreMode, fetch_cached_text};
+use crate::http_cache::{CacheOutcome, CachedTextOptions, MetaStoreMode, fetch_cached_text};
 
 use super::{CacheStatus, RequestContext, VeinProxy, quarantine, utils};
 
@@ -79,13 +79,15 @@ impl VeinProxy {
         let result = fetch_cached_text(
             &self.storage,
             index,
-            &storage_path,
-            &meta_key,
-            content_type,
-            "public, max-age=300",
-            true,
-            MetaStoreMode::Strict,
-            true,
+            CachedTextOptions {
+                storage_path: &storage_path,
+                meta_key: &meta_key,
+                content_type,
+                cache_control: "public, max-age=300",
+                include_content_length: true,
+                meta_mode: MetaStoreMode::Strict,
+                strip_transfer_encoding: true,
+            },
             |headers| async move { self.fetch_with_fallback(req, Some(&headers)).await },
             move |body| async move {
                 if let Some(name) = info_name {

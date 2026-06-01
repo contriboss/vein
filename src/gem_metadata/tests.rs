@@ -74,7 +74,7 @@ fn build_test_gem(metadata_yaml: &str, data_entries: &[(&str, &[u8])]) -> NamedT
 fn digest_file(path: &Path) -> (u64, String) {
     let bytes = std::fs::read(path).expect("read gem bytes");
     let size_bytes = bytes.len() as u64;
-    let sha256 = format!("{:x}", Sha256::digest(&bytes));
+    let sha256 = hex::encode(Sha256::digest(&bytes));
     (size_bytes, sha256)
 }
 

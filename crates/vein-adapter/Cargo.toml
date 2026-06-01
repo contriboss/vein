@@ -2,6 +2,7 @@
 name = "vein-adapter"
 version = "0.3.0"
 edition = "2024"
+rust-version = "1.95"
 license = "AGPL-3.0-only"
 authors = ["Abdelkader Boudih <oss@seuros.com>"]
 description = "Shared storage adapters for Vein services"
@@ -14,11 +15,11 @@ categories = ["database"]
 default = ["sqlite", "tls"]
 sqlite = ["sqlx/sqlite"]
 postgres = ["sqlx/postgres"]
-tls = ["sqlx/runtime-tokio-rustls"]
+tls = ["sqlx/tls-rustls-aws-lc-rs"]
 
 [dependencies]
 anyhow = "1.0.102"
-sqlx = { version = "0.8.6", features = ["runtime-tokio", "chrono", "migrate"] }
+sqlx = { version = "0.9.0", features = ["runtime-tokio", "chrono", "migrate"] }
 tokio = { version = "1.50.0", features = ["fs", "macros", "rt-multi-thread", "sync"] }
 chrono = { version = "0.4.44", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }

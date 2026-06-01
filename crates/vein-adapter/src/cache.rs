@@ -15,6 +15,18 @@ use std::future::Future;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
+#[derive(Clone, Copy, Debug)]
+pub struct GemSymbolRecord<'a> {
+    pub gem_name: &'a str,
+    pub gem_version: &'a str,
+    pub gem_platform: Option<&'a str>,
+    pub file_path: &'a str,
+    pub symbol_type: &'a str,
+    pub symbol_name: &'a str,
+    pub parent_name: Option<&'a str>,
+    pub line_number: Option<i32>,
+}
+
 // Re-export commonly used types
 pub use types::{
     AssetKey, AssetKind, CachedAsset, DependencyKind, GemDependency, GemMetadata, IndexStats,
@@ -138,14 +150,7 @@ pub trait CacheBackendTrait: Send + Sync {
 
     fn insert_symbols(
         &self,
-        gem_name: &str,
-        gem_version: &str,
-        gem_platform: Option<&str>,
-        file_path: &str,
-        symbol_type: &str,
-        symbol_name: &str,
-        parent_name: Option<&str>,
-        line_number: Option<i32>,
+        symbol: GemSymbolRecord<'_>,
     ) -> impl Future<Output = Result<()>> + Send;
 
     fn clear_symbols(

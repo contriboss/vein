@@ -128,7 +128,7 @@ pub async fn search(
 
     Sse::new(KeepAliveStream::new(
         KeepAlive::new(),
-        stream.map(|event| Ok::<_, std::convert::Infallible>(event)),
+        stream.map(Ok::<_, std::convert::Infallible>),
     ))
 }
 

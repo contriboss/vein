@@ -45,16 +45,21 @@ pub struct CachedFetchResult {
     pub outcome: CacheOutcome,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct CachedTextOptions<'a> {
+    pub storage_path: &'a str,
+    pub meta_key: &'a str,
+    pub content_type: &'a str,
+    pub cache_control: &'a str,
+    pub include_content_length: bool,
+    pub meta_mode: MetaStoreMode,
+    pub strip_transfer_encoding: bool,
+}
+
 pub async fn fetch_cached_text<F, Fut, T, TFut>(
     storage: &FilesystemStorage,
     index: &CacheBackend,
-    storage_path: &str,
-    meta_key: &str,
-    content_type: &str,
-    cache_control: &str,
-    include_content_length: bool,
-    meta_mode: MetaStoreMode,
-    strip_transfer_encoding: bool,
+    options: CachedTextOptions<'_>,
     fetch: F,
     transform: T,
 ) -> Result<CachedFetchResult>
@@ -64,10 +69,12 @@ where
     T: FnOnce(Vec<u8>) -> TFut,
     TFut: Future<Output = Result<Vec<u8>>>,
 {
-    let cached_bytes = tokio::fs::read(storage.resolve(storage_path)).await.ok();
+    let cached_bytes = tokio::fs::read(storage.resolve(options.storage_path))
+        .await
+        .ok();
     let had_cache = cached_bytes.is_some();
 
-    let cached_meta = load_cached_meta(index, meta_key, meta_mode).await?;
+    let cached_meta = load_cached_meta(index, options.meta_key, options.meta_mode).await?;
     let request_headers = build_conditional_headers(&cached_meta);
 
     let response = fetch(request_headers).await?;
@@ -80,9 +87,9 @@ where
         let response = build_cached_response(
             &transformed,
             &meta,
-            content_type,
-            cache_control,
-            include_content_length,
+            options.content_type,
+            options.cache_control,
+            options.include_content_length,
         )?;
         return Ok(CachedFetchResult {
             response,
@@ -101,16 +108,16 @@ where
             .to_bytes();
         let meta = CacheEntryMeta::from_headers(&headers);
 
-        persist_body(storage, storage_path, &body).await?;
-        store_cached_meta(index, meta_key, &meta, meta_mode).await?;
+        persist_body(storage, options.storage_path, &body).await?;
+        store_cached_meta(index, options.meta_key, &meta, options.meta_mode).await?;
 
         let transformed = transform(body.to_vec()).await?;
         let response = build_cached_response(
             &transformed,
             &meta,
-            content_type,
-            cache_control,
-            include_content_length,
+            options.content_type,
+            options.cache_control,
+            options.include_content_length,
         )?;
         let outcome = if had_cache {
             CacheOutcome::Revalidated
@@ -120,7 +127,7 @@ where
         return Ok(CachedFetchResult { response, outcome });
     }
 
-    let forwarded = forward_response(response, strip_transfer_encoding).await?;
+    let forwarded = forward_response(response, options.strip_transfer_encoding).await?;
     Ok(CachedFetchResult {
         response: forwarded,
         outcome: CacheOutcome::Pass,

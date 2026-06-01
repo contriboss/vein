@@ -844,17 +844,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         Ok(into_gem_versions(rows))
     }
 
-    async fn insert_symbols(
-        &self,
-        gem_name: &str,
-        gem_version: &str,
-        gem_platform: Option<&str>,
-        file_path: &str,
-        symbol_type: &str,
-        symbol_name: &str,
-        parent_name: Option<&str>,
-        line_number: Option<i32>,
-    ) -> Result<()> {
+    async fn insert_symbols(&self, symbol: super::GemSymbolRecord<'_>) -> Result<()> {
         sqlx::query(
             r#"
             INSERT INTO gem_symbols (
@@ -874,14 +864,14 @@ impl CacheBackendTrait for PostgresCacheBackend {
                 line_number = EXCLUDED.line_number
             "#,
         )
-        .bind(gem_name)
-        .bind(gem_version)
-        .bind(gem_platform)
-        .bind(file_path)
-        .bind(symbol_type)
-        .bind(symbol_name)
-        .bind(parent_name)
-        .bind(line_number)
+        .bind(symbol.gem_name)
+        .bind(symbol.gem_version)
+        .bind(symbol.gem_platform)
+        .bind(symbol.file_path)
+        .bind(symbol.symbol_type)
+        .bind(symbol.symbol_name)
+        .bind(symbol.parent_name)
+        .bind(symbol.line_number)
         .execute(&self.pool)
         .await
         .context("inserting gem symbol (postgres)")?;

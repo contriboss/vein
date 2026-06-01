@@ -94,7 +94,7 @@ pub async fn stats_stream(State(state): State<AdminState>) -> impl IntoResponse 
 
     Sse::new(KeepAliveStream::new(
         KeepAlive::new(),
-        stream.map(|event| Ok::<_, std::convert::Infallible>(event)),
+        stream.map(Ok::<_, std::convert::Infallible>),
     ))
 }
 

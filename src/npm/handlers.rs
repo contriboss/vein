@@ -18,7 +18,7 @@ use serde_json::Value as JsonValue;
 use vein_adapter::{AssetKind, CacheBackend, CacheBackendTrait, FilesystemStorage};
 
 use super::types::NpmPackageRequest;
-use crate::http_cache::{CacheOutcome, MetaStoreMode, fetch_cached_text};
+use crate::http_cache::{CacheOutcome, CachedTextOptions, MetaStoreMode, fetch_cached_text};
 use crate::proxy::{cache as proxy_cache, types::CacheableRequest};
 
 const NPM_REGISTRY_BASE: &str = "https://registry.npmjs.org";
@@ -41,21 +41,19 @@ pub fn is_npm_request(req: &Request<Body>) -> bool {
     }
 
     // Check User-Agent for npm client
-    if let Some(ua) = req.headers().get(header::USER_AGENT) {
-        if let Ok(ua_str) = ua.to_str() {
-            if ua_str.starts_with("npm/") || ua_str.contains(" npm/") {
-                return true;
-            }
-        }
+    if let Some(ua) = req.headers().get(header::USER_AGENT)
+        && let Ok(ua_str) = ua.to_str()
+        && (ua_str.starts_with("npm/") || ua_str.contains(" npm/"))
+    {
+        return true;
     }
 
     // Check Accept header for npm-specific types
-    if let Some(accept) = req.headers().get(header::ACCEPT) {
-        if let Ok(accept_str) = accept.to_str() {
-            if accept_str.contains("application/vnd.npm") {
-                return true;
-            }
-        }
+    if let Some(accept) = req.headers().get(header::ACCEPT)
+        && let Ok(accept_str) = accept.to_str()
+        && accept_str.contains("application/vnd.npm")
+    {
+        return true;
     }
 
     false
@@ -135,13 +133,15 @@ async fn handle_package_metadata(
     let result = fetch_cached_text(
         storage.as_ref(),
         index.as_ref(),
-        &storage_path,
-        &meta_key,
-        "application/json",
-        "public, max-age=60", // Short TTL for metadata (can change)
-        true,
-        MetaStoreMode::BestEffort,
-        false,
+        CachedTextOptions {
+            storage_path: &storage_path,
+            meta_key: &meta_key,
+            content_type: "application/json",
+            cache_control: "public, max-age=60",
+            include_content_length: true,
+            meta_mode: MetaStoreMode::BestEffort,
+            strip_transfer_encoding: false,
+        },
         |headers| async move {
             fetch_with_headers(&upstream_url, &headers, Some("application/json")).await
         },
@@ -315,26 +315,25 @@ fn transform_metadata(body: &[u8], our_base: &str) -> Result<Vec<u8>> {
     let mut metadata: JsonValue = serde_json::from_slice(body).context("parsing npm metadata")?;
 
     // Transform top-level dist.tarball (version-specific metadata)
-    if let Some(dist) = metadata.get_mut("dist").and_then(|d| d.as_object_mut()) {
-        if let Some(tarball) = dist.get("tarball").and_then(|t| t.as_str()) {
-            let new_tarball = tarball
-                .replace("https://registry.npmjs.org", our_base)
-                .replace("http://registry.npmjs.org", our_base);
-            dist.insert("tarball".to_string(), JsonValue::String(new_tarball));
-        }
+    if let Some(dist) = metadata.get_mut("dist").and_then(|d| d.as_object_mut())
+        && let Some(tarball) = dist.get("tarball").and_then(|t| t.as_str())
+    {
+        let new_tarball = tarball
+            .replace("https://registry.npmjs.org", our_base)
+            .replace("http://registry.npmjs.org", our_base);
+        dist.insert("tarball".to_string(), JsonValue::String(new_tarball));
     }
 
     // Transform dist.tarball URLs in all versions
     if let Some(versions) = metadata.get_mut("versions").and_then(|v| v.as_object_mut()) {
         for (_version, version_data) in versions.iter_mut() {
-            if let Some(dist) = version_data.get_mut("dist").and_then(|d| d.as_object_mut()) {
-                if let Some(tarball) = dist.get("tarball").and_then(|t| t.as_str()) {
-                    // Replace registry.npmjs.org with our base URL
-                    let new_tarball = tarball
-                        .replace("https://registry.npmjs.org", our_base)
-                        .replace("http://registry.npmjs.org", our_base);
-                    dist.insert("tarball".to_string(), JsonValue::String(new_tarball));
-                }
+            if let Some(dist) = version_data.get_mut("dist").and_then(|d| d.as_object_mut())
+                && let Some(tarball) = dist.get("tarball").and_then(|t| t.as_str())
+            {
+                let new_tarball = tarball
+                    .replace("https://registry.npmjs.org", our_base)
+                    .replace("http://registry.npmjs.org", our_base);
+                dist.insert("tarball".to_string(), JsonValue::String(new_tarball));
             }
         }
     }
