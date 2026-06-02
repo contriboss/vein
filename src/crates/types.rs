@@ -1,6 +1,6 @@
 //! Crates.io index types matching cargo's sparse registry format
 //!
-//! Reference: https://doc.rust-lang.org/cargo/reference/registry-index.html
+//! Reference: <https://doc.rust-lang.org/cargo/reference/registry-index.html>
 
 use serde::{Deserialize, Serialize};
 
