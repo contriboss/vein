@@ -4,19 +4,17 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use rama::Service;
 use rama::http::{
-    Body, Method, Request, Response, StatusCode,
-    client::EasyHttpWebClient,
-    header::{self, HeaderMap, HeaderValue},
+    Body, Response, StatusCode,
+    header::{self, HeaderValue},
 };
 use vein_adapter::{CacheBackend, FilesystemStorage};
 
 use super::types::{IndexConfig, index_path};
 use crate::http_cache::{CacheOutcome, CachedTextOptions, MetaStoreMode, fetch_cached_text};
+use crate::upstream::simple_get;
 
 const CRATES_INDEX_BASE: &str = "https://index.crates.io";
-const UA: &str = concat!("vein/", env!("CARGO_PKG_VERSION"));
 
 fn crates_index_base() -> Cow<'static, str> {
     #[cfg(test)]
@@ -94,37 +92,12 @@ async fn handle_sparse_index_from(
             meta_mode: MetaStoreMode::BestEffort,
             strip_transfer_encoding: false,
         },
-        |headers| async move { fetch_with_headers(&upstream_url, &headers).await },
+        |headers| async move { simple_get(&upstream_url, &headers, Some("text/plain")).await },
         |body| async move { Ok(body) },
     )
     .await?;
 
     Ok((result.response, result.outcome))
-}
-
-/// Fetch from upstream with optional headers
-async fn fetch_with_headers(url: &str, extra_headers: &HeaderMap) -> Result<Response<Body>> {
-    let client = EasyHttpWebClient::default();
-
-    let mut builder = Request::builder().method(Method::GET).uri(url);
-
-    {
-        let headers = builder.headers_mut().context("getting headers")?;
-        headers.insert(header::USER_AGENT, HeaderValue::from_static(UA));
-        headers.insert(header::ACCEPT, HeaderValue::from_static("text/plain"));
-        for (name, value) in extra_headers {
-            headers.insert(name, value.clone());
-        }
-    }
-
-    let request = builder
-        .body(Body::empty())
-        .context("building upstream request")?;
-
-    client
-        .serve(request)
-        .await
-        .map_err(|e| anyhow::anyhow!("upstream request failed: {e}"))
 }
 
 /// Serve the sparse index config.json

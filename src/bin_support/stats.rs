@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use anyhow::Result;
 use vein_adapter::CacheBackendTrait;
 
+use vein::util::format_bytes;
+
 use super::setup::{build_current_thread_runtime, connect_cache_index, init_tracing, load_config};
 
 pub(crate) fn run_stats(config_path: PathBuf) -> Result<()> {
@@ -31,26 +33,4 @@ pub(crate) fn run_stats(config_path: PathBuf) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn format_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
-
-    if bytes == 0 {
-        return "0 B".to_string();
-    }
-
-    let mut value = bytes as f64;
-    let mut unit = 0;
-
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit += 1;
-    }
-
-    if unit == 0 {
-        format!("{} {}", bytes, UNITS[unit])
-    } else {
-        format!("{:.2} {}", value, UNITS[unit])
-    }
 }

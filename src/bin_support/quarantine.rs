@@ -119,22 +119,19 @@ pub(crate) fn run_quarantine_approve(
         return Ok(());
     };
 
-    ctx.rt
-        .block_on(ctx.index.update_version_status(
-            &gem,
-            &version,
-            platform.as_deref(),
-            VersionStatus::Pinned,
-            Some(format!("approved: {}", reason)),
-        ))
-        .context("approving version")?;
+    set_version_status(
+        &ctx,
+        &gem,
+        &version,
+        platform.as_deref(),
+        VersionStatus::Pinned,
+        format!("approved: {reason}"),
+        "approving version",
+    )?;
 
     let platform_str = platform.as_deref().unwrap_or("ruby");
-    println!(
-        "Approved {}-{} ({}) for immediate availability.",
-        gem, version, platform_str
-    );
-    println!("Reason: {}", reason);
+    println!("Approved {gem}-{version} ({platform_str}) for immediate availability.");
+    println!("Reason: {reason}");
 
     Ok(())
 }
@@ -151,20 +148,39 @@ pub(crate) fn run_quarantine_block(
         return Ok(());
     };
 
-    ctx.rt
-        .block_on(ctx.index.update_version_status(
-            &gem,
-            &version,
-            platform.as_deref(),
-            VersionStatus::Yanked,
-            Some(format!("blocked: {}", reason)),
-        ))
-        .context("blocking version")?;
+    set_version_status(
+        &ctx,
+        &gem,
+        &version,
+        platform.as_deref(),
+        VersionStatus::Yanked,
+        format!("blocked: {reason}"),
+        "blocking version",
+    )?;
 
     let platform_str = platform.as_deref().unwrap_or("ruby");
-    println!("Blocked {}-{} ({}).", gem, version, platform_str);
-    println!("Reason: {}", reason);
+    println!("Blocked {gem}-{version} ({platform_str}).");
+    println!("Reason: {reason}");
 
+    Ok(())
+}
+
+/// Applies a quarantine decision (status + audit note) to a gem version.
+fn set_version_status(
+    ctx: &QuarantineContext,
+    gem: &str,
+    version: &str,
+    platform: Option<&str>,
+    status: VersionStatus,
+    note: String,
+    context_msg: &'static str,
+) -> Result<()> {
+    ctx.rt
+        .block_on(
+            ctx.index
+                .update_version_status(gem, version, platform, status, Some(note)),
+        )
+        .context(context_msg)?;
     Ok(())
 }
 

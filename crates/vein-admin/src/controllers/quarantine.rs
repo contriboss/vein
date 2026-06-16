@@ -14,6 +14,7 @@ use vein_adapter::{GemVersion, QuarantineStats as AdapterQuarantineStats, Versio
 
 use crate::controllers::render;
 use crate::state::{AdminResources, AdminState};
+use crate::utils::error_html;
 
 const DEFAULT_PENDING_LIMIT: u32 = 50;
 const MAX_PENDING_LIMIT: u32 = 100;
@@ -278,8 +279,4 @@ fn status_label(status: VersionStatus) -> &'static str {
         VersionStatus::Yanked => "Yanked",
         VersionStatus::Pinned => "Pinned",
     }
-}
-
-fn error_html(err: impl std::fmt::Display) -> Html<String> {
-    Html(format!("<h1>Error: {}</h1>", err))
 }

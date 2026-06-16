@@ -39,9 +39,7 @@ impl DatabaseConfig {
                 self.path = path;
             }
         }
-        if self.path.is_relative() {
-            self.path = base_dir.join(&self.path);
-        }
+        crate::config::resolve_relative(&mut self.path, base_dir);
     }
 
     #[cfg(not(feature = "sqlite"))]

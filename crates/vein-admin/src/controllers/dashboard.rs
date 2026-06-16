@@ -2,16 +2,14 @@
 
 use std::time::Duration;
 
-use rama::futures::StreamExt;
 use rama::http::service::web::extract::{Query, State};
-use rama::http::service::web::response::{Html, IntoResponse, Sse};
+use rama::http::service::web::response::{Html, IntoResponse};
 use rama::http::sse::Event;
-use rama::http::sse::server::{KeepAlive, KeepAliveStream};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 
 use crate::state::{AdminResources, AdminState};
-use crate::utils::receiver_stream;
+use crate::utils::{datastar_patch_event, error_html, sse_from_receiver};
 use crate::views;
 
 #[derive(Debug, Deserialize, Default)]
@@ -28,14 +26,14 @@ pub async fn index(
 
     let data = match load_dashboard_data(&state.resources, query.upstream.is_some()).await {
         Ok(data) => data,
-        Err(err) => return page_error(err),
+        Err(err) => return error_html(err),
     };
 
     match views::dashboard::index(&state.tera, data) {
         Ok(html) => Html(html),
         Err(e) => {
             tracing::error!(error = %e, "Failed to render template");
-            page_error(format!("Template Error: {e}"))
+            error_html(format!("Template Error: {e}"))
         }
     }
 }
@@ -64,19 +62,10 @@ pub async fn stats_stream(State(state): State<AdminState>) -> impl IntoResponse 
         async move {
             loop {
                 let event = match get_stats_event_inner(&resources, &tera).await {
-                    Ok(html) => Event::default()
-                        .try_with_event("datastar-patch-elements")
-                        .expect("valid event name")
-                        .with_data(format!("fragments {}", html)),
+                    Ok(html) => datastar_patch_event(html),
                     Err(err) => {
                         tracing::error!(error = %err, "failed to get stats for SSE");
-                        Event::default()
-                            .try_with_event("datastar-patch-elements")
-                            .expect("valid event name")
-                            .with_data(format!(
-                                "fragments <div id='stats-error'>Error: {}</div>",
-                                err
-                            ))
+                        datastar_patch_event(format!("<div id='stats-error'>Error: {err}</div>"))
                     }
                 };
 
@@ -89,13 +78,7 @@ pub async fn stats_stream(State(state): State<AdminState>) -> impl IntoResponse 
         }
     });
 
-    // Convert receiver to a stream that can be used with Sse
-    let stream = receiver_stream(rx);
-
-    Sse::new(KeepAliveStream::new(
-        KeepAlive::new(),
-        stream.map(Ok::<_, std::convert::Infallible>),
-    ))
+    sse_from_receiver(rx)
 }
 
 async fn get_stats_event_inner(
@@ -115,10 +98,6 @@ async fn load_dashboard_data(
         &snapshot,
         show_upstream,
     ))
-}
-
-fn page_error(err: impl std::fmt::Display) -> Html<String> {
-    Html(format!("<h1>Error: {}</h1>", err))
 }
 
 fn fragment_error(err: impl std::fmt::Display) -> Html<String> {

@@ -9,9 +9,7 @@ pub struct StorageConfig {
 
 impl StorageConfig {
     pub fn normalize_paths(&mut self, base_dir: &Path) {
-        if self.path.is_relative() {
-            self.path = base_dir.join(&self.path);
-        }
+        crate::config::resolve_relative(&mut self.path, base_dir);
     }
 
     pub fn ensure_directories(&self) -> std::io::Result<()> {

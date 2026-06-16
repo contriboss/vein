@@ -1,10 +1,15 @@
 use anyhow::Result;
-use rama::http::{Body, Response, StatusCode, header};
+use rama::http::{Body, HeaderMap, Response, StatusCode, header};
 
 use crate::config::Config;
 
-/// Responds with JSON content
-pub fn respond_json(status: StatusCode, body: &str) -> Result<Response<Body>> {
+/// Builds a `no-store` JSON response, letting the caller add request-specific
+/// headers (content-length, content-disposition, ...) before the body is set.
+fn json_response(
+    status: StatusCode,
+    body: &str,
+    extra: impl FnOnce(&mut HeaderMap) -> Result<()>,
+) -> Result<Response<Body>> {
     let mut builder = Response::builder().status(status);
     {
         let headers = builder
@@ -18,40 +23,33 @@ pub fn respond_json(status: StatusCode, body: &str) -> Result<Response<Body>> {
             header::CACHE_CONTROL,
             header::HeaderValue::from_static("no-store"),
         );
-        headers.insert(
-            header::CONTENT_LENGTH,
-            header::HeaderValue::from_str(&body.len().to_string())?,
-        );
+        extra(headers)?;
     }
     builder
         .body(Body::from(body.to_owned()))
         .map_err(Into::into)
 }
 
+/// Responds with JSON content
+pub fn respond_json(status: StatusCode, body: &str) -> Result<Response<Body>> {
+    json_response(status, body, |headers| {
+        headers.insert(
+            header::CONTENT_LENGTH,
+            header::HeaderValue::from_str(&body.len().to_string())?,
+        );
+        Ok(())
+    })
+}
+
 /// Responds with JSON content as a downloadable attachment
 pub fn respond_json_download(body: &str, filename: &str) -> Result<Response<Body>> {
-    let mut builder = Response::builder().status(StatusCode::OK);
-    {
-        let headers = builder
-            .headers_mut()
-            .expect("headers available while building response");
-        headers.insert(
-            header::CONTENT_TYPE,
-            header::HeaderValue::from_static("application/json; charset=utf-8"),
-        );
-        headers.insert(
-            header::CACHE_CONTROL,
-            header::HeaderValue::from_static("no-store"),
-        );
+    json_response(StatusCode::OK, body, |headers| {
         headers.insert(
             header::CONTENT_DISPOSITION,
-            header::HeaderValue::from_str(&format!("attachment; filename=\"{}\"", filename))?,
+            header::HeaderValue::from_str(&format!("attachment; filename=\"{filename}\""))?,
         );
-    }
-
-    builder
-        .body(Body::from(body.to_owned()))
-        .map_err(Into::into)
+        Ok(())
+    })
 }
 
 /// Responds with plain text

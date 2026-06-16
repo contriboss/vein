@@ -10,7 +10,7 @@ use rama::{
         Body, Method, Request, Response, Uri,
         body::util::BodyExt as _,
         client::EasyHttpWebClient,
-        header::{HeaderMap, HeaderValue, USER_AGENT},
+        header::{self, HeaderMap, HeaderValue, USER_AGENT},
         layer::trace::TraceLayer,
     },
     layer::Layer,
@@ -23,7 +23,40 @@ use tracing::{info, warn};
 
 use crate::config::{BackoffStrategy as ConfigBackoffStrategy, UpstreamConfig};
 
-const UA: &str = concat!("vein/", env!("CARGO_PKG_VERSION"));
+pub const UA: &str = concat!("vein/", env!("CARGO_PKG_VERSION"));
+
+/// Performs a one-shot upstream `GET` (no retry/circuit-breaker), setting the
+/// vein user-agent and forwarding `extra_headers`. When `accept` is provided it
+/// is applied only if `extra_headers` did not already set an `Accept` header.
+pub async fn simple_get(
+    url: &str,
+    extra_headers: &HeaderMap,
+    accept: Option<&str>,
+) -> Result<Response<Body>> {
+    let client = EasyHttpWebClient::default();
+    let mut builder = Request::builder().method(Method::GET).uri(url);
+    {
+        let headers = builder
+            .headers_mut()
+            .ok_or_else(|| anyhow!("cannot get headers mut"))?;
+        headers.insert(USER_AGENT, HeaderValue::from_static(UA));
+        for (name, value) in extra_headers {
+            headers.insert(name, value.clone());
+        }
+        if let Some(accept) = accept
+            && !headers.contains_key(header::ACCEPT)
+        {
+            headers.insert(header::ACCEPT, HeaderValue::from_str(accept)?);
+        }
+    }
+    let request = builder
+        .body(Body::empty())
+        .map_err(|e| anyhow!("building upstream request: {e}"))?;
+    client
+        .serve(request)
+        .await
+        .map_err(|e| anyhow!("upstream request failed: {e}"))
+}
 
 /// Rama-based upstream HTTP client with retry, circuit breaker, and tracing.
 #[derive(Clone)]
@@ -84,6 +117,13 @@ impl UpstreamClient {
         })
     }
 
+    /// Sleeps for the backoff delay computed for `attempt`, if any.
+    async fn sleep_backoff(&self, attempt: u8, rng: &mut SmallRng) {
+        if let Some(delay_ms) = self.backoff.delay(attempt, rng) {
+            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+        }
+    }
+
     pub async fn get_with_headers(&self, url: Uri, headers: &HeaderMap) -> Result<Response<Body>> {
         // Check if circuit is open before attempting request
         if self.breaker.lock().is_open() {
@@ -122,9 +162,7 @@ impl UpstreamClient {
             match client.serve(request).await {
                 Ok(response) if response.status().is_server_error() && attempt < max_attempts => {
                     // Server error but we have retries left - use chrono-machines backoff
-                    if let Some(delay_ms) = self.backoff.delay(attempt, &mut rng) {
-                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                    }
+                    self.sleep_backoff(attempt, &mut rng).await;
                     continue;
                 }
                 Ok(response) => {
@@ -171,9 +209,7 @@ impl UpstreamClient {
                     }
 
                     // Use chrono-machines backoff with jitter
-                    if let Some(delay_ms) = self.backoff.delay(attempt, &mut rng) {
-                        tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-                    }
+                    self.sleep_backoff(attempt, &mut rng).await;
                 }
             }
         }

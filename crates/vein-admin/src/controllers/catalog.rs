@@ -1,19 +1,18 @@
 //! Catalog controller for RubyGems listing and details.
 
 use anyhow::Result;
-use rama::futures::StreamExt;
 use rama::http::StatusCode;
 use rama::http::service::web::extract::{Path, Query, State};
-use rama::http::service::web::response::{Html, IntoResponse, Sse};
+use rama::http::service::web::response::{Html, IntoResponse};
 use rama::http::sse::Event;
-use rama::http::sse::server::{KeepAlive, KeepAliveStream};
 use serde::Deserialize;
 use serde_json::to_string_pretty;
 use tokio::sync::mpsc;
+use vein::util::sanitize_filename;
 use vein_adapter::GemMetadata;
 
 use crate::state::{AdminResources, AdminState};
-use crate::utils::receiver_stream;
+use crate::utils::{datastar_patch_event, error_html, sse_from_receiver};
 use crate::views;
 
 const DEFAULT_PLATFORM: &str = "ruby";
@@ -114,22 +113,11 @@ pub async fn search(
             };
 
             // Use datastar SSE format for live search - single event
-            let event = Event::default()
-                .try_with_event("datastar-patch-elements")
-                .expect("valid event name")
-                .with_data(format!("fragments {}", html));
-
-            let _ = tx.send(event).await;
+            let _ = tx.send(datastar_patch_event(html)).await;
         }
     });
 
-    // Convert receiver to stream
-    let stream = receiver_stream(rx);
-
-    Sse::new(KeepAliveStream::new(
-        KeepAlive::new(),
-        stream.map(Ok::<_, std::convert::Infallible>),
-    ))
+    sse_from_receiver(rx)
 }
 
 pub async fn detail(
@@ -181,9 +169,9 @@ pub async fn sbom(
     let platform_slug = &metadata.platform;
     let filename = format!(
         "{}-{}-{}.sbom.json",
-        sanitize_for_filename(&metadata.name),
-        sanitize_for_filename(&metadata.version),
-        sanitize_for_filename(platform_slug)
+        sanitize_filename(&metadata.name),
+        sanitize_filename(&metadata.version),
+        sanitize_filename(platform_slug)
     );
 
     (
@@ -300,27 +288,5 @@ fn format_total_label(total: u64, selected_language: Option<&str>) -> String {
     match selected_language {
         Some(language) => format!("{total} ({language} only)"),
         None => total.to_string(),
-    }
-}
-
-fn error_html(err: impl std::fmt::Display) -> Html<String> {
-    Html(format!("<h1>Error: {}</h1>", err))
-}
-
-fn sanitize_for_filename(input: &str) -> String {
-    let sanitized: String = input
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if sanitized.is_empty() {
-        "artifact".to_string()
-    } else {
-        sanitized
     }
 }

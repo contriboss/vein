@@ -116,8 +116,16 @@ impl CacheableRequest {
         })
     }
 
-    pub fn from_gem_path(file: &str) -> Option<Self> {
-        if !file.ends_with(".gem") {
+    /// Parses a `name-version[-platform]<suffix>` artifact path into an asset,
+    /// rejecting path-traversal attempts. `path_prefix` is the storage layout
+    /// prefix the artifact lives under (e.g. `gems` or `quick/Marshal.4.8`).
+    fn from_suffixed_path(
+        file: &str,
+        suffix: &str,
+        kind: AssetKind,
+        path_prefix: &str,
+    ) -> Option<Self> {
+        if !file.ends_with(suffix) {
             return None;
         }
         // Reject path traversal attempts
@@ -126,16 +134,16 @@ impl CacheableRequest {
             return None;
         }
         let file_name = file.to_string();
-        let stem = file.strip_suffix(".gem")?;
+        let stem = file.strip_suffix(suffix)?;
         let (name, version, platform) = super::utils::split_name_version_platform(stem)?;
         // Double check the parsed name doesn't contain path traversal
         if name.contains("..") || name.contains('/') {
             tracing::warn!(name = %name, "Rejected malformed gem name");
             return None;
         }
-        let relative_path = format!("gems/{name}/{file}");
+        let relative_path = format!("{path_prefix}/{name}/{file}");
         Some(Self {
-            kind: AssetKind::Gem,
+            kind,
             name,
             version,
             platform,
@@ -144,32 +152,12 @@ impl CacheableRequest {
         })
     }
 
+    pub fn from_gem_path(file: &str) -> Option<Self> {
+        Self::from_suffixed_path(file, ".gem", AssetKind::Gem, "gems")
+    }
+
     pub fn from_spec_path(file: &str) -> Option<Self> {
-        if !file.ends_with(".gemspec.rz") {
-            return None;
-        }
-        // Reject path traversal attempts
-        if file.contains("..") || file.contains("//") || file.starts_with('/') {
-            tracing::warn!(file = %file, "Rejected potential path traversal attempt in spec");
-            return None;
-        }
-        let file_name = file.to_string();
-        let stem = file.strip_suffix(".gemspec.rz")?;
-        let (name, version, platform) = super::utils::split_name_version_platform(stem)?;
-        // Double check the parsed name doesn't contain path traversal
-        if name.contains("..") || name.contains('/') {
-            tracing::warn!(name = %name, "Rejected malformed gem name in spec");
-            return None;
-        }
-        let relative_path = format!("quick/Marshal.4.8/{name}/{file}");
-        Some(Self {
-            kind: AssetKind::Spec,
-            name,
-            version,
-            platform,
-            file_name,
-            relative_path,
-        })
+        Self::from_suffixed_path(file, ".gemspec.rz", AssetKind::Spec, "quick/Marshal.4.8")
     }
 
     pub fn asset_key(&self) -> AssetKey<'_> {

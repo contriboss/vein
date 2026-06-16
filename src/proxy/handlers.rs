@@ -113,21 +113,14 @@ pub async fn handle_sbom_request(
             .context("retrying SBOM lookup for ruby platform")?;
     }
 
-    let Some(meta) = metadata else {
+    let Some(meta) = metadata.filter(|m| m.sbom.is_some()) else {
         let resp = respond_text(
             StatusCode::NOT_FOUND,
             "SBOM not available for requested gem\n",
         )?;
         return Ok((resp, CacheStatus::Pass));
     };
-
-    let Some(sbom) = meta.sbom.as_ref() else {
-        let resp = respond_text(
-            StatusCode::NOT_FOUND,
-            "SBOM not available for requested gem\n",
-        )?;
-        return Ok((resp, CacheStatus::Pass));
-    };
+    let sbom = meta.sbom.as_ref().expect("sbom present after filter");
 
     let body = to_string_pretty(sbom).context("serializing SBOM JSON payload")?;
 

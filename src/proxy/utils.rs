@@ -28,24 +28,7 @@ pub fn split_name_version_platform(stem: &str) -> Option<(String, String, Option
     None
 }
 
-/// Sanitizes a filename by replacing non-alphanumeric characters
-pub fn sanitize_filename(input: &str) -> String {
-    let sanitized: String = input
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.') {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if sanitized.is_empty() {
-        "artifact".to_string()
-    } else {
-        sanitized
-    }
-}
+pub use crate::util::sanitize_filename;
 
 #[cfg(test)]
 mod tests {

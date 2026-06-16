@@ -19,6 +19,13 @@ pub mod upstream;
 #[cfg(test)]
 mod tests;
 
+/// Resolves a relative path against `base_dir`, leaving absolute paths intact.
+pub(crate) fn resolve_relative(path: &mut PathBuf, base_dir: &Path) {
+    if path.is_relative() {
+        *path = base_dir.join(&*path);
+    }
+}
+
 // Re-export types from submodules for convenience
 pub use database::{DatabaseBackend, DatabaseConfig};
 pub use delay_policy::DelayPolicyConfig;

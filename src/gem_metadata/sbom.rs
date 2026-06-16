@@ -204,6 +204,15 @@ fn compute_cyclonedx_sbom(metadata: &GemMetadata) -> Result<Option<serde_json::V
 
     let mut properties = Vec::new();
 
+    // Pushes a `vein:*` property only when the optional value is present.
+    macro_rules! push_opt {
+        ($key:expr, $value:expr) => {
+            if let Some(value) = $value {
+                properties.push(Property::new($key, value));
+            }
+        };
+    }
+
     properties.push(Property::new("vein:platform", &metadata.platform));
 
     properties.push(Property::new(
@@ -229,24 +238,19 @@ fn compute_cyclonedx_sbom(metadata: &GemMetadata) -> Result<Option<serde_json::V
         &metadata.size_bytes.to_string(),
     ));
 
-    if let Some(built_at) = metadata.built_at.as_deref() {
-        properties.push(Property::new("vein:built-at", built_at));
-    }
-
-    if let Some(required_ruby) = metadata.required_ruby_version.as_deref() {
-        properties.push(Property::new("vein:required-ruby-version", required_ruby));
-    }
-
-    if let Some(required_rubygems) = metadata.required_rubygems_version.as_deref() {
-        properties.push(Property::new(
-            "vein:required-rubygems-version",
-            required_rubygems,
-        ));
-    }
-
-    if let Some(rubygems_version) = metadata.rubygems_version.as_deref() {
-        properties.push(Property::new("vein:rubygems-version", rubygems_version));
-    }
+    push_opt!("vein:built-at", metadata.built_at.as_deref());
+    push_opt!(
+        "vein:required-ruby-version",
+        metadata.required_ruby_version.as_deref()
+    );
+    push_opt!(
+        "vein:required-rubygems-version",
+        metadata.required_rubygems_version.as_deref()
+    );
+    push_opt!(
+        "vein:rubygems-version",
+        metadata.rubygems_version.as_deref()
+    );
 
     if let Some(spec_version) = metadata.specification_version {
         properties.push(Property::new(
@@ -273,33 +277,16 @@ fn compute_cyclonedx_sbom(metadata: &GemMetadata) -> Result<Option<serde_json::V
         properties.push(Property::new("vein:emails", &metadata.emails.join(", ")));
     }
 
-    if let Some(homepage) = metadata.homepage.as_deref() {
-        properties.push(Property::new("vein:homepage", homepage));
-    }
-
-    if let Some(documentation) = metadata.documentation_url.as_deref() {
-        properties.push(Property::new("vein:documentation-url", documentation));
-    }
-
-    if let Some(changelog) = metadata.changelog_url.as_deref() {
-        properties.push(Property::new("vein:changelog-url", changelog));
-    }
-
-    if let Some(source_url) = metadata.source_code_url.as_deref() {
-        properties.push(Property::new("vein:source-url", source_url));
-    }
-
-    if let Some(bugs) = metadata.bug_tracker_url.as_deref() {
-        properties.push(Property::new("vein:bug-tracker-url", bugs));
-    }
-
-    if let Some(wiki) = metadata.wiki_url.as_deref() {
-        properties.push(Property::new("vein:wiki-url", wiki));
-    }
-
-    if let Some(funding) = metadata.funding_url.as_deref() {
-        properties.push(Property::new("vein:funding-url", funding));
-    }
+    push_opt!("vein:homepage", metadata.homepage.as_deref());
+    push_opt!(
+        "vein:documentation-url",
+        metadata.documentation_url.as_deref()
+    );
+    push_opt!("vein:changelog-url", metadata.changelog_url.as_deref());
+    push_opt!("vein:source-url", metadata.source_code_url.as_deref());
+    push_opt!("vein:bug-tracker-url", metadata.bug_tracker_url.as_deref());
+    push_opt!("vein:wiki-url", metadata.wiki_url.as_deref());
+    push_opt!("vein:funding-url", metadata.funding_url.as_deref());
 
     if !properties.is_empty() {
         component.properties = Some(Properties(properties));

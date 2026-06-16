@@ -20,9 +20,9 @@ use vein_adapter::{AssetKind, CacheBackend, CacheBackendTrait, FilesystemStorage
 use super::types::NpmPackageRequest;
 use crate::http_cache::{CacheOutcome, CachedTextOptions, MetaStoreMode, fetch_cached_text};
 use crate::proxy::{cache as proxy_cache, types::CacheableRequest};
+use crate::upstream::{UA, simple_get};
 
 const NPM_REGISTRY_BASE: &str = "https://registry.npmjs.org";
-const UA: &str = concat!("vein/", env!("CARGO_PKG_VERSION"));
 
 fn npm_registry_base() -> Cow<'static, str> {
     #[cfg(test)]
@@ -143,7 +143,7 @@ async fn handle_package_metadata(
             strip_transfer_encoding: false,
         },
         |headers| async move {
-            fetch_with_headers(&upstream_url, &headers, Some("application/json")).await
+            simple_get(&upstream_url, &headers, Some("application/json")).await
         },
         move |body| async move {
             // Transform tarball URLs to point to our proxy
@@ -198,7 +198,7 @@ async fn handle_tarball_download(
         }
     }
 
-    let response = fetch_with_headers(&upstream_url, &HeaderMap::new(), None).await?;
+    let response = simple_get(&upstream_url, &HeaderMap::new(), None).await?;
     if !response.status().is_success() {
         let forwarded = forward_response(response).await?;
         return Ok((forwarded, CacheOutcome::Pass));
@@ -277,37 +277,15 @@ async fn handle_npm_api(
     Ok((forwarded, CacheOutcome::Pass))
 }
 
-/// Fetch from upstream with optional headers
-async fn fetch_with_headers(
-    url: &str,
-    extra_headers: &HeaderMap,
-    accept: Option<&str>,
-) -> Result<Response<Body>> {
-    let client = EasyHttpWebClient::default();
-
-    let mut builder = Request::builder().method(Method::GET).uri(url);
-
-    {
-        let headers = builder.headers_mut().context("getting headers")?;
-        headers.insert(header::USER_AGENT, HeaderValue::from_static(UA));
-        for (name, value) in extra_headers {
-            headers.insert(name, value.clone());
-        }
-        if let Some(accept) = accept
-            && !headers.contains_key(header::ACCEPT)
-        {
-            headers.insert(header::ACCEPT, HeaderValue::from_str(accept)?);
-        }
+/// Rewrites a `dist.tarball` URL to point at `our_base` instead of the upstream
+/// npm registry.
+fn rewrite_dist_tarball(dist: &mut serde_json::Map<String, JsonValue>, our_base: &str) {
+    if let Some(tarball) = dist.get("tarball").and_then(|t| t.as_str()) {
+        let new_tarball = tarball
+            .replace("https://registry.npmjs.org", our_base)
+            .replace("http://registry.npmjs.org", our_base);
+        dist.insert("tarball".to_string(), JsonValue::String(new_tarball));
     }
-
-    let request = builder
-        .body(Body::empty())
-        .context("building upstream request")?;
-
-    client
-        .serve(request)
-        .await
-        .map_err(|e| anyhow::anyhow!("upstream request failed: {e}"))
 }
 
 /// Transform package metadata to point tarball URLs to our proxy
@@ -315,25 +293,15 @@ fn transform_metadata(body: &[u8], our_base: &str) -> Result<Vec<u8>> {
     let mut metadata: JsonValue = serde_json::from_slice(body).context("parsing npm metadata")?;
 
     // Transform top-level dist.tarball (version-specific metadata)
-    if let Some(dist) = metadata.get_mut("dist").and_then(|d| d.as_object_mut())
-        && let Some(tarball) = dist.get("tarball").and_then(|t| t.as_str())
-    {
-        let new_tarball = tarball
-            .replace("https://registry.npmjs.org", our_base)
-            .replace("http://registry.npmjs.org", our_base);
-        dist.insert("tarball".to_string(), JsonValue::String(new_tarball));
+    if let Some(dist) = metadata.get_mut("dist").and_then(|d| d.as_object_mut()) {
+        rewrite_dist_tarball(dist, our_base);
     }
 
     // Transform dist.tarball URLs in all versions
     if let Some(versions) = metadata.get_mut("versions").and_then(|v| v.as_object_mut()) {
         for (_version, version_data) in versions.iter_mut() {
-            if let Some(dist) = version_data.get_mut("dist").and_then(|d| d.as_object_mut())
-                && let Some(tarball) = dist.get("tarball").and_then(|t| t.as_str())
-            {
-                let new_tarball = tarball
-                    .replace("https://registry.npmjs.org", our_base)
-                    .replace("http://registry.npmjs.org", our_base);
-                dist.insert("tarball".to_string(), JsonValue::String(new_tarball));
+            if let Some(dist) = version_data.get_mut("dist").and_then(|d| d.as_object_mut()) {
+                rewrite_dist_tarball(dist, our_base);
             }
         }
     }

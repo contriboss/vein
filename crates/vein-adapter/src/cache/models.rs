@@ -3,6 +3,14 @@ use sqlx::FromRow;
 
 use super::types::CachedAsset;
 
+/// Parses an RFC 3339 timestamp string, falling back to the current time when
+/// the stored value cannot be parsed.
+fn parse_timestamp(value: &str) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|dt| dt.with_timezone(&Utc))
+        .unwrap_or_else(|_| Utc::now())
+}
+
 #[derive(Debug, FromRow)]
 pub struct CachedAssetRow {
     pub path: String,
@@ -125,21 +133,13 @@ impl From<GemVersionRow> for GemVersion {
             version: row.version,
             platform: row.platform,
             sha256: row.sha256,
-            published_at: DateTime::parse_from_rfc3339(&row.published_at)
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            available_after: DateTime::parse_from_rfc3339(&row.available_after)
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
+            published_at: parse_timestamp(&row.published_at),
+            available_after: parse_timestamp(&row.available_after),
             status: row.status.parse().unwrap_or_default(),
             status_reason: row.status_reason,
             upstream_yanked: row.upstream_yanked,
-            created_at: DateTime::parse_from_rfc3339(&row.created_at)
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
-            updated_at: DateTime::parse_from_rfc3339(&row.updated_at)
-                .map(|dt| dt.with_timezone(&Utc))
-                .unwrap_or_else(|_| Utc::now()),
+            created_at: parse_timestamp(&row.created_at),
+            updated_at: parse_timestamp(&row.updated_at),
         }
     }
 }

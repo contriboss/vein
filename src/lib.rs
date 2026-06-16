@@ -17,3 +17,4 @@ pub mod npm;
 pub mod proxy;
 pub mod quarantine;
 pub mod upstream;
+pub mod util;

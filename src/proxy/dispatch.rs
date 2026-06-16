@@ -22,24 +22,14 @@ impl VeinProxy {
                 "http://{}:{}",
                 self.config.server.host, self.config.server.port
             );
-            match npm_registry::handle_npm_request(
+            let result = npm_registry::handle_npm_request(
                 req,
                 &our_base,
                 self.storage.clone(),
                 self.index.clone(),
             )
-            .await
-            {
-                Ok((resp, outcome)) => {
-                    ctx.cache = cache_status_from_outcome(outcome);
-                    return Ok(resp);
-                }
-                Err(err) => {
-                    error!(error = %err, "npm request failed");
-                    ctx.cache = CacheStatus::Error;
-                    return response::respond_text(StatusCode::BAD_GATEWAY, "npm upstream error");
-                }
-            }
+            .await;
+            return finish_registry_result(ctx, result, "npm request failed", "npm upstream error");
         }
 
         if method == Method::GET {
@@ -64,27 +54,19 @@ impl VeinProxy {
                         "http://{}:{}",
                         self.config.server.host, self.config.server.port
                     );
-                    match crates_registry::handle_sparse_index(
+                    let result = crates_registry::handle_sparse_index(
                         p,
                         &our_base,
                         self.storage.clone(),
                         self.index.clone(),
                     )
-                    .await
-                    {
-                        Ok((resp, outcome)) => {
-                            ctx.cache = cache_status_from_outcome(outcome);
-                            return Ok(resp);
-                        }
-                        Err(err) => {
-                            error!(error = %err, "crates index request failed");
-                            ctx.cache = CacheStatus::Error;
-                            return response::respond_text(
-                                StatusCode::BAD_GATEWAY,
-                                "upstream error",
-                            );
-                        }
-                    }
+                    .await;
+                    return finish_registry_result(
+                        ctx,
+                        result,
+                        "crates index request failed",
+                        "upstream error",
+                    );
                 }
                 _ => {}
             }
@@ -188,6 +170,27 @@ impl Service<Request<Body>> for VeinProxy {
         }
 
         result.map_err(|e| e.into())
+    }
+}
+
+/// Finalizes a registry handler result: records cache status on success, or
+/// logs the error and returns a `502 Bad Gateway` body on failure.
+fn finish_registry_result(
+    ctx: &mut RequestContext,
+    result: Result<(Response<Body>, CacheOutcome)>,
+    error_log: &str,
+    error_body: &'static str,
+) -> Result<Response<Body>> {
+    match result {
+        Ok((resp, outcome)) => {
+            ctx.cache = cache_status_from_outcome(outcome);
+            Ok(resp)
+        }
+        Err(err) => {
+            error!(error = %err, message = error_log);
+            ctx.cache = CacheStatus::Error;
+            response::respond_text(StatusCode::BAD_GATEWAY, error_body)
+        }
     }
 }
 

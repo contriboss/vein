@@ -134,19 +134,21 @@ where
     })
 }
 
+/// Inserts `name: value` into `headers` when `value` is present and parses into
+/// a valid header value; otherwise leaves the map unchanged.
+fn insert_opt_header(headers: &mut HeaderMap, name: header::HeaderName, value: &Option<String>) {
+    if let Some(value) = value
+        && let Ok(parsed) = HeaderValue::from_str(value)
+    {
+        headers.insert(name, parsed);
+    }
+}
+
 fn build_conditional_headers(meta: &Option<CacheEntryMeta>) -> HeaderMap {
     let mut headers = HeaderMap::new();
     if let Some(meta) = meta {
-        if let Some(etag) = &meta.etag
-            && let Ok(value) = HeaderValue::from_str(etag)
-        {
-            headers.insert(header::IF_NONE_MATCH, value);
-        }
-        if let Some(last_modified) = &meta.last_modified
-            && let Ok(value) = HeaderValue::from_str(last_modified)
-        {
-            headers.insert(header::IF_MODIFIED_SINCE, value);
-        }
+        insert_opt_header(&mut headers, header::IF_NONE_MATCH, &meta.etag);
+        insert_opt_header(&mut headers, header::IF_MODIFIED_SINCE, &meta.last_modified);
     }
     headers
 }
@@ -226,16 +228,8 @@ fn build_cached_response(
                 HeaderValue::from_str(&body.len().to_string())?,
             );
         }
-        if let Some(etag) = &meta.etag
-            && let Ok(value) = HeaderValue::from_str(etag)
-        {
-            headers.insert(header::ETAG, value);
-        }
-        if let Some(last_modified) = &meta.last_modified
-            && let Ok(value) = HeaderValue::from_str(last_modified)
-        {
-            headers.insert(header::LAST_MODIFIED, value);
-        }
+        insert_opt_header(headers, header::ETAG, &meta.etag);
+        insert_opt_header(headers, header::LAST_MODIFIED, &meta.last_modified);
     }
     builder
         .body(Body::from(body.to_vec()))

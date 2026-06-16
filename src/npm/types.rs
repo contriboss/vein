@@ -2,6 +2,7 @@
 //!
 //! Handles both scoped (@org/package) and unscoped packages.
 
+use crate::util::sanitize_npm_segment as sanitize_segment;
 use percent_encoding::percent_decode_str;
 
 /// Represents a parsed npm package request
@@ -221,24 +222,6 @@ fn is_safe_segment(segment: &str) -> bool {
         && !segment.contains('/')
         && !segment.contains('\\')
         && segment.chars().all(|c| c.is_ascii_graphic())
-}
-
-fn sanitize_segment(input: &str) -> String {
-    let sanitized: String = input
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '@' | '+') {
-                c
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    if sanitized.is_empty() {
-        "artifact".to_string()
-    } else {
-        sanitized
-    }
 }
 
 /// Validate npm package name component
