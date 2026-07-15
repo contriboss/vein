@@ -1,7 +1,8 @@
 use std::collections::HashSet;
 
 use anyhow::{Context, Result, anyhow};
-use rama::http::{Uri, body::util::BodyExt, header::HeaderMap};
+use rama::http::{body::util::BodyExt, header::HeaderMap};
+use rama::net::uri::{PathRef, Uri};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 use tracing::{error, info, warn};
@@ -402,11 +403,8 @@ fn sha256_hex(bytes: &[u8]) -> String {
 }
 
 fn build_url(base: &Uri, path: &str) -> Result<Uri> {
-    let base_path = base
-        .path_and_query()
-        .map(|pq| pq.path())
-        .unwrap_or("/")
-        .trim_end_matches('/');
+    let base_path = base.path_or_root();
+    let base_path = base_path.trim_end_matches('/');
 
     let combined = if base_path.is_empty() || base_path == "/" {
         path.to_string()
@@ -414,10 +412,8 @@ fn build_url(base: &Uri, path: &str) -> Result<Uri> {
         format!("{base_path}{path}")
     };
 
-    let mut parts = base.clone().into_parts();
-    parts.path_and_query = Some(combined.parse().context("parsing combined path")?);
-
-    Uri::from_parts(parts).context("building URL")
+    // `from_raw_str` assigns the already-encoded path verbatim (no re-encoding).
+    Ok(base.clone().with_path(PathRef::from_raw_str(&combined)))
 }
 
 #[cfg(test)]
@@ -472,11 +468,11 @@ mod tests {
 
     #[test]
     fn build_url_preserves_base_path() {
-        let base: Uri = "https://mirror.example.com/rubygems/".parse().unwrap();
+        let base = Uri::parse("https://mirror.example.com/rubygems/").unwrap();
         let url = build_url(&base, "/info/rack").unwrap();
 
         assert_eq!(
-            url.to_string(),
+            url.as_str(),
             "https://mirror.example.com/rubygems/info/rack"
         );
     }

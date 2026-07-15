@@ -10,6 +10,7 @@ mod state;
 mod utils;
 mod views;
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
@@ -74,10 +75,14 @@ async fn run_server(
 
     let graceful = Shutdown::default();
     graceful.spawn_task_fn(move |guard| async move {
-        let tcp = TcpListener::build().bind(&addr).await.expect("bind tcp");
+        let tcp = TcpListener::build(Executor::graceful(guard.clone()))
+            .bind_address(&addr)
+            .await
+            .expect("bind tcp");
         let exec = Executor::graceful(guard.clone());
-        let service = HttpServer::auto(exec).service(ConsumeErrLayer::default().into_layer(router));
-        tcp.serve_graceful(guard, service).await;
+        let service =
+            HttpServer::auto(exec).service(Arc::new(ConsumeErrLayer::default().into_layer(router)));
+        tcp.serve(service).await;
     });
 
     tokio::signal::ctrl_c().await?;

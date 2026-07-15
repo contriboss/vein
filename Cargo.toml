@@ -6,7 +6,7 @@ resolver = "3"
 name = "vein"
 version = "0.4.0"
 edition = "2024"
-rust-version = "1.95"
+rust-version = "1.97"
 authors = ["Abdelkader Boudih <oss@seuros.com>"]
 description = "A fast, intelligent multi-ecosystem package proxy/cache"
 license = "AGPL-3.0-only"
@@ -34,7 +34,11 @@ inspect = []
 
 [dependencies]
 # Rama network framework (conditional TLS via feature)
-rama = { version = "0.3.0-alpha.4", features = ["http-full", "tcp", "opentelemetry"] }
+rama = { version = "0.3.0", features = ["http-full", "tcp", "opentelemetry"] }
+
+# OTLP span exporter (rama 0.3 no longer re-exports the HTTP exporter; only the
+# grpc `collector` is bundled). Uses the hyper client already in the tree.
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "http-proto", "hyper-client"] }
 
 # Async runtime
 tokio = { version = "1.52.3", features = ["full"] }
@@ -71,8 +75,8 @@ tokio-cron-scheduler = "0.15.1"
 
 # State machines
 state-machines = { version = "0.20.0", features = ["typestate"] }
-breaker-machines = "0.13.0"
-chrono-machines = "0.3.2"
+breaker-machines = "0.15.0"
+chrono-machines = "0.4.0"
 
 # Time handling
 chrono = { version = "0.4.45", features = ["serde"] }

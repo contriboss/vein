@@ -1,7 +1,7 @@
 use super::*;
-use rama::http::Uri;
+use rama::net::uri::Uri;
+use std::fs;
 use std::io::Write;
-use std::{fs, str::FromStr};
 use tempfile::{NamedTempFile, tempdir};
 
 // === DEFAULT VALUE TESTS ===
@@ -356,7 +356,7 @@ fn test_config_sqlite_url_sets_path() {
 fn test_validate_https_upstream() {
     let config = Config {
         upstream: Some(UpstreamConfig {
-            url: Uri::from_str("https://rubygems.org/").unwrap(),
+            url: Uri::parse("https://rubygems.org/").unwrap(),
             ..UpstreamConfig::default()
         }),
         ..Default::default()
@@ -369,7 +369,7 @@ fn test_validate_https_upstream() {
 fn test_validate_http_upstream() {
     let config = Config {
         upstream: Some(UpstreamConfig {
-            url: Uri::from_str("http://localhost:8346/").unwrap(),
+            url: Uri::parse("http://localhost:8346/").unwrap(),
             ..UpstreamConfig::default()
         }),
         ..Default::default()
@@ -381,7 +381,7 @@ fn test_validate_http_upstream() {
 fn test_validate_invalid_scheme() {
     let config = Config {
         upstream: Some(UpstreamConfig {
-            url: Uri::from_str("ftp://example.com/").unwrap(),
+            url: Uri::parse("ftp://example.com/").unwrap(),
             ..UpstreamConfig::default()
         }),
         ..Default::default()

@@ -99,9 +99,18 @@ async fn run_admin_migrations(database_url: &str) -> Result<()> {
 }
 
 fn load_templates() -> Result<Arc<Tera>> {
-    Ok(Arc::new(
-        Tera::new(TEMPLATE_GLOB).context("loading admin templates")?,
-    ))
+    let mut tera = Tera::new();
+    register_extensions(&mut tera);
+    tera.load_from_glob(TEMPLATE_GLOB)
+        .context("loading admin templates")?;
+    Ok(Arc::new(tera))
+}
+
+// Tera 2 dropped the built-in `urlencode` filter; templates still rely on it.
+fn register_extensions(tera: &mut Tera) {
+    tera.register_filter("urlencode", |s: &str, _: tera::Kwargs, _: &tera::State| {
+        urlencoding::encode(s).into_owned()
+    });
 }
 
 async fn load_ruby_status() -> Arc<ruby::RubyStatus> {
@@ -111,5 +120,23 @@ async fn load_ruby_status() -> Arc<ruby::RubyStatus> {
             warn!(error = %err, "failed to fetch ruby status");
             Arc::new(ruby::RubyStatus::default())
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn all_templates_parse() {
+        // TEMPLATE_GLOB is workspace-root relative; tests run from the crate root.
+        let glob = format!("{}/assets/views/**/*.html", env!("CARGO_MANIFEST_DIR"));
+        let mut tera = Tera::new();
+        register_extensions(&mut tera);
+        tera.load_from_glob(&glob).expect("templates must parse");
+        assert!(
+            tera.get_template_names().next().is_some(),
+            "glob matched no templates"
+        );
     }
 }

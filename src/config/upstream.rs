@@ -1,5 +1,5 @@
 use crate::config::reliability::ReliabilityConfig;
-use rama::http::Uri;
+use rama::net::uri::Uri;
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -27,23 +27,21 @@ fn default_upstream_url() -> Uri {
 }
 
 mod serde_url {
-    use rama::http::Uri;
+    use rama::net::uri::Uri;
     use serde::{Deserialize, Deserializer};
-    use std::str::FromStr;
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Uri, D::Error>
     where
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        Uri::from_str(&s).map_err(serde::de::Error::custom)
+        Uri::parse(s.as_str()).map_err(serde::de::Error::custom)
     }
 }
 
 mod serde_url_vec {
-    use rama::http::Uri;
+    use rama::net::uri::Uri;
     use serde::{Deserialize, Deserializer};
-    use std::str::FromStr;
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<Uri>, D::Error>
     where
@@ -51,7 +49,7 @@ mod serde_url_vec {
     {
         let list = Vec::<String>::deserialize(deserializer)?;
         list.into_iter()
-            .map(|s| Uri::from_str(&s).map_err(serde::de::Error::custom))
+            .map(|s| Uri::parse(s.as_str()).map_err(serde::de::Error::custom))
             .collect()
     }
 }

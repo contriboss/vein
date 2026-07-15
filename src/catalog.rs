@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use rama::{
     Layer, Service,
-    error::OpaqueError,
+    error::{ErrorExt as _, extra::OpaqueError},
     http::{
         BodyExtractExt, HeaderValue, Request, Response, StatusCode, client::EasyHttpWebClient,
         header, layer::required_header::AddRequiredRequestHeadersLayer,
@@ -32,7 +32,7 @@ fn build_client() -> Result<impl Service<Request, Output = Response, Error = Opa
     // decompression support would be added as layer on top
 
     Ok((
-        MapErrLayer::new(OpaqueError::from_boxed),
+        MapErrLayer::new(|e: rama::error::BoxError| e.into_opaque_error()),
         TimeoutLayer::new(Duration::from_secs(60)),
         AddRequiredRequestHeadersLayer::new()
             .with_user_agent_header_value(HeaderValue::from_static("vein-catalog/0.1.0")),
@@ -57,7 +57,7 @@ async fn sync_names_with_client(
     let response = request
         .send()
         .await
-        .context("requesting rubygems names list")?;
+        .map_err(|e| anyhow::anyhow!("requesting rubygems names list: {e}"))?;
 
     if response.status() == StatusCode::NOT_MODIFIED {
         info!("catalog names list is up to date");
@@ -82,7 +82,7 @@ async fn sync_names_with_client(
     let text = response
         .try_into_string()
         .await
-        .context("decoding names list")?;
+        .map_err(|e| anyhow::anyhow!("decoding names list: {e}"))?;
 
     let names: Vec<String> = text
         .lines()

@@ -1,6 +1,7 @@
 use super::*;
 use crate::config::Config;
-use rama::http::{Body, Method, Request, Scheme, Uri};
+use rama::http::{Body, Method, Request};
+use rama::net::{Protocol, uri::Uri};
 use rama::{Service, http::body::util::BodyExt, tls::rustls::dep::rustls};
 use std::{
     path::Path,
@@ -171,23 +172,23 @@ fn cacheable_request_asset_key_with_platform() {
 fn upstream_from_url_https_default_port() {
     let url = Uri::from_static("https://rubygems.org");
     let upstream = UpstreamTarget::from_url(&url).unwrap();
-    assert_eq!(upstream.base.host().unwrap(), "rubygems.org");
-    assert_eq!(upstream.base.scheme(), Some(&Scheme::HTTPS));
+    assert_eq!(upstream.base.host_str().as_deref(), Some("rubygems.org"));
+    assert_eq!(upstream.base.scheme(), Some(&Protocol::HTTPS));
 }
 
 #[test]
 fn upstream_from_url_https_custom_port() {
     let url = Uri::from_static("https://example.com:8443");
     let upstream = UpstreamTarget::from_url(&url).unwrap();
-    assert_eq!(upstream.base.host().unwrap(), "example.com");
+    assert_eq!(upstream.base.host_str().as_deref(), Some("example.com"));
 }
 
 #[test]
 fn upstream_from_url_http_default_port() {
     let url = Uri::from_static("http://localhost");
     let upstream = UpstreamTarget::from_url(&url).unwrap();
-    assert_eq!(upstream.base.host().unwrap(), "localhost");
-    assert_eq!(upstream.base.scheme(), Some(&Scheme::HTTP));
+    assert_eq!(upstream.base.host_str().as_deref(), Some("localhost"));
+    assert_eq!(upstream.base.scheme(), Some(&Protocol::HTTP));
 }
 
 #[test]
@@ -195,7 +196,7 @@ fn upstream_from_url_http_custom_port() {
     let url = Uri::from_static("http://localhost:3000");
     let upstream = UpstreamTarget::from_url(&url).unwrap();
     assert_eq!(upstream.base.port_u16(), Some(3000));
-    assert_eq!(upstream.base.scheme(), Some(&Scheme::HTTP));
+    assert_eq!(upstream.base.scheme(), Some(&Protocol::HTTP));
 }
 
 #[test]

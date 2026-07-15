@@ -1,4 +1,4 @@
-{% macro render(title, subtitle="") %}
+{% component page_header(title, subtitle="") %}
 <header class="page-header">
   <div>
     <h1>{{ title }}</h1>
@@ -6,4 +6,4 @@
   </div>
   <a href="/" class="back-link">Back to dashboard</a>
 </header>
-{% endmacro %}
+{% endcomponent page_header %}

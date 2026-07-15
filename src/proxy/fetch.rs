@@ -16,7 +16,7 @@ impl VeinProxy {
         use types::CacheableRequest;
 
         ctx.method = req.method().clone();
-        ctx.path = req.uri().path().to_string();
+        ctx.path = req.uri().path_or_root().into_owned();
 
         if req.method() != Method::GET {
             return Ok(None);
@@ -64,7 +64,7 @@ impl VeinProxy {
         if !response.status().is_success() {
             rama::telemetry::tracing::warn!(
                 status = %response.status(),
-                path = %req.uri().path(),
+                path = %req.uri().path_or_root(),
                 "upstream returned error status"
             );
             return self.forward_response(response).await;
@@ -122,7 +122,7 @@ impl VeinProxy {
 
         let request = Request::builder()
             .method(Method::GET)
-            .uri(&url)
+            .uri(url.as_str())
             .header(
                 header::USER_AGENT,
                 HeaderValue::from_static(concat!("vein/", env!("CARGO_PKG_VERSION"))),

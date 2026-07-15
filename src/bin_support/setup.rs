@@ -1,11 +1,10 @@
 use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
+use opentelemetry_otlp::{SpanExporter, WithExportConfig};
 use rama::telemetry::{
     opentelemetry::{
-        KeyValue,
-        collector::{SpanExporter, WithExportConfig},
-        global,
+        KeyValue, global,
         sdk::{resource::Resource, trace as sdktrace},
         trace::TracerProvider,
     },

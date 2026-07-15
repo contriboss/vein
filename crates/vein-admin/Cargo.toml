@@ -2,7 +2,7 @@
 name = "vein-admin"
 version = "0.3.0"
 edition = "2024"
-rust-version = "1.95"
+rust-version = "1.97"
 license = "AGPL-3.0-only"
 authors = ["Abdelkader Boudih <oss@seuros.com>"]
 description = "Admin web interface for the Vein multi-ecosystem package proxy"
@@ -16,10 +16,10 @@ anyhow = "1.0.102"
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 clap = { version = "4.6.1", features = ["derive"] }
 hex = "0.4"
-rama = { version = "0.3.0-alpha.4", default-features = false, features = ["http-full", "rustls"] }
+rama = { version = "0.3.0", default-features = false, features = ["http-full", "rustls"] }
 sha2 = "0.11.0"
 sqlx = { version = "0.9.0", features = ["runtime-tokio", "sqlite"] }
-tera = "1"
+tera = { version = "2", features = ["glob_fs"] }
 toml = "1.1.2"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 urlencoding = "2"

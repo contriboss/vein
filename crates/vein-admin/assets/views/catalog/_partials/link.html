@@ -1,1 +1,1 @@
-{% macro render(url) %}{% if url and (url is starting_with("http://") or url is starting_with("https://")) %}<a href="{{ url }}" target="_blank" rel="noopener">{{ url }}</a>{% elif url %}{{ url }}{% endif %}{% endmacro %}
+{% component external_link(url) %}{% if url and (url is starting_with(pat="http://") or url is starting_with(pat="https://")) %}<a href="{{ url }}" target="_blank" rel="noopener">{{ url }}</a>{% elif url %}{{ url }}{% endif %}{% endcomponent external_link %}

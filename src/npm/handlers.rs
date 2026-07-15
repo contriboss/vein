@@ -80,7 +80,7 @@ async fn handle_npm_request_from(
     registry_base: &str,
 ) -> Result<(Response<Body>, CacheOutcome)> {
     let method = req.method().clone();
-    let path = req.uri().path().to_string();
+    let path = req.uri().path_or_root().into_owned();
 
     if path.starts_with("/-/") {
         return handle_npm_api(req, registry_base).await;
@@ -228,7 +228,7 @@ async fn handle_npm_api(
     req: Request<Body>,
     registry_base: &str,
 ) -> Result<(Response<Body>, CacheOutcome)> {
-    let path = req.uri().path().to_string();
+    let path = req.uri().path_or_root().into_owned();
     if path == "/-/ping" && req.method() == Method::GET {
         let response = Response::builder()
             .status(StatusCode::OK)
@@ -238,12 +238,14 @@ async fn handle_npm_api(
     }
 
     let (parts, body) = req.into_parts();
-    let path_and_query = parts
-        .uri
-        .path_and_query()
-        .map(|pq| pq.as_str())
-        .unwrap_or(parts.uri.path());
-    let upstream_url = format!("{}{}", registry_base.trim_end_matches('/'), path_and_query);
+    let path = parts.uri.path_or_root();
+    let query = parts.uri.query_or_empty();
+    let base = registry_base.trim_end_matches('/');
+    let upstream_url = if query.is_empty() {
+        format!("{base}{path}")
+    } else {
+        format!("{base}{path}?{query}")
+    };
 
     let body_bytes = body
         .collect()

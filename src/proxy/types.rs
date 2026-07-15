@@ -1,8 +1,9 @@
 use std::time::Instant;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use rama::{
-    http::{Body, Method, Request, Uri},
+    http::{Body, Method, Request},
+    net::uri::{PathRef, Uri},
     telemetry::tracing,
 };
 use vein_adapter::{AssetKey, AssetKind};
@@ -53,7 +54,7 @@ impl RequestContext {
         Self {
             start: Instant::now(),
             method: req.method().clone(),
-            path: req.uri().path().to_string(),
+            path: req.uri().path_or_root().into_owned(),
             cache: CacheStatus::Pass,
         }
     }
@@ -71,7 +72,8 @@ pub struct CacheableRequest {
 
 impl CacheableRequest {
     pub fn from_request(req: &Request<rama::http::Body>) -> Option<Self> {
-        let path = req.uri().path();
+        let path = req.uri().path_or_root();
+        let path = path.as_ref();
         if path.starts_with("/gems/") {
             Self::from_gem_path(path.strip_prefix("/gems/")?)
         } else if path.starts_with("/quick/Marshal.4.8/") {
@@ -195,47 +197,34 @@ impl UpstreamTarget {
     }
 
     pub fn join(&self, req: &Request<rama::http::Body>) -> Result<Uri> {
-        let req_path_and_query = req
-            .uri()
-            .path_and_query()
-            .map(|pq| pq.as_str())
-            .unwrap_or("/");
+        let req_uri = req.uri();
 
-        // Get base path, stripping trailing slash
-        let base_path = self
-            .base
-            .path_and_query()
-            .map(|pq| pq.path())
-            .unwrap_or("/")
-            .trim_end_matches('/');
+        // Percent-encoded request path (defaults to "/").
+        let req_path = req_uri.path_or_root();
 
-        // Split request into path and query
-        let (req_path, query) = match req_path_and_query.find('?') {
-            Some(idx) => (&req_path_and_query[..idx], Some(&req_path_and_query[idx..])),
-            None => (req_path_and_query, None),
-        };
+        // Base path, stripping trailing slash so we don't double up separators.
+        let base_path = self.base.path_or_root();
+        let base_path = base_path.trim_end_matches('/');
 
-        // Build combined path
+        // Concatenate the already-encoded path components.
         let combined = if base_path.is_empty() || base_path == "/" {
-            req_path.to_string()
+            req_path.into_owned()
         } else {
-            format!("{}{}", base_path, req_path)
+            format!("{base_path}{req_path}")
         };
 
-        // Add query string if present
-        let full_path = match query {
-            Some(q) => format!("{}{}", combined, q),
-            None => combined,
-        };
+        // `from_raw_str` treats the input as already URI-encoded, so the path
+        // is assigned verbatim rather than re-encoded.
+        let mut uri = self
+            .base
+            .clone()
+            .with_path(PathRef::from_raw_str(&combined));
 
-        let mut parts = self.base.clone().into_parts();
-        parts.path_and_query = Some(
-            full_path
-                .parse()
-                .with_context(|| format!("parse combined path '{full_path}'"))?,
-        );
+        // Carry the request query through unchanged (already encoded).
+        if let Some(query) = req_uri.query() {
+            uri = uri.with_query(query.into_owned());
+        }
 
-        Uri::from_parts(parts)
-            .with_context(|| format!("joining upstream path {req_path_and_query}"))
+        Ok(uri)
     }
 }

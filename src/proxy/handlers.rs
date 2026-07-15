@@ -67,7 +67,7 @@ pub async fn handle_sbom_request(
     req: &Request<rama::http::Body>,
     index: &CacheBackend,
 ) -> Result<(rama::http::Response<rama::http::Body>, CacheStatus)> {
-    let query = req.uri().query().unwrap_or("");
+    let query = req.uri().query_or_empty();
 
     #[derive(Deserialize, Default)]
     struct Parameters<'a> {
@@ -81,7 +81,7 @@ pub async fn handle_sbom_request(
         name,
         version,
         platform,
-    } = Query::parse_query_str(query)
+    } = Query::parse_query_str(query.as_ref())
         .map(|q| q.0)
         .unwrap_or_default();
 

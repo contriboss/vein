@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use rama::Layer;
 use rama::http::client::EasyHttpWebClient;
 use rama::http::layer::timeout::TimeoutLayer;
@@ -19,7 +19,7 @@ pub(crate) fn run_health(url: String, timeout: u64) -> Result<()> {
             .get(&url)
             .send()
             .await
-            .context("sending health check request")?;
+            .map_err(|e| anyhow::anyhow!("sending health check request: {e}"))?;
 
         if response.status().is_success() {
             println!("Vein healthy: {}", response.status());

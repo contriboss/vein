@@ -15,7 +15,7 @@ use crate::{crates as crates_registry, npm as npm_registry};
 impl VeinProxy {
     async fn handle(&self, req: Request<Body>, ctx: &mut RequestContext) -> Result<Response<Body>> {
         let method = req.method().clone();
-        let path = req.uri().path().to_owned();
+        let path = req.uri().path_or_root().into_owned();
 
         if npm_registry::is_npm_request(&req) {
             let our_base = format!(

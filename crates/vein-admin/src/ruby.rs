@@ -4,7 +4,7 @@ use anyhow::{Context, Result, anyhow};
 use chrono::{NaiveDate, Utc};
 use rama::{
     Service,
-    error::OpaqueError,
+    error::{ErrorExt as _, extra::OpaqueError},
     http::{
         Body, Request, Response, StatusCode, body::util::BodyExt, client::EasyHttpWebClient,
         header::HeaderValue, layer::required_header::AddRequiredRequestHeadersLayer,
@@ -117,7 +117,7 @@ fn build_client() -> Result<impl Service<Request, Output = Response, Error = Opa
     let inner = EasyHttpWebClient::default();
 
     Ok((
-        MapErrLayer::new(OpaqueError::from_boxed),
+        MapErrLayer::new(|e: rama::error::BoxError| e.into_opaque_error()),
         TimeoutLayer::new(REQUEST_TIMEOUT),
         AddRequiredRequestHeadersLayer::new()
             .with_user_agent_header_value(HeaderValue::from_static(USER_AGENT)),

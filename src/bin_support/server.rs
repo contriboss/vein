@@ -71,8 +71,8 @@ pub(crate) fn run_server(config_path: PathBuf) -> Result<()> {
             let proxy = proxy.clone();
             let addr = addr.clone();
             async move {
-                let tcp_service = TcpListener::build()
-                    .bind(addr)
+                let tcp_service = TcpListener::build(Executor::graceful(guard.clone()))
+                    .bind_address(addr)
                     .await
                     .expect("bind tcp proxy");
 
@@ -87,7 +87,7 @@ pub(crate) fn run_server(config_path: PathBuf) -> Result<()> {
                         .into_layer(proxy),
                 );
 
-                tcp_service.serve_graceful(guard, http_service).await;
+                tcp_service.serve(http_service).await;
             }
         });
 

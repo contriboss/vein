@@ -1,13 +1,11 @@
 {% extends "_base.html" %}
-{% import "_partials/page_header.html" as header %}
-{% import "_partials/quarantine_action.html" as action %}
 
 {% block title %}Vein Admin - Gem Quarantine{% endblock %}
 
 {% block main_width %}1200px{% endblock %}
 
 {% block content %}
-{{ header::render(title="Gem Quarantine", subtitle="Current quarantine controls apply to RubyGems artifacts.") }}
+{{<page_header title="Gem Quarantine" subtitle="Current quarantine controls apply to RubyGems artifacts."/>}}
 
 <section class="grid mb-lg">
   <div class="card">
@@ -50,8 +48,8 @@
       </td>
       <td>{{ gem.hours_remaining }}h remaining</td>
       <td>
-        {{ action::form(gem=gem, action="approve", label="Approve", btn_class="btn--success") }}
-        {{ action::form(gem=gem, action="block", label="Block", btn_class="btn--danger") }}
+        {{<quarantine_action gem={gem} action="approve" label="Approve" btn_class="btn--success"/>}}
+        {{<quarantine_action gem={gem} action="block" label="Block" btn_class="btn--danger"/>}}
       </td>
     </tr>
     {% else %}

@@ -7,13 +7,14 @@ use parking_lot::Mutex;
 use rama::{
     Service,
     http::{
-        Body, Method, Request, Response, Uri,
+        Body, Method, Request, Response,
         body::util::BodyExt as _,
         client::EasyHttpWebClient,
         header::{self, HeaderMap, HeaderValue, USER_AGENT},
         layer::trace::TraceLayer,
     },
     layer::Layer,
+    net::uri::Uri,
     telemetry::tracing,
 };
 use rand::SeedableRng;

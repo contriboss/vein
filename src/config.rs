@@ -4,7 +4,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, bail};
-use rama::http::Scheme;
+use rama::net::Protocol;
 use serde::Deserialize;
 
 // Re-export all submodules
@@ -84,8 +84,8 @@ impl Config {
 
     pub fn validate(&self) -> Result<()> {
         if let Some(upstream) = self.upstream.as_ref().filter(|upstream| {
-            upstream.url.scheme() != Some(&Scheme::HTTPS)
-                && upstream.url.scheme() != Some(&Scheme::HTTP)
+            upstream.url.scheme() != Some(&Protocol::HTTPS)
+                && upstream.url.scheme() != Some(&Protocol::HTTP)
         }) {
             bail!("unsupported upstream scheme {}", upstream.url);
         }
