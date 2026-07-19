@@ -13,6 +13,10 @@
   },
   "plugins": [
     {
+      "type": "cargo-workspace",
+      "merge": false
+    },
+    {
       "type": "linked-versions",
       "groupName": "vein",
       "components": ["vein", "vein-adapter", "vein-admin"]
