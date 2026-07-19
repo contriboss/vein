@@ -75,7 +75,7 @@ tokio-cron-scheduler = "0.15.1"
 
 # State machines
 state-machines = { version = "0.20.0", features = ["typestate"] }
-breaker-machines = "0.15.0"
+breaker-machines = "0.16.0"
 chrono-machines = "0.4.0"
 
 # Time handling
