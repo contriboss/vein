@@ -1,6 +1,6 @@
 [package]
 name = "vein-admin"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.97"
 license = "AGPL-3.0-only"
@@ -28,5 +28,5 @@ serde_json = "1.0.150"
 serde_yaml = { package = "serde_yaml_ng", version = "0.10.0" }
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "signal"] }
 tracing = "0.1.44"
-vein = { version = "0.4.0", path = "../.." }
-vein-adapter = { version = "0.3.0", path = "../vein-adapter" }
+vein = { version = "0.5.0", path = "../.." }
+vein-adapter = { version = "0.4.0", path = "../vein-adapter" }
