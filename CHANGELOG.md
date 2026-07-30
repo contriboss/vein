@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.5.1](https://github.com/contriboss/vein/compare/v0.5.0...v0.5.1) (2026-07-30)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * vein-adapter bumped from 0.4.0 to 0.5.0
+
 ## [0.5.0](https://github.com/contriboss/vein/compare/v0.4.0...v0.5.0) (2026-07-30)
 
 
