@@ -24,4 +24,6 @@ jobs:
           sysctl -n security.jail.jailed
 
       - name: cargo test (${{ matrix.backend }})
-        run: cargo test --workspace --no-default-features --features ${{ matrix.backend }},tls
+        # No --workspace: feature unification across members would enable
+        # sqlite alongside postgres, and they are mutually exclusive.
+        run: cargo test --no-default-features --features ${{ matrix.backend }},tls
