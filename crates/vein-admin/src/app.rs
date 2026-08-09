@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use sqlx::sqlite::SqlitePoolOptions;
 use tera::Tera;
 use tracing::warn;
@@ -106,10 +107,21 @@ fn load_templates() -> Result<Arc<Tera>> {
     Ok(Arc::new(tera))
 }
 
+/// Percent-encode everything except RFC 3986 unreserved characters.
+const URLENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'~');
+
+pub(crate) fn urlencode(s: &str) -> String {
+    utf8_percent_encode(s, URLENCODE_SET).to_string()
+}
+
 // Tera 2 dropped the built-in `urlencode` filter; templates still rely on it.
 fn register_extensions(tera: &mut Tera) {
     tera.register_filter("urlencode", |s: &str, _: tera::Kwargs, _: &tera::State| {
-        urlencoding::encode(s).into_owned()
+        urlencode(s)
     });
 }
 

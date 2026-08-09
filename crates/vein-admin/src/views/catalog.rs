@@ -102,11 +102,11 @@ impl GemDetailData {
 fn purl_for_gem(name: &str, version: &str, platform: Option<&str>) -> String {
     let base = format!(
         "pkg:gem/{}@{}",
-        urlencoding::encode(name),
-        urlencoding::encode(version)
+        crate::app::urlencode(name),
+        crate::app::urlencode(version)
     );
     match platform {
-        Some(p) if p != "ruby" => format!("{}?platform={}", base, urlencoding::encode(p)),
+        Some(p) if p != "ruby" => format!("{}?platform={}", base, crate::app::urlencode(p)),
         _ => base,
     }
 }
@@ -198,12 +198,12 @@ fn sbom_download_url(meta: &GemMetadata) -> Option<String> {
 
     let mut url = format!(
         "/catalog/{}/sbom?version={}",
-        urlencoding::encode(&meta.name),
-        urlencoding::encode(&meta.version)
+        crate::app::urlencode(&meta.name),
+        crate::app::urlencode(&meta.version)
     );
     if meta.platform != "ruby" {
         url.push_str("&platform=");
-        url.push_str(&urlencoding::encode(&meta.platform));
+        url.push_str(&crate::app::urlencode(&meta.platform));
     }
     Some(url)
 }
@@ -226,7 +226,7 @@ pub fn search_results_html(results: &[String]) -> String {
                 .replace('>', "&gt;");
             format!(
                 r#"<li><a href="/catalog/{}" class="gem-link">{}</a></li>"#,
-                urlencoding::encode(name),
+                crate::app::urlencode(name),
                 escaped
             )
         })

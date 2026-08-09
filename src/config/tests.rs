@@ -11,7 +11,10 @@ fn test_default_config() {
     let config = Config::default();
     assert_eq!(config.server.host, "0.0.0.0");
     assert_eq!(config.server.port, 8346);
-    assert_eq!(config.server.workers, num_cpus::get());
+    assert_eq!(
+        config.server.workers,
+        std::thread::available_parallelism().map_or(1, usize::from)
+    );
     assert!(config.upstream.is_none());
     assert_eq!(config.storage.path, PathBuf::from("./cache"));
     #[cfg(feature = "sqlite")]
@@ -26,7 +29,10 @@ fn test_default_server_config() {
     let server = ServerConfig::default();
     assert_eq!(server.host, "0.0.0.0");
     assert_eq!(server.port, 8346);
-    assert_eq!(server.workers, num_cpus::get());
+    assert_eq!(
+        server.workers,
+        std::thread::available_parallelism().map_or(1, usize::from)
+    );
 }
 
 #[test]
@@ -124,7 +130,10 @@ fn test_parse_config_with_defaults() {
     let config: Config = toml::from_str(toml).unwrap();
     assert_eq!(config.server.host, "0.0.0.0");
     assert_eq!(config.server.port, 9000);
-    assert_eq!(config.server.workers, num_cpus::get());
+    assert_eq!(
+        config.server.workers,
+        std::thread::available_parallelism().map_or(1, usize::from)
+    );
 }
 
 #[test]

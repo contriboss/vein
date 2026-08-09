@@ -3,7 +3,6 @@ use breaker_machines::CircuitBreaker;
 use chrono_machines::{
     BackoffPolicy, BackoffStrategy, ConstantBackoff, ExponentialBackoff, FibonacciBackoff,
 };
-use parking_lot::Mutex;
 use rama::{
     Service,
     http::{
@@ -19,7 +18,7 @@ use rama::{
 };
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tracing::{info, warn};
 
 use crate::config::{BackoffStrategy as ConfigBackoffStrategy, UpstreamConfig};
@@ -127,7 +126,12 @@ impl UpstreamClient {
 
     pub async fn get_with_headers(&self, url: Uri, headers: &HeaderMap) -> Result<Response<Body>> {
         // Check if circuit is open before attempting request
-        if self.breaker.lock().is_open() {
+        if self
+            .breaker
+            .lock()
+            .expect("circuit breaker lock poisoned")
+            .is_open()
+        {
             return Err(anyhow!(
                 "Circuit breaker is open - upstream is currently unavailable"
             ));
@@ -173,12 +177,16 @@ impl UpstreamClient {
                     // Record success or failure based on status code
                     if status.is_server_error() {
                         // This is the final attempt and it failed with 5xx
-                        let mut breaker = self.breaker.lock();
+                        let mut breaker =
+                            self.breaker.lock().expect("circuit breaker lock poisoned");
                         breaker.record_failure(duration);
                         breaker.check_and_trip();
                     } else {
                         // Success or client error (4xx) - don't trip on client errors
-                        self.breaker.lock().record_success(duration);
+                        self.breaker
+                            .lock()
+                            .expect("circuit breaker lock poisoned")
+                            .record_success(duration);
                     }
 
                     let resp_headers = response.headers().clone();
@@ -203,7 +211,8 @@ impl UpstreamClient {
 
                     if attempt >= max_attempts {
                         // All retries exhausted - record failure and try to trip
-                        let mut breaker = self.breaker.lock();
+                        let mut breaker =
+                            self.breaker.lock().expect("circuit breaker lock poisoned");
                         breaker.record_failure(duration);
                         breaker.check_and_trip();
                         return Err(anyhow!("upstream request failed: {err}"));

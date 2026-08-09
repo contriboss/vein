@@ -29,5 +29,5 @@ fn default_port() -> u16 {
 }
 
 fn default_workers() -> usize {
-    num_cpus::get()
+    std::thread::available_parallelism().map_or(1, usize::from)
 }
