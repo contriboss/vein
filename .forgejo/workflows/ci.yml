@@ -1,25 +1,27 @@
 name: test
 on: [push]
 
-# FreeBSD's make mis-parses the MAKEFLAGS RubyGems passes; native gem
-# builds in the jail need GNU make.
 env:
+  # FreeBSD's make mis-parses the MAKEFLAGS cargo/RubyGems pass along
   MAKE: gmake
   CARGO_TERM_COLOR: never
-  # rama-dns builds bindings with bindgen, which needs libclang
+  # rama-dns generates bindings with bindgen, which needs libclang
   LIBCLANG_PATH: /usr/local/llvm19/lib
 
 jobs:
   test:
     runs-on: freebsd
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sqlite, postgres]
     steps:
       - uses: actions/checkout@v7
 
       - name: toolchain
         run: |
           rustc --version
-          cargo --version
           sysctl -n security.jail.jailed
 
-      - name: cargo test (sqlite)
-        run: cargo test --workspace --no-default-features --features sqlite,tls
+      - name: cargo test (${{ matrix.backend }})
+        run: cargo test --workspace --no-default-features --features ${{ matrix.backend }},tls
