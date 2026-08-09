@@ -6,6 +6,8 @@ on: [push]
 env:
   MAKE: gmake
   CARGO_TERM_COLOR: never
+  # rama-dns builds bindings with bindgen, which needs libclang
+  LIBCLANG_PATH: /usr/local/llvm19/lib
 
 jobs:
   test:
