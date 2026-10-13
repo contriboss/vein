@@ -1,3 +1,4 @@
+use chrono_machines::{BackoffPolicy, ConstantBackoff, ExponentialBackoff, FibonacciBackoff};
 use serde::Deserialize;
 
 // Retry configuration only (circuit breaker removed)
@@ -34,24 +35,61 @@ pub struct RetryConfig {
 }
 
 impl RetryConfig {
-    fn default_enabled() -> bool {
+    const fn default_enabled() -> bool {
         true
     }
 
-    fn default_max_attempts() -> u32 {
+    const fn default_max_attempts() -> u32 {
         3
     }
 
-    fn default_initial_backoff_ms() -> u64 {
+    const fn default_initial_backoff_ms() -> u64 {
         100
     }
 
-    fn default_max_backoff_secs() -> u64 {
+    const fn default_max_backoff_secs() -> u64 {
         2
     }
 
-    fn default_jitter_factor() -> f64 {
+    const fn default_jitter_factor() -> f64 {
         1.0 // Full jitter by default (prevents thundering herd)
+    }
+
+    /// Total attempts per operation, first try included. A disabled config
+    /// still makes one attempt; values past `u8::MAX` saturate rather than wrap.
+    #[must_use]
+    pub fn attempts(&self) -> u8 {
+        if self.enabled {
+            u8::try_from(self.max_attempts).unwrap_or(u8::MAX)
+        } else {
+            1
+        }
+    }
+
+    /// The chrono-machines policy this config describes.
+    #[must_use]
+    pub fn backoff_policy(&self) -> BackoffPolicy {
+        let attempts = self.attempts();
+        let max_delay_ms = self.max_backoff_secs.saturating_mul(1000);
+        match self.backoff_strategy {
+            BackoffStrategy::Exponential => ExponentialBackoff::new()
+                .base_delay_ms(self.initial_backoff_ms)
+                .max_delay_ms(max_delay_ms)
+                .max_attempts(attempts)
+                .jitter_factor(self.jitter_factor)
+                .into(),
+            BackoffStrategy::Fibonacci => FibonacciBackoff::new()
+                .base_delay_ms(self.initial_backoff_ms)
+                .max_delay_ms(max_delay_ms)
+                .max_attempts(attempts)
+                .jitter_factor(self.jitter_factor)
+                .into(),
+            BackoffStrategy::Constant => ConstantBackoff::new()
+                .delay_ms(self.initial_backoff_ms)
+                .max_attempts(attempts)
+                .jitter_factor(self.jitter_factor)
+                .into(),
+        }
     }
 }
 

@@ -143,7 +143,7 @@ pub fn hydrate_metadata_row(row: DbGemMetadataRow) -> Result<GemMetadata> {
         rubygems_version: row.rubygems_version,
         specification_version: row.specification_version,
         built_at: row.built_at,
-        size_bytes: row.size_bytes.max(0) as u64,
+        size_bytes: row.size_bytes.max(0).cast_unsigned(),
         sha256: row.sha256,
         sbom,
     })

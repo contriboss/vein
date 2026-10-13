@@ -4,13 +4,13 @@ use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(author, version, about = "Vein multi-ecosystem package proxy")]
-pub(crate) struct Cli {
+pub struct Cli {
     #[command(subcommand)]
     pub(crate) command: Command,
 }
 
 #[derive(Debug, Subcommand)]
-pub(crate) enum Command {
+pub enum Command {
     /// Start the Vein proxy server
     Serve {
         /// Path to the configuration file
@@ -27,6 +27,11 @@ pub(crate) enum Command {
     Catalog {
         #[command(subcommand)]
         action: CatalogCommand,
+    },
+    /// Gem operations
+    Gem {
+        #[command(subcommand)]
+        action: GemCommand,
     },
     /// Perform a health check against a Vein instance
     Health {
@@ -54,7 +59,7 @@ pub(crate) enum Command {
 }
 
 #[derive(Debug, Subcommand)]
-pub(crate) enum CatalogCommand {
+pub enum CatalogCommand {
     /// Sync the upstream gem catalogue immediately
     Sync {
         /// Path to the configuration file
@@ -64,7 +69,25 @@ pub(crate) enum CatalogCommand {
 }
 
 #[derive(Debug, Subcommand)]
-pub(crate) enum QuarantineCommand {
+pub enum GemCommand {
+    /// Sync a gem from the upstream into the local cache
+    Sync {
+        /// Path to the configuration file
+        #[arg(long, default_value = "vein.toml")]
+        config: PathBuf,
+        /// Gem name
+        name: String,
+        /// Specific version to sync (syncs all if not provided)
+        #[arg(short, long)]
+        version: Option<String>,
+        /// Platform variant (e.g., ruby, java, x86_64-linux)
+        #[arg(short, long)]
+        platform: Option<String>,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum QuarantineCommand {
     /// Show quarantine statistics
     Status {
         /// Path to the configuration file

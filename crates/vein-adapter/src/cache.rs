@@ -1,11 +1,9 @@
 mod backend_common;
 pub mod models;
-#[cfg(feature = "postgres")]
 pub mod postgres;
 pub mod quarantine;
 pub mod serialization;
-#[cfg(feature = "sqlite")]
-pub mod sqlite;
+// Runs against the Postgres named by `VEIN_TEST_DATABASE_URL`.
 #[cfg(test)]
 mod tests;
 pub mod types;
@@ -29,8 +27,8 @@ pub struct GemSymbolRecord<'a> {
 
 // Re-export commonly used types
 pub use types::{
-    AssetKey, AssetKind, CachedAsset, DependencyKind, GemDependency, GemMetadata, IndexStats,
-    SbomCoverage,
+    AssetKey, AssetKind, CachedAsset, CachedVersion, DependencyKind, GemDependency, GemMetadata,
+    IndexStats, SbomCoverage,
 };
 
 // Re-export quarantine types
@@ -39,11 +37,7 @@ pub use quarantine::{
     calculate_availability, is_version_available, is_version_downloadable,
 };
 
-// Re-export backend implementations (conditional)
-#[cfg(feature = "postgres")]
 pub use postgres::PostgresCacheBackend;
-#[cfg(feature = "sqlite")]
-pub use sqlite::SqliteCacheBackend;
 
 // Public trait for cache backend implementations
 // Uses explicit `impl Future + Send` to satisfy auto-trait bounds without #[allow]
@@ -57,6 +51,20 @@ pub trait CacheBackendTrait: Send + Sync {
         size_bytes: u64,
     ) -> impl Future<Output = Result<()>> + Send;
     fn get_all_gems(&self) -> impl Future<Output = Result<Vec<(String, String)>>> + Send;
+    /// Cached artifacts of package `name`, newest version first.
+    fn cached_versions(
+        &self,
+        kind: AssetKind,
+        name: &str,
+    ) -> impl Future<Output = Result<Vec<CachedVersion>>> + Send;
+    /// Names of cached `kind` packages containing `query`: exact matches
+    /// first, then prefix matches, then the rest.
+    fn search_cached(
+        &self,
+        kind: AssetKind,
+        query: &str,
+        limit: i64,
+    ) -> impl Future<Output = Result<Vec<String>>> + Send;
     fn stats(&self) -> impl Future<Output = Result<IndexStats>> + Send;
     fn catalog_upsert_names(&self, names: &[String]) -> impl Future<Output = Result<()>> + Send;
     fn catalog_total(&self) -> impl Future<Output = Result<u64>> + Send;

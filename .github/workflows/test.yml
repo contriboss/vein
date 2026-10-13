@@ -12,34 +12,25 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        backend: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: vein
+          POSTGRES_PASSWORD: vein
+          POSTGRES_DB: vein_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vein -d vein_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      VEIN_TEST_DATABASE_URL: postgres://vein:vein@localhost:5432/vein_test
     steps:
       - uses: actions/checkout@v7
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v6
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache cargo index
-        uses: actions/cache@v6
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Cache target directory
-        uses: actions/cache@v6
-        with:
-          path: target
-          key: ${{ runner.os }}-target-${{ hashFiles('**/Cargo.lock') }}
-
-      - name: Run tests with ${{ matrix.backend }}
-        run: cargo test --no-default-features --features ${{ matrix.backend }},tls
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test --workspace

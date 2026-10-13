@@ -23,6 +23,7 @@ impl VeinProxy {
                 self.config.server.host, self.config.server.port
             );
             let result = npm_registry::handle_npm_request(
+                &self.http,
                 req,
                 &our_base,
                 self.storage.clone(),
@@ -55,6 +56,7 @@ impl VeinProxy {
                         self.config.server.host, self.config.server.port
                     );
                     let result = crates_registry::handle_sparse_index(
+                        &self.http,
                         p,
                         &our_base,
                         self.storage.clone(),
@@ -72,48 +74,26 @@ impl VeinProxy {
             }
         }
 
-        match self.try_handle_cached_request(&req, ctx).await? {
-            Some((cache_status, resp)) => {
-                ctx.cache = cache_status;
-                Ok(resp)
+        if let Some((cache_status, resp)) = self.try_handle_cached_request(&req, ctx).await? {
+            ctx.cache = cache_status;
+            Ok(resp)
+        } else {
+            if self.upstreams.is_empty() {
+                ctx.cache = CacheStatus::Miss;
+                return response::respond_text(StatusCode::NOT_FOUND, "not found in cache");
             }
-            None => {
-                if self.upstreams.is_empty() {
-                    ctx.cache = CacheStatus::Miss;
-                    return response::respond_text(StatusCode::NOT_FOUND, "not found in cache");
-                }
 
-                if method == Method::GET {
-                    if let Some(compact) = CompactRequest::from_path(path.as_str()) {
-                        match self.handle_compact_request(&req, compact, ctx).await {
-                            Ok(Some((resp, status))) => {
-                                ctx.cache = status;
-                                return Ok(resp);
-                            }
-                            Ok(None) => {}
-                            Err(err) => {
-                                ctx.cache = CacheStatus::Error;
-                                error!(error = %err, "failed to serve compact index request");
-                                return response::respond_text(
-                                    StatusCode::BAD_GATEWAY,
-                                    "upstream error",
-                                );
-                            }
-                        }
-                    }
-
-                    match self.proxy_generic_get(&req).await {
-                        Ok(resp) => {
-                            ctx.cache = CacheStatus::Pass;
+            if method == Method::GET {
+                if let Some(compact) = CompactRequest::from_path(path.as_str()) {
+                    match self.handle_compact_request(&req, compact, ctx).await {
+                        Ok(Some((resp, status))) => {
+                            ctx.cache = status;
                             return Ok(resp);
                         }
+                        Ok(None) => {}
                         Err(err) => {
                             ctx.cache = CacheStatus::Error;
-                            error!(
-                                error = %err,
-                                summary = %self.request_summary(ctx),
-                                "failed to proxy request to upstream"
-                            );
+                            error!(error = %err, "failed to serve compact index request");
                             return response::respond_text(
                                 StatusCode::BAD_GATEWAY,
                                 "upstream error",
@@ -122,13 +102,29 @@ impl VeinProxy {
                     }
                 }
 
-                ctx.cache = CacheStatus::Pass;
-                response::respond_text(StatusCode::BAD_REQUEST, "unsupported request")
+                match self.proxy_generic_get(&req).await {
+                    Ok(resp) => {
+                        ctx.cache = CacheStatus::Pass;
+                        return Ok(resp);
+                    }
+                    Err(err) => {
+                        ctx.cache = CacheStatus::Error;
+                        error!(
+                            error = %err,
+                            summary = %Self::request_summary(ctx),
+                            "failed to proxy request to upstream"
+                        );
+                        return response::respond_text(StatusCode::BAD_GATEWAY, "upstream error");
+                    }
+                }
             }
+
+            ctx.cache = CacheStatus::Pass;
+            response::respond_text(StatusCode::BAD_REQUEST, "unsupported request")
         }
     }
 
-    fn request_summary(&self, ctx: &RequestContext) -> String {
+    fn request_summary(ctx: &RequestContext) -> String {
         format!("{} {}", ctx.method.as_str(), ctx.path)
     }
 }
@@ -150,7 +146,7 @@ impl Service<Request<Body>> for VeinProxy {
                 let response_code = resp.status().as_u16();
                 let duration_ms = ctx.start.elapsed().as_millis();
                 info!(
-                    summary = %self.request_summary(&ctx),
+                    summary = %Self::request_summary(&ctx),
                     response_code,
                     duration_ms,
                     cache_status = %ctx.cache,
@@ -160,7 +156,7 @@ impl Service<Request<Body>> for VeinProxy {
             Err(err) => {
                 let duration_ms = ctx.start.elapsed().as_millis();
                 error!(
-                    summary = %self.request_summary(&ctx),
+                    summary = %Self::request_summary(&ctx),
                     duration_ms,
                     cache_status = %ctx.cache,
                     error = %err,
@@ -169,7 +165,7 @@ impl Service<Request<Body>> for VeinProxy {
             }
         }
 
-        result.map_err(|e| e.into())
+        result.map_err(std::convert::Into::into)
     }
 }
 
@@ -194,7 +190,7 @@ fn finish_registry_result(
     }
 }
 
-fn cache_status_from_outcome(outcome: CacheOutcome) -> CacheStatus {
+const fn cache_status_from_outcome(outcome: CacheOutcome) -> CacheStatus {
     match outcome {
         CacheOutcome::Hit => CacheStatus::Hit,
         CacheOutcome::Miss => CacheStatus::Miss,

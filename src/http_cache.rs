@@ -5,6 +5,8 @@ use rama::http::{Body, HeaderMap, HeaderValue, Response, StatusCode, header};
 use tokio::io::AsyncWriteExt;
 use vein_adapter::{CacheBackend, CacheBackendTrait, FilesystemStorage};
 
+use crate::upstream::buffer_response;
+
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct CacheEntryMeta {
     pub etag: Option<String>,
@@ -17,11 +19,11 @@ impl CacheEntryMeta {
             etag: headers
                 .get(header::ETAG)
                 .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string()),
+                .map(std::string::ToString::to_string),
             last_modified: headers
                 .get(header::LAST_MODIFIED)
                 .and_then(|v| v.to_str().ok())
-                .map(|s| s.to_string()),
+                .map(std::string::ToString::to_string),
         }
     }
 }
@@ -75,7 +77,7 @@ where
     let had_cache = cached_bytes.is_some();
 
     let cached_meta = load_cached_meta(index, options.meta_key, options.meta_mode).await?;
-    let request_headers = build_conditional_headers(&cached_meta);
+    let request_headers = build_conditional_headers(cached_meta.as_ref());
 
     let response = fetch(request_headers).await?;
     let status = response.status();
@@ -127,7 +129,7 @@ where
         return Ok(CachedFetchResult { response, outcome });
     }
 
-    let forwarded = forward_response(response, options.strip_transfer_encoding).await?;
+    let forwarded = buffer_response(response, options.strip_transfer_encoding).await?;
     Ok(CachedFetchResult {
         response: forwarded,
         outcome: CacheOutcome::Pass,
@@ -136,7 +138,7 @@ where
 
 /// Inserts `name: value` into `headers` when `value` is present and parses into
 /// a valid header value; otherwise leaves the map unchanged.
-fn insert_opt_header(headers: &mut HeaderMap, name: header::HeaderName, value: &Option<String>) {
+fn insert_opt_header(headers: &mut HeaderMap, name: header::HeaderName, value: Option<&str>) {
     if let Some(value) = value
         && let Ok(parsed) = HeaderValue::from_str(value)
     {
@@ -144,11 +146,15 @@ fn insert_opt_header(headers: &mut HeaderMap, name: header::HeaderName, value: &
     }
 }
 
-fn build_conditional_headers(meta: &Option<CacheEntryMeta>) -> HeaderMap {
+fn build_conditional_headers(meta: Option<&CacheEntryMeta>) -> HeaderMap {
     let mut headers = HeaderMap::new();
     if let Some(meta) = meta {
-        insert_opt_header(&mut headers, header::IF_NONE_MATCH, &meta.etag);
-        insert_opt_header(&mut headers, header::IF_MODIFIED_SINCE, &meta.last_modified);
+        insert_opt_header(&mut headers, header::IF_NONE_MATCH, meta.etag.as_deref());
+        insert_opt_header(
+            &mut headers,
+            header::IF_MODIFIED_SINCE,
+            meta.last_modified.as_deref(),
+        );
     }
     headers
 }
@@ -228,66 +234,17 @@ fn build_cached_response(
                 HeaderValue::from_str(&body.len().to_string())?,
             );
         }
-        insert_opt_header(headers, header::ETAG, &meta.etag);
-        insert_opt_header(headers, header::LAST_MODIFIED, &meta.last_modified);
+        insert_opt_header(headers, header::ETAG, meta.etag.as_deref());
+        insert_opt_header(
+            headers,
+            header::LAST_MODIFIED,
+            meta.last_modified.as_deref(),
+        );
     }
     builder
         .body(Body::from(body.to_vec()))
         .context("building cached response")
 }
 
-async fn forward_response(
-    response: Response<Body>,
-    strip_transfer_encoding: bool,
-) -> Result<Response<Body>> {
-    let status = response.status();
-    let headers = response.headers().clone();
-
-    use rama::http::body::util::BodyExt;
-    let body_bytes = response
-        .into_body()
-        .collect()
-        .await
-        .context("reading forwarded response body")?
-        .to_bytes();
-
-    let mut builder = Response::builder().status(status);
-    {
-        let resp_headers = builder.headers_mut().context("getting headers")?;
-        for (name, value) in headers.iter() {
-            if strip_transfer_encoding && name == header::TRANSFER_ENCODING {
-                continue;
-            }
-            resp_headers.insert(name, value.clone());
-        }
-    }
-
-    builder
-        .body(Body::from(body_bytes))
-        .context("building forwarded response")
-}
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn build_conditional_headers_sets_etag_and_last_modified() {
-        let meta = CacheEntryMeta {
-            etag: Some("\"abc\"".to_string()),
-            last_modified: Some("Wed, 01 Jan 2025 00:00:00 GMT".to_string()),
-        };
-        let headers = build_conditional_headers(&Some(meta));
-        assert_eq!(headers.get(header::IF_NONE_MATCH).unwrap(), "\"abc\"");
-        assert_eq!(
-            headers.get(header::IF_MODIFIED_SINCE).unwrap(),
-            "Wed, 01 Jan 2025 00:00:00 GMT"
-        );
-    }
-
-    #[test]
-    fn build_conditional_headers_empty_without_meta() {
-        let headers = build_conditional_headers(&None);
-        assert!(headers.is_empty());
-    }
-}
+mod tests;

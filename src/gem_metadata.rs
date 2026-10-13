@@ -27,7 +27,7 @@ pub async fn extract_gem_metadata(
     let path = path.to_owned();
     let name = name.to_owned();
     let version = version.to_owned();
-    let platform = platform.map(|p| p.to_owned());
+    let platform = platform.map(std::borrow::ToOwned::to_owned);
     let sha256 = sha256.to_owned();
 
     task::spawn_blocking(move || {

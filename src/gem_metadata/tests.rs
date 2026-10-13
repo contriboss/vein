@@ -209,12 +209,12 @@ date: "2024-11-15"
 
 #[tokio::test]
 async fn detects_native_artifacts_in_data_archive() {
-    let metadata_yaml = r#"---
+    let metadata_yaml = r"---
 name: native-gem
 version: 0.1.0
 authors: Native Dev
 licenses: []
-"#;
+";
     let gem_file = build_test_gem(
         metadata_yaml,
         &[
@@ -247,9 +247,12 @@ licenses: []
         metadata.has_embedded_binaries,
         "bundle or bin/* flags embedded binaries"
     );
-    assert!(metadata.extensions.is_empty());
-    assert!(metadata.executables.is_empty());
-    assert!(metadata.dependencies.is_empty());
+    assert_eq!(metadata.extensions, [] as [std::string::String; 0]);
+    assert_eq!(metadata.executables, [] as [std::string::String; 0]);
+    assert_eq!(
+        metadata.dependencies,
+        [] as [vein_adapter::GemDependency; 0]
+    );
     assert!(metadata.metadata.is_null());
     assert_eq!(metadata.native_languages, ["Native Binary"]);
     assert!(metadata.sbom.is_some());

@@ -10,12 +10,9 @@ workers = 4  # Number of worker threads (default: CPU count)
 path = "./gems"  # Local filesystem storage for cached gems
 
 [database]
-# For SQLite, point to a file with a URL (preferred) or uncomment `path`.
-url = "sqlite://./vein.db"
-# path = "./vein.db"
-# For Postgres, switch to e.g.:
-# url = "postgres://user:pass@db.internal/vein"
-# max_connections = 32
+# Postgres is the only backend. `docker compose up postgres` provides one.
+url = "postgres://vein:vein@localhost:5432/vein"
+max_connections = 10  # connection pool size
 
 # DATABASE RELIABILITY CONFIGURATION
 [database.reliability.retry]
@@ -31,26 +28,17 @@ backoff_strategy = "exponential"  # Strategy: "exponential", "fibonacci", or "co
 level = "info"  # debug, info, warn, error
 json = false     # Set to true for JSON-formatted logs
 
-# HOT CACHE CONFIGURATION
-[hotcache]
-# Cron schedule for refreshing hot cache from SQLite index
-# Format: "sec min hour day month weekday year"
-# Examples:
-#   "0 0 * * * *"     = Every hour at :00
-#   "0 */30 * * * *"  = Every 30 minutes
-#   "0 0 0 * * *"     = Once per day at midnight
-# Set to empty string ("") to disable automatic refresh
-refresh_schedule = "0 0 * * * *"
+# ADMIN DASHBOARD (builds with the `admin` feature; on by default)
+# Served on its own listener next to the proxy, with the cache exposed to
+# agents at /mcp. Loopback binds need no auth; any other bind requires the
+# VEIN_ADMIN_MCP_TOKEN environment variable or /mcp stays off.
+[admin]
+enabled = true
+host = "127.0.0.1"
+port = 9400
 
-# HOTCACHE RELIABILITY CONFIGURATION
-[hotcache.reliability.retry]
-enabled = true                   # Enable automatic retries (default: true)
-max_attempts = 3                 # Maximum retry attempts including initial request (default: 3)
-initial_backoff_ms = 1000        # Initial backoff delay in milliseconds (default: 1000)
-max_backoff_secs = 2             # Maximum backoff delay in seconds (default: 2)
-backoff_strategy = "constant"    # Strategy: "exponential", "fibonacci", or "constant" (default: "constant")
-# backoff_strategy = "exponential"  # Exponential: 1000ms, 2000ms, 4000ms...
-# backoff_strategy = "fibonacci"    # Fibonacci: 1000ms, 1000ms, 2000ms...
+[admin.mcp]
+enabled = true
 
 # UPSTREAM CONFIGURATION (Optional)
 # By default, Vein runs in cache-only mode.

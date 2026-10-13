@@ -1,4 +1,4 @@
 [tools]
 java = "latest"
 ruby = "4.0.5"
-rust = "1.97"
+rust = "1.99"

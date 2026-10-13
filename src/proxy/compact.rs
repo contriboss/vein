@@ -53,9 +53,7 @@ impl CompactRequest {
         }
     }
 
-    fn content_type(&self) -> &'static str {
-        "text/plain"
-    }
+    const CONTENT_TYPE: &'static str = "text/plain";
 }
 
 impl VeinProxy {
@@ -67,7 +65,7 @@ impl VeinProxy {
     ) -> Result<Option<(Response<Body>, CacheStatus)>> {
         let storage_path = compact.storage_path();
         let meta_key = compact.meta_key();
-        let content_type = compact.content_type();
+        let content_type = CompactRequest::CONTENT_TYPE;
         let info_name = match &compact {
             CompactRequest::Info { name } => Some(name.clone()),
             _ => None,

@@ -1,9 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
-use anyhow::{Context, Result};
-use rama::telemetry::tracing::{debug, error, info, warn};
+use anyhow::{Context, Result, anyhow};
+use chrono_machines::{AsyncRetryable, retry::RetryErrorKind};
+use rama::telemetry::tracing::{self, debug, error, info, warn};
 
-use crate::config::{BackoffStrategy, Config, DatabaseBackend};
+use crate::config::{Config, DatabaseBackend};
 use vein_adapter::CacheBackend;
 
 pub async fn connect_cache_backend(
@@ -21,34 +22,22 @@ pub async fn connect_cache_backend(
         );
     }
 
-    #[cfg(feature = "sqlite")]
+    let max_connections = config.database.max_connections;
     let cache = connect_with_retry(
-        || async { CacheBackend::connect(&backend.path).await },
+        || async { CacheBackend::connect(&backend.url, max_connections).await },
         retry_config,
-        "sqlite",
+        "postgres",
     )
     .await
-    .context("connecting sqlite cache")?;
-
-    #[cfg(feature = "postgres")]
-    let cache = {
-        const DEFAULT_MAX_CONNECTIONS: u32 = 10;
-        connect_with_retry(
-            || async { CacheBackend::connect(&backend.url, DEFAULT_MAX_CONNECTIONS).await },
-            retry_config,
-            "postgres",
-        )
-        .await
-        .context("connecting postgres cache")?
-    };
+    .context("connecting postgres cache")?;
     Ok((Arc::new(cache), backend))
 }
 
 /// Execute a database connection with retry logic
 async fn connect_with_retry<F, Fut, T>(
-    mut connect_fn: F,
+    connect_fn: F,
     retry_config: &crate::config::RetryConfig,
-    db_type: &str,
+    db_type: &'static str,
 ) -> Result<T>
 where
     F: FnMut() -> Fut,
@@ -56,72 +45,59 @@ where
 {
     if !retry_config.enabled {
         debug!(db_type, "Retry disabled, attempting single connection");
+        let mut connect_fn = connect_fn;
         return connect_fn().await;
     }
 
-    let mut attempt = 0;
-    let mut backoff_ms = retry_config.initial_backoff_ms;
-    let max_backoff_ms = retry_config.max_backoff_secs * 1000;
+    let max_attempts = retry_config.attempts();
+    let result = connect_fn
+        .retry_async(retry_config.backoff_policy())
+        .when(is_retryable_error)
+        .notify(move |ctx| {
+            warn!(
+                attempt = ctx.attempt,
+                max_attempts,
+                backoff_ms = ctx.next_delay_ms,
+                db_type,
+                error = ctx.error.map(tracing::field::display),
+                "Database connection failed, retrying"
+            );
+        })
+        .call_async(crate::util::sleep_ms)
+        .await;
 
-    loop {
-        attempt += 1;
-
-        match connect_fn().await {
-            Ok(result) => {
-                if attempt > 1 {
-                    info!(
-                        attempts = attempt,
-                        db_type, "Database connection succeeded after retry"
-                    );
-                }
-                return Ok(result);
+    match result {
+        Ok(outcome) => {
+            if outcome.attempts() > 1 {
+                info!(
+                    attempts = outcome.attempts(),
+                    db_type, "Database connection succeeded after retry"
+                );
             }
-            Err(err) => {
-                // Check if error is retryable
-                if !is_retryable_error(&err) {
-                    error!(
-                        attempts = attempt,
-                        db_type,
-                        error = %err,
-                        "Database connection failed with non-retryable error"
-                    );
-                    return Err(err);
-                }
-
-                // Check if we've exhausted retries
-                if attempt >= retry_config.max_attempts {
-                    error!(
-                        attempts = attempt,
-                        db_type,
-                        error = %err,
-                        "Database connection failed after max retries"
-                    );
-                    return Err(err);
-                }
-
-                // Log retry attempt
-                warn!(
-                    attempt,
-                    max_attempts = retry_config.max_attempts,
-                    backoff_ms,
+            Ok(outcome.into_inner())
+        }
+        Err(err) => {
+            let attempts = err.attempts();
+            let non_retryable = err.kind() == RetryErrorKind::PredicateRejected;
+            let err = err
+                .into_cause()
+                .unwrap_or_else(|| anyhow!("{db_type} connection failed"));
+            if non_retryable {
+                error!(
+                    attempts,
                     db_type,
                     error = %err,
-                    "Database connection failed, retrying"
+                    "Database connection failed with non-retryable error"
                 );
-
-                // Wait before retry
-                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
-
-                // Calculate next backoff
-                backoff_ms = match retry_config.backoff_strategy {
-                    BackoffStrategy::Exponential => (backoff_ms * 2).min(max_backoff_ms),
-                    BackoffStrategy::Fibonacci => {
-                        // Simple fibonacci approximation: next = current * 1.618
-                        ((backoff_ms as f64 * 1.618) as u64).min(max_backoff_ms)
-                    }
-                    BackoffStrategy::Constant => retry_config.initial_backoff_ms,
-                };
+            } else {
+                error!(
+                    attempts,
+                    db_type,
+                    error = %err,
+                    "Database connection failed after max retries"
+                );
             }
+            Err(err)
         }
     }
 }
@@ -163,227 +139,4 @@ fn is_retryable_error(err: &anyhow::Error) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use anyhow::anyhow;
-
-    #[test]
-    fn test_retryable_connection_error() {
-        let err = anyhow!("Connection refused");
-        assert!(is_retryable_error(&err));
-    }
-
-    #[test]
-    fn test_retryable_timeout_error() {
-        let err = anyhow!("Connection timeout");
-        assert!(is_retryable_error(&err));
-    }
-
-    #[test]
-    fn test_retryable_busy_error() {
-        let err = anyhow!("Database is busy");
-        assert!(is_retryable_error(&err));
-    }
-
-    #[test]
-    fn test_retryable_locked_error() {
-        let err = anyhow!("Database table is locked");
-        assert!(is_retryable_error(&err));
-    }
-
-    #[test]
-    fn test_non_retryable_auth_error() {
-        let err = anyhow!("Authentication failed");
-        assert!(!is_retryable_error(&err));
-    }
-
-    #[test]
-    fn test_non_retryable_permission_error() {
-        let err = anyhow!("Permission denied");
-        assert!(!is_retryable_error(&err));
-    }
-
-    #[test]
-    fn test_non_retryable_invalid_error() {
-        let err = anyhow!("Invalid database URL");
-        assert!(!is_retryable_error(&err));
-    }
-
-    #[test]
-    fn test_non_retryable_syntax_error() {
-        let err = anyhow!("SQL syntax error");
-        assert!(!is_retryable_error(&err));
-    }
-
-    #[test]
-    fn test_unknown_error_defaults_to_retryable() {
-        let err = anyhow!("Some random error");
-        assert!(is_retryable_error(&err));
-    }
-
-    #[tokio::test]
-    async fn test_retry_disabled() {
-        use std::sync::atomic::{AtomicU32, Ordering};
-
-        let retry_config = crate::config::RetryConfig {
-            enabled: false,
-            max_attempts: 3,
-            initial_backoff_ms: 100,
-            max_backoff_secs: 2,
-            backoff_strategy: BackoffStrategy::Exponential,
-            jitter_factor: 1.0,
-        };
-
-        let call_count = Arc::new(AtomicU32::new(0));
-        let count_clone = call_count.clone();
-        let result = connect_with_retry(
-            move || {
-                let count_clone = count_clone.clone();
-                async move {
-                    count_clone.fetch_add(1, Ordering::SeqCst);
-                    Ok::<i32, anyhow::Error>(42)
-                }
-            },
-            &retry_config,
-            "test",
-        )
-        .await;
-
-        assert!(result.is_ok());
-        assert_eq!(call_count.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn test_retry_succeeds_first_attempt() {
-        use std::sync::atomic::{AtomicU32, Ordering};
-
-        let retry_config = crate::config::RetryConfig {
-            enabled: true,
-            max_attempts: 3,
-            initial_backoff_ms: 10,
-            max_backoff_secs: 1,
-            backoff_strategy: BackoffStrategy::Exponential,
-            jitter_factor: 1.0,
-        };
-
-        let call_count = Arc::new(AtomicU32::new(0));
-        let count_clone = call_count.clone();
-        let result = connect_with_retry(
-            move || {
-                let count_clone = count_clone.clone();
-                async move {
-                    count_clone.fetch_add(1, Ordering::SeqCst);
-                    Ok::<i32, anyhow::Error>(42)
-                }
-            },
-            &retry_config,
-            "test",
-        )
-        .await;
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
-        assert_eq!(call_count.load(Ordering::SeqCst), 1);
-    }
-
-    #[tokio::test]
-    async fn test_retry_succeeds_after_retries() {
-        use std::sync::atomic::{AtomicU32, Ordering};
-
-        let retry_config = crate::config::RetryConfig {
-            enabled: true,
-            max_attempts: 3,
-            initial_backoff_ms: 10,
-            max_backoff_secs: 1,
-            backoff_strategy: BackoffStrategy::Exponential,
-            jitter_factor: 1.0,
-        };
-
-        let call_count = Arc::new(AtomicU32::new(0));
-        let count_clone = call_count.clone();
-        let result = connect_with_retry(
-            move || {
-                let count_clone = count_clone.clone();
-                async move {
-                    let count = count_clone.fetch_add(1, Ordering::SeqCst) + 1;
-                    if count < 3 {
-                        Err(anyhow!("Connection refused"))
-                    } else {
-                        Ok::<i32, anyhow::Error>(42)
-                    }
-                }
-            },
-            &retry_config,
-            "test",
-        )
-        .await;
-
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42);
-        assert_eq!(call_count.load(Ordering::SeqCst), 3);
-    }
-
-    #[tokio::test]
-    async fn test_retry_fails_after_max_attempts() {
-        use std::sync::atomic::{AtomicU32, Ordering};
-
-        let retry_config = crate::config::RetryConfig {
-            enabled: true,
-            max_attempts: 3,
-            initial_backoff_ms: 10,
-            max_backoff_secs: 1,
-            backoff_strategy: BackoffStrategy::Exponential,
-            jitter_factor: 1.0,
-        };
-
-        let call_count = Arc::new(AtomicU32::new(0));
-        let count_clone = call_count.clone();
-        let result = connect_with_retry(
-            move || {
-                let count_clone = count_clone.clone();
-                async move {
-                    count_clone.fetch_add(1, Ordering::SeqCst);
-                    Err::<i32, anyhow::Error>(anyhow!("Connection refused"))
-                }
-            },
-            &retry_config,
-            "test",
-        )
-        .await;
-
-        assert!(result.is_err());
-        assert_eq!(call_count.load(Ordering::SeqCst), 3);
-    }
-
-    #[tokio::test]
-    async fn test_retry_stops_on_non_retryable_error() {
-        use std::sync::atomic::{AtomicU32, Ordering};
-
-        let retry_config = crate::config::RetryConfig {
-            enabled: true,
-            max_attempts: 3,
-            initial_backoff_ms: 10,
-            max_backoff_secs: 1,
-            backoff_strategy: BackoffStrategy::Exponential,
-            jitter_factor: 1.0,
-        };
-
-        let call_count = Arc::new(AtomicU32::new(0));
-        let count_clone = call_count.clone();
-        let result = connect_with_retry(
-            move || {
-                let count_clone = count_clone.clone();
-                async move {
-                    count_clone.fetch_add(1, Ordering::SeqCst);
-                    Err::<i32, anyhow::Error>(anyhow!("Authentication failed"))
-                }
-            },
-            &retry_config,
-            "test",
-        )
-        .await;
-
-        assert!(result.is_err());
-        assert_eq!(call_count.load(Ordering::SeqCst), 1); // Should not retry
-    }
-}
+mod tests;

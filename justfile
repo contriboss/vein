@@ -13,20 +13,17 @@ fmt *ARGS:
 fmt-check *ARGS:
     cargo fmt --all --check {{ARGS}}
 
-# NOTE: vein's `sqlite`/`postgres` adapter features are mutually exclusive
-# (compile_error! guards), so we build with the default feature set rather
-# than `--all-features`. Use `just check-postgres` for the postgres variant.
 check:
     cargo check --workspace --all-targets
-
-check-postgres:
-    cargo check -p vein --no-default-features --features postgres,tls --all-targets
 
 clippy:
     cargo clippy --workspace --all-targets
 
 doc:
     cargo doc --no-deps --workspace
+
+# Postgres URL the test suite may create schemas in (one per test).
+export VEIN_TEST_DATABASE_URL := env("VEIN_TEST_DATABASE_URL", "postgres://vein:vein@127.0.0.1:5432/vein_test")
 
 test *ARGS:
     cargo test --workspace {{ARGS}}

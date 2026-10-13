@@ -1,9 +1,8 @@
-use std::cmp::Ordering;
-
 use super::{
     GemVersion, QuarantineStats,
     types::{IndexStats, SbomCoverage},
 };
+use crate::version::sort_newest_first;
 
 pub fn build_index_stats(
     total_assets: i64,
@@ -61,26 +60,36 @@ pub fn latest_gem_version<T>(rows: Vec<T>) -> Option<GemVersion>
 where
     T: Into<GemVersion>,
 {
-    let mut versions = into_gem_versions(rows);
-    versions.sort_by(|a, b| compare_versions(&b.version, &a.version));
-    versions.into_iter().next()
+    newest_first(rows, |version: &GemVersion| &version.version)
+        .into_iter()
+        .next()
+}
+
+/// `rows` converted and sorted newest version first.
+pub fn newest_first<T, U>(rows: Vec<T>, version: impl Fn(&U) -> &str) -> Vec<U>
+where
+    T: Into<U>,
+{
+    let mut items: Vec<U> = rows.into_iter().map(Into::into).collect();
+    sort_newest_first(&mut items, version);
+    items
 }
 
 pub fn search_like_pattern(query: &str) -> String {
-    format!("%{}%", query)
+    format!("%{query}%")
+}
+
+pub fn search_prefix_pattern(query: &str) -> String {
+    format!("{query}%")
 }
 
 pub fn json_array_like_pattern(value: &str) -> String {
-    format!("%\"{}\"%", value)
+    format!("%\"{value}\"%")
 }
 
 fn clamp_count(value: i64) -> u64 {
-    value.max(0) as u64
+    value.max(0).cast_unsigned()
 }
 
-fn compare_versions(a: &str, b: &str) -> Ordering {
-    match (semver::Version::parse(a), semver::Version::parse(b)) {
-        (Ok(va), Ok(vb)) => va.cmp(&vb),
-        _ => a.cmp(b),
-    }
-}
+#[cfg(test)]
+mod tests;

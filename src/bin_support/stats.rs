@@ -7,18 +7,15 @@ use vein::util::format_bytes;
 
 use super::setup::{build_current_thread_runtime, connect_cache_index, init_tracing, load_config};
 
-pub(crate) fn run_stats(config_path: PathBuf) -> Result<()> {
+pub fn run_stats(config_path: PathBuf) -> Result<()> {
     let config = load_config(config_path)?;
     init_tracing(&config)?;
 
     let rt = build_current_thread_runtime("stats")?;
-    let (index, backend_kind) = connect_cache_index(&rt, &config)?;
+    let (index, _) = connect_cache_index(&rt, &config)?;
     let index_stats = rt.block_on(index.stats())?;
 
-    #[cfg(feature = "sqlite")]
-    println!("SQLite cache: {}", backend_kind.path.display());
-    #[cfg(feature = "postgres")]
-    println!("PostgreSQL cache: {}", backend_kind.url);
+    println!("PostgreSQL cache: {}", config.database.location());
     println!("  total assets: {}", index_stats.total_assets);
     println!("  rubygems assets: {}", index_stats.rubygems_assets);
     println!("  crates assets: {}", index_stats.crate_assets);
@@ -29,7 +26,7 @@ pub(crate) fn run_stats(config_path: PathBuf) -> Result<()> {
         format_bytes(index_stats.total_size_bytes)
     );
     if let Some(last) = index_stats.last_accessed {
-        println!("  last access: {}", last);
+        println!("  last access: {last}");
     }
 
     Ok(())

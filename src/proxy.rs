@@ -13,7 +13,7 @@ mod utils;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use rama::telemetry::tracing::info;
+use rama::{http::client::DefaultHttpWebClient, telemetry::tracing::info};
 
 use crate::{config::Config, upstream::UpstreamClient};
 use vein_adapter::{CacheBackend, FilesystemStorage};
@@ -28,6 +28,8 @@ pub struct VeinProxy {
     index: Arc<CacheBackend>,
     upstreams: Vec<UpstreamTarget>,
     upstream_client: Option<UpstreamClient>,
+    /// Pooled client for the fixed npm and crates.io registries.
+    http: DefaultHttpWebClient,
 }
 
 impl VeinProxy {
@@ -56,6 +58,7 @@ impl VeinProxy {
             index,
             upstreams,
             upstream_client,
+            http: DefaultHttpWebClient::default(),
         })
     }
 }

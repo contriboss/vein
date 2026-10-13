@@ -22,12 +22,12 @@ pub async fn serve_cached(
         .await
         .with_context(|| format!("reading cached file {}", path.display()))?;
 
-    build_cached_response(cacheable, entry.sha256, data)
+    build_cached_response(cacheable, &entry.sha256, data)
 }
 
 fn build_cached_response(
     cacheable: &CacheableRequest,
-    sha256: String,
+    sha256: &str,
     data: Vec<u8>,
 ) -> Result<Response<Body>> {
     let mut builder = Response::builder().status(StatusCode::OK);
@@ -45,7 +45,7 @@ fn build_cached_response(
         );
         headers.insert(
             header::HeaderName::from_static("x-checksum-sha256"),
-            header::HeaderValue::from_str(&sha256)?,
+            header::HeaderValue::from_str(sha256)?,
         );
         headers.insert(
             header::CACHE_CONTROL,
@@ -167,10 +167,10 @@ pub async fn run_cache_miss_flow(
             .headers_mut()
             .ok_or_else(|| anyhow!("failed to get headers for cache miss response"))?;
 
-        copy_header_if_present(&headers, hdrs, header::CONTENT_LENGTH)?;
-        copy_header_if_present(&headers, hdrs, header::CONTENT_TYPE)?;
-        copy_header_if_present(&headers, hdrs, header::LAST_MODIFIED)?;
-        copy_header_if_present(&headers, hdrs, header::ETAG)?;
+        copy_header_if_present(&headers, hdrs, header::CONTENT_LENGTH);
+        copy_header_if_present(&headers, hdrs, header::CONTENT_TYPE);
+        copy_header_if_present(&headers, hdrs, header::LAST_MODIFIED);
+        copy_header_if_present(&headers, hdrs, header::ETAG);
 
         if !hdrs.contains_key(header::CONTENT_TYPE) {
             hdrs.insert(
@@ -198,9 +198,8 @@ fn copy_header_if_present(
     source: &header::HeaderMap,
     target: &mut header::HeaderMap,
     name: header::HeaderName,
-) -> Result<()> {
+) {
     if let Some(value) = source.get(&name) {
         target.insert(name, value.clone());
     }
-    Ok(())
 }

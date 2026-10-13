@@ -22,26 +22,26 @@ use vein::{
 };
 use vein_adapter::CacheBackend;
 
-pub(crate) fn load_config(config_path: PathBuf) -> Result<Arc<Config>> {
+pub fn load_config(config_path: PathBuf) -> Result<Arc<Config>> {
     Ok(Arc::new(
         Config::load(Some(config_path)).context("loading configuration")?,
     ))
 }
 
-pub(crate) fn load_validated_config(config_path: PathBuf) -> Result<Arc<Config>> {
+pub fn load_validated_config(config_path: PathBuf) -> Result<Arc<Config>> {
     let config = load_config(config_path)?;
     config.validate().context("validating configuration")?;
     Ok(config)
 }
 
-pub(crate) fn build_current_thread_runtime(context: &str) -> Result<Runtime> {
+pub fn build_current_thread_runtime(context: &str) -> Result<Runtime> {
     Builder::new_current_thread()
         .enable_all()
         .build()
         .with_context(|| format!("constructing {context} runtime"))
 }
 
-pub(crate) fn connect_cache_index(
+pub fn connect_cache_index(
     rt: &Runtime,
     config: &Arc<Config>,
 ) -> Result<(Arc<CacheBackend>, DatabaseBackend)> {
@@ -49,7 +49,7 @@ pub(crate) fn connect_cache_index(
         .context("connecting to cache index")
 }
 
-pub(crate) fn init_tracing(config: &Config) -> Result<()> {
+pub fn init_tracing(config: &Config) -> Result<()> {
     let filter = EnvFilter::try_from_default_env()
         .or_else(|_| EnvFilter::try_new(&config.logging.level))
         .context("building log filter")?;

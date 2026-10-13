@@ -5,7 +5,7 @@ use vein::catalog;
 
 use super::setup::{build_current_thread_runtime, connect_cache_index, init_tracing, load_config};
 
-pub(crate) fn run_catalog_sync(config_path: PathBuf) -> Result<()> {
+pub fn run_catalog_sync(config_path: PathBuf) -> Result<()> {
     let config = load_config(config_path)?;
     init_tracing(&config)?;
 
@@ -14,7 +14,7 @@ pub(crate) fn run_catalog_sync(config_path: PathBuf) -> Result<()> {
 
     match rt.block_on(catalog::sync_names_once(index.as_ref())) {
         Ok(Some(count)) => {
-            println!("Catalogue synced: {} gem names processed", count);
+            println!("Catalogue synced: {count} gem names processed");
             Ok(())
         }
         Ok(None) => {

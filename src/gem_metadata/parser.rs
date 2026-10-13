@@ -52,16 +52,14 @@ pub fn parse_gem_metadata(
         }
     }
 
-    let metadata_yaml = match metadata_yaml {
-        Some(value) => value,
-        None => return Ok(None),
+    let Some(metadata_yaml) = metadata_yaml else {
+        return Ok(None);
     };
 
     let yaml_value: YamlValue =
         serde_yaml::from_str(&metadata_yaml).context("parsing gem metadata YAML")?;
-    let mapping = match unwrap_tag(&yaml_value) {
-        YamlValue::Mapping(map) => map,
-        _ => return Ok(None),
+    let YamlValue::Mapping(mapping) = unwrap_tag(&yaml_value) else {
+        return Ok(None);
     };
 
     let authors = extract_string_list(mapping_lookup(mapping, "authors"));
@@ -109,13 +107,9 @@ pub fn parse_gem_metadata(
     let specification_version = extract_integer(mapping_lookup(mapping, "specification_version"));
     let built_at = extract_string(mapping_lookup(mapping, "date"));
 
-    let mut effective_has_native_extensions = has_native_extensions;
-    if !extensions.is_empty() {
-        effective_has_native_extensions = true;
-    }
-    if spec_platform.as_deref().is_some_and(|plat| plat != "ruby") {
-        effective_has_native_extensions = true;
-    }
+    let effective_has_native_extensions = has_native_extensions
+        || !extensions.is_empty()
+        || spec_platform.as_deref().is_some_and(|plat| plat != "ruby");
 
     let native_languages: Vec<String> = detected_languages.into_iter().collect();
 
@@ -167,18 +161,16 @@ pub fn parse_gem_metadata(
 }
 
 pub fn parse_dependencies(value: Option<&YamlValue>) -> Vec<GemDependency> {
-    let sequence = match value.map(unwrap_tag) {
-        Some(YamlValue::Sequence(items)) => items,
-        _ => return Vec::new(),
+    let Some(YamlValue::Sequence(sequence)) = value.map(unwrap_tag) else {
+        return Vec::new();
     };
 
     sequence.iter().filter_map(parse_dependency).collect()
 }
 
 fn parse_dependency(value: &YamlValue) -> Option<GemDependency> {
-    let mapping = match unwrap_tag(value) {
-        YamlValue::Mapping(map) => map,
-        _ => return None,
+    let YamlValue::Mapping(mapping) = unwrap_tag(value) else {
+        return None;
     };
 
     let name = extract_string(mapping_lookup(mapping, "name"))?;
@@ -199,21 +191,18 @@ fn parse_dependency(value: &YamlValue) -> Option<GemDependency> {
 }
 
 pub fn parse_requirement(value: Option<&YamlValue>) -> Option<String> {
-    let mapping = match value.map(unwrap_tag) {
-        Some(YamlValue::Mapping(map)) => map,
-        _ => return None,
+    let Some(YamlValue::Mapping(mapping)) = value.map(unwrap_tag) else {
+        return None;
     };
     let requirements = mapping_lookup(mapping, "requirements")?;
-    let sequence = match unwrap_tag(requirements) {
-        YamlValue::Sequence(seq) => seq,
-        _ => return None,
+    let YamlValue::Sequence(sequence) = unwrap_tag(requirements) else {
+        return None;
     };
 
     let mut parts = Vec::new();
     for requirement in sequence {
-        let elements = match unwrap_tag(requirement) {
-            YamlValue::Sequence(seq) => seq,
-            _ => continue,
+        let YamlValue::Sequence(elements) = unwrap_tag(requirement) else {
+            continue;
         };
         if elements.is_empty() {
             continue;
@@ -267,7 +256,6 @@ pub fn extract_string(value: Option<&YamlValue>) -> Option<String> {
     let value = unwrap_tag_opt(value)?;
     match value {
         YamlValue::String(s) => Some(s.clone()),
-        YamlValue::Null => None,
         YamlValue::Sequence(seq) if !seq.is_empty() => extract_string(Some(&seq[0])),
         YamlValue::Mapping(map) => {
             if let Some(inner) = mapping_lookup(map, "version") {

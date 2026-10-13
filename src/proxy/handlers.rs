@@ -67,14 +67,14 @@ pub async fn handle_sbom_request(
     req: &Request<rama::http::Body>,
     index: &CacheBackend,
 ) -> Result<(rama::http::Response<rama::http::Body>, CacheStatus)> {
-    let query = req.uri().query_or_empty();
-
     #[derive(Deserialize, Default)]
     struct Parameters<'a> {
         name: Option<Cow<'a, str>>,
         version: Option<Cow<'a, str>>,
         platform: Option<Cow<'a, str>>,
     }
+
+    let query = req.uri().query_or_empty();
 
     // or instead of default return error, which IMHO is probably better?
     let Parameters {

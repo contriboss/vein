@@ -21,11 +21,11 @@ pub enum CacheStatus {
 impl std::fmt::Display for CacheStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CacheStatus::Pass => write!(f, "pass"),
-            CacheStatus::Hit => write!(f, "hit"),
-            CacheStatus::Miss => write!(f, "miss"),
-            CacheStatus::Revalidated => write!(f, "revalidated"),
-            CacheStatus::Error => write!(f, "error"),
+            Self::Pass => write!(f, "pass"),
+            Self::Hit => write!(f, "hit"),
+            Self::Miss => write!(f, "miss"),
+            Self::Revalidated => write!(f, "revalidated"),
+            Self::Error => write!(f, "error"),
         }
     }
 }
@@ -50,6 +50,7 @@ impl Default for RequestContext {
 }
 
 impl RequestContext {
+    #[must_use]
     pub fn from_request(req: &Request<Body>) -> Self {
         Self {
             start: Instant::now(),
@@ -101,12 +102,16 @@ impl CacheableRequest {
             || version.contains("..")
             || version.contains('/')
         {
-            tracing::warn!(name = %name, version = %version, "Rejected path traversal in crate request");
+            tracing::warn!(
+                name = %name,
+                version = %version,
+                "Rejected path traversal in crate request"
+            );
             return None;
         }
 
-        let file_name = format!("{}-{}.crate", name, version);
-        let relative_path = format!("crates/{}/{}", name, file_name);
+        let file_name = format!("{name}-{version}.crate");
+        let relative_path = format!("crates/{name}/{file_name}");
 
         Some(Self {
             kind: AssetKind::Crate,
@@ -175,12 +180,11 @@ impl CacheableRequest {
         &self.file_name
     }
 
-    pub fn content_type(&self) -> &'static str {
+    pub const fn content_type(&self) -> &'static str {
         match self.kind {
             AssetKind::Gem => "application/octet-stream",
             AssetKind::Spec => "application/x-deflate",
-            AssetKind::Crate => "application/gzip",
-            AssetKind::NpmPackage => "application/gzip",
+            AssetKind::Crate | AssetKind::NpmPackage => "application/gzip",
         }
     }
 }

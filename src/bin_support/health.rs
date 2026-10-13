@@ -8,7 +8,7 @@ use rama::http::service::client::HttpClientExt;
 
 use super::setup::build_current_thread_runtime;
 
-pub(crate) fn run_health(url: String, timeout: u64) -> Result<()> {
+pub fn run_health(url: &str, timeout: u64) -> Result<()> {
     let rt = build_current_thread_runtime("health check")?;
 
     rt.block_on(async {
@@ -16,7 +16,7 @@ pub(crate) fn run_health(url: String, timeout: u64) -> Result<()> {
             .into_layer(EasyHttpWebClient::default());
 
         let response = client
-            .get(&url)
+            .get(url)
             .send()
             .await
             .map_err(|e| anyhow::anyhow!("sending health check request: {e}"))?;

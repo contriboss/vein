@@ -1,31 +1,33 @@
 [package]
 name = "vein-adapter"
 version = "0.5.0"
-edition = "2024"
-rust-version = "1.97"
-license = "AGPL-3.0-only"
-authors = ["Abdelkader Boudih <oss@seuros.com>"]
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "Shared storage adapters for Vein services"
-repository = "https://github.com/contriboss/vein"
-homepage = "https://github.com/contriboss/vein"
 keywords = ["storage", "cache", "adapter"]
 categories = ["database"]
 
+[lints]
+workspace = true
+
 [features]
-default = ["sqlite", "tls"]
-sqlite = ["sqlx/sqlite"]
-postgres = ["sqlx/postgres"]
+default = ["tls"]
 tls = ["sqlx/tls-rustls-aws-lc-rs"]
+# `test_support::connect_test_backend` for dependants' test suites.
+test-support = []
 
 [dependencies]
-anyhow = "1.0.102"
-sqlx = { version = "0.9.0", features = ["runtime-tokio", "chrono", "migrate"] }
-tokio = { version = "1.52.3", features = ["fs", "macros", "rt-multi-thread", "sync"] }
-chrono = { version = "0.4.45", features = ["serde"] }
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.150"
-semver = "1.0"
-tracing = "0.1"
+anyhow.workspace = true
+sqlx = { workspace = true, features = ["chrono", "migrate", "postgres"] }
+tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread", "sync"] }
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
-tempfile = "3.27.0"
+tempfile.workspace = true

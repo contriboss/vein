@@ -1,6 +1,15 @@
 //! Small shared formatting/sanitization helpers used across the crate.
 
+use std::time::Duration;
+
+/// Tokio sleep in milliseconds: the sleeper for chrono-machines' async retry
+/// driver.
+pub async fn sleep_ms(ms: u64) {
+    tokio::time::sleep(Duration::from_millis(ms)).await;
+}
+
 /// Formats a byte count as a human-readable size (e.g. `1.50 MB`).
+#[must_use]
 pub fn format_bytes(bytes: u64) -> String {
     const UNITS: [&str; 5] = ["B", "KB", "MB", "GB", "TB"];
     if bytes == 0 {
@@ -40,12 +49,14 @@ fn sanitize_chars(input: &str, extra: &[char]) -> String {
 }
 
 /// Sanitizes a string for safe use as a filename segment.
+#[must_use]
 pub fn sanitize_filename(input: &str) -> String {
     sanitize_chars(input, &['-', '_', '.'])
 }
 
 /// Sanitizes an npm path segment (allows `@` and `+` in addition to the
 /// characters permitted by [`sanitize_filename`]).
+#[must_use]
 pub fn sanitize_npm_segment(input: &str) -> String {
     sanitize_chars(input, &['-', '_', '.', '@', '+'])
 }

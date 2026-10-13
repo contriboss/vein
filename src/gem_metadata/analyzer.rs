@@ -84,24 +84,22 @@ pub fn detect_language_from_path(path: &str) -> Option<&'static str> {
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|s| s.to_str())
-        .map(|s| s.to_ascii_lowercase());
+        .map(str::to_ascii_lowercase);
 
     match ext.as_deref() {
         Some("rs") => Some("Rust"),
-        Some("c") | Some("h") => Some("C"),
-        Some("cc") | Some("cpp") | Some("cxx") | Some("hpp") | Some("hh") | Some("hxx") => {
-            Some("C++")
-        }
+        Some("c" | "h") => Some("C"),
+        Some("cc" | "cpp" | "cxx" | "hpp" | "hh" | "hxx") => Some("C++"),
         Some("go") => Some("Go"),
         Some("java") => Some("Java"),
         Some("swift") => Some("Swift"),
         Some("m") => Some("Objective-C"),
         Some("mm") => Some("Objective-C++"),
         Some("cs") => Some("C#"),
-        Some("kt") | Some("kts") => Some("Kotlin"),
+        Some("kt" | "kts") => Some("Kotlin"),
         Some("zig") => Some("Zig"),
         Some("wasm") => Some("WebAssembly"),
-        Some("so") | Some("dll") | Some("dylib") | Some("bundle") => Some("Native Binary"),
+        Some("so" | "dll" | "dylib" | "bundle") => Some("Native Binary"),
         _ => None,
     }
 }

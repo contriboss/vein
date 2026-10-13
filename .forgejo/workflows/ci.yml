@@ -7,14 +7,12 @@ env:
   CARGO_TERM_COLOR: never
   # rama-dns generates bindings with bindgen, which needs libclang
   LIBCLANG_PATH: /usr/local/llvm19/lib
+  # A Postgres the suite may create schemas in; configure it on the runner.
+  VEIN_TEST_DATABASE_URL: ${{ secrets.VEIN_TEST_DATABASE_URL }}
 
 jobs:
   test:
     runs-on: freebsd
-    strategy:
-      fail-fast: false
-      matrix:
-        backend: [sqlite, postgres]
     steps:
       - uses: actions/checkout@v7
 
@@ -23,7 +21,5 @@ jobs:
           rustc --version
           sysctl -n security.jail.jailed
 
-      - name: cargo test (${{ matrix.backend }})
-        # No --workspace: feature unification across members would enable
-        # sqlite alongside postgres, and they are mutually exclusive.
-        run: cargo test --no-default-features --features ${{ matrix.backend }},tls
+      - name: cargo test
+        run: cargo test --workspace

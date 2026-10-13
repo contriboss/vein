@@ -1,26 +1,11 @@
 use chrono::{DateTime, SecondsFormat, Utc};
 use sqlx::FromRow;
 
-use super::types::CachedAsset;
-
-/// Parses an RFC 3339 timestamp string, falling back to the current time when
-/// the stored value cannot be parsed.
-fn parse_timestamp(value: &str) -> DateTime<Utc> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|dt| dt.with_timezone(&Utc))
-        .unwrap_or_else(|_| Utc::now())
-}
+use super::quarantine::GemVersion;
+use super::types::{CachedAsset, CachedVersion};
 
 #[derive(Debug, FromRow)]
 pub struct CachedAssetRow {
-    pub path: String,
-    pub sha256: String,
-    pub size_bytes: i64,
-    pub last_accessed: String,
-}
-
-#[derive(Debug, FromRow)]
-pub struct PostgresCachedAssetRow {
     pub path: String,
     pub sha256: String,
     pub size_bytes: i64,
@@ -29,21 +14,31 @@ pub struct PostgresCachedAssetRow {
 
 impl From<CachedAssetRow> for CachedAsset {
     fn from(value: CachedAssetRow) -> Self {
-        CachedAsset {
+        Self {
             path: value.path,
             sha256: value.sha256,
-            size_bytes: value.size_bytes.max(0) as u64,
-            last_accessed: value.last_accessed,
+            size_bytes: value.size_bytes.max(0).cast_unsigned(),
+            last_accessed: format_timestamp(value.last_accessed),
         }
     }
 }
 
-impl From<PostgresCachedAssetRow> for CachedAsset {
-    fn from(value: PostgresCachedAssetRow) -> Self {
-        CachedAsset {
-            path: value.path,
+#[derive(Debug, FromRow)]
+pub struct CachedVersionRow {
+    pub version: String,
+    pub platform: Option<String>,
+    pub sha256: String,
+    pub size_bytes: i64,
+    pub last_accessed: DateTime<Utc>,
+}
+
+impl From<CachedVersionRow> for CachedVersion {
+    fn from(value: CachedVersionRow) -> Self {
+        Self {
+            version: value.version,
+            platform: value.platform,
             sha256: value.sha256,
-            size_bytes: value.size_bytes.max(0) as u64,
+            size_bytes: value.size_bytes.max(0).cast_unsigned(),
             last_accessed: format_timestamp(value.last_accessed),
         }
     }
@@ -87,30 +82,9 @@ pub fn format_timestamp(ts: DateTime<Utc>) -> String {
     ts.to_rfc3339_opts(SecondsFormat::Millis, true)
 }
 
-// ==================== Quarantine Row Types ====================
-
-use super::quarantine::GemVersion;
-
-/// SQLite row type for gem_versions table (stores DateTime as TEXT)
+/// Row of the `gem_versions` table.
 #[derive(Debug, FromRow)]
 pub struct GemVersionRow {
-    pub id: i64,
-    pub name: String,
-    pub version: String,
-    pub platform: Option<String>,
-    pub sha256: Option<String>,
-    pub published_at: String,
-    pub available_after: String,
-    pub status: String,
-    pub status_reason: Option<String>,
-    pub upstream_yanked: bool,
-    pub created_at: String,
-    pub updated_at: String,
-}
-
-/// PostgreSQL row type for gem_versions table (uses native DateTime)
-#[derive(Debug, FromRow)]
-pub struct PostgresGemVersionRow {
     pub id: i64,
     pub name: String,
     pub version: String,
@@ -127,26 +101,7 @@ pub struct PostgresGemVersionRow {
 
 impl From<GemVersionRow> for GemVersion {
     fn from(row: GemVersionRow) -> Self {
-        GemVersion {
-            id: row.id,
-            name: row.name,
-            version: row.version,
-            platform: row.platform,
-            sha256: row.sha256,
-            published_at: parse_timestamp(&row.published_at),
-            available_after: parse_timestamp(&row.available_after),
-            status: row.status.parse().unwrap_or_default(),
-            status_reason: row.status_reason,
-            upstream_yanked: row.upstream_yanked,
-            created_at: parse_timestamp(&row.created_at),
-            updated_at: parse_timestamp(&row.updated_at),
-        }
-    }
-}
-
-impl From<PostgresGemVersionRow> for GemVersion {
-    fn from(row: PostgresGemVersionRow) -> Self {
-        GemVersion {
+        Self {
             id: row.id,
             name: row.name,
             version: row.version,

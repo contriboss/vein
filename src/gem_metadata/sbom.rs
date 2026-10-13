@@ -1,4 +1,4 @@
-//! CycloneDX SBOM generation.
+//! `CycloneDX` SBOM generation.
 
 use anyhow::{Context, Result, anyhow};
 use cyclonedx_bom::{
@@ -20,6 +20,7 @@ state_machine! {
     name: SbomFlow,
     initial: Pending,
     states: [Pending, Ready],
+    final_states: [Ready],
     events {
         reuse {
             transition: { from: Pending, to: Ready }
@@ -38,7 +39,7 @@ struct SbomContext {
 }
 
 impl SbomContext {
-    fn new(existing: Option<serde_json::Value>) -> Self {
+    const fn new(existing: Option<serde_json::Value>) -> Self {
         Self {
             existing,
             result: None,
@@ -46,7 +47,7 @@ impl SbomContext {
         }
     }
 
-    fn has_existing(&self) -> bool {
+    const fn has_existing(&self) -> bool {
         self.existing.is_some()
     }
 
@@ -71,11 +72,11 @@ impl SbomContext {
 }
 
 impl<S> SbomFlow<SbomContext, S> {
-    fn ctx(&self) -> &SbomContext {
+    const fn ctx(&self) -> &SbomContext {
         &self.ctx
     }
 
-    fn ctx_mut(&mut self) -> &mut SbomContext {
+    const fn ctx_mut(&mut self) -> &mut SbomContext {
         &mut self.ctx
     }
 
@@ -101,7 +102,7 @@ impl SbomFlow<SbomContext, Pending> {
     }
 }
 
-/// Generate a CycloneDX SBOM for a gem.
+/// Generate a `CycloneDX` SBOM for a gem.
 pub fn generate_cyclonedx_sbom(
     metadata: &GemMetadata,
     existing_sbom: Option<serde_json::Value>,
@@ -154,7 +155,7 @@ fn compute_cyclonedx_sbom(metadata: &GemMetadata) -> Result<Option<serde_json::V
         Classification::Library,
         &metadata.name,
         &metadata.version,
-        Some(root_ref.clone()),
+        Some(root_ref),
     );
 
     if let Some(desc) = metadata
@@ -300,7 +301,7 @@ fn compute_cyclonedx_sbom(metadata: &GemMetadata) -> Result<Option<serde_json::V
         env!("CARGO_PKG_VERSION"),
     )]));
 
-    if let Some(component_licenses) = component.licenses.clone() {
+    if let Some(component_licenses) = component.licenses {
         bom_metadata.licenses = Some(component_licenses);
     }
 

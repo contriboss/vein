@@ -1,7 +1,7 @@
 # Multi-stage build for Vein RubyGems proxy server
 
 # Stage 1: Builder
-FROM rust:1.97-bookworm AS builder
+FROM rust:1.99-bookworm AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
@@ -19,9 +19,9 @@ WORKDIR /build
 COPY Cargo.toml ./
 COPY src ./src
 COPY crates ./crates
+COPY assets ./assets
 
-# Build for native architecture with PostgreSQL support
-RUN cargo build --release --no-default-features --features tls,postgres
+RUN cargo build --release
 
 # Stage 2: Runtime
 FROM debian:bookworm-slim

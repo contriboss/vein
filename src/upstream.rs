@@ -1,48 +1,50 @@
-use anyhow::{Result, anyhow};
-use breaker_machines::CircuitBreaker;
-use chrono_machines::{
-    BackoffPolicy, BackoffStrategy, ConstantBackoff, ExponentialBackoff, FibonacciBackoff,
-};
+use anyhow::{Context as _, Result, anyhow};
+use breaker_machines::{AsyncCircuitBreaker, CircuitError};
+use chrono_machines::{AsyncRetryable, BackoffPolicy, DelayHint};
 use rama::{
     Service,
+    error::BoxError,
     http::{
-        Body, Method, Request, Response,
+        Body, Method, Request, Response, StatusCode, StreamingBody,
         body::util::BodyExt as _,
-        client::EasyHttpWebClient,
+        client::DefaultHttpWebClient,
         header::{self, HeaderMap, HeaderValue, USER_AGENT},
+        headers::{After, HeaderMapExt as _, RetryAfter},
         layer::trace::TraceLayer,
     },
     layer::Layer,
     net::uri::Uri,
-    telemetry::tracing,
+    telemetry::tracing::{info, warn},
 };
-use rand::SeedableRng;
-use rand::rngs::SmallRng;
-use std::sync::{Arc, Mutex};
-use tracing::{info, warn};
+use std::{
+    collections::HashMap,
+    fmt,
+    sync::{Arc, Mutex},
+    time::{Duration, SystemTime},
+};
 
-use crate::config::{BackoffStrategy as ConfigBackoffStrategy, UpstreamConfig};
+use crate::config::UpstreamConfig;
 
 pub const UA: &str = concat!("vein/", env!("CARGO_PKG_VERSION"));
 
-/// Performs a one-shot upstream `GET` (no retry/circuit-breaker), setting the
-/// vein user-agent and forwarding `extra_headers`. When `accept` is provided it
-/// is applied only if `extra_headers` did not already set an `Accept` header.
+/// Performs a one-shot upstream `GET` without retry or circuit breaker.
+///
+/// Sets the vein user-agent and forwards `extra_headers`. When `accept` is
+/// provided it is applied only if `extra_headers` did not already set an
+/// `Accept` header.
 pub async fn simple_get(
+    client: &DefaultHttpWebClient,
     url: &str,
     extra_headers: &HeaderMap,
     accept: Option<&str>,
 ) -> Result<Response<Body>> {
-    let client = EasyHttpWebClient::default();
     let mut builder = Request::builder().method(Method::GET).uri(url);
     {
         let headers = builder
             .headers_mut()
             .ok_or_else(|| anyhow!("cannot get headers mut"))?;
+        headers.extend(extra_headers.clone());
         headers.insert(USER_AGENT, HeaderValue::from_static(UA));
-        for (name, value) in extra_headers {
-            headers.insert(name, value.clone());
-        }
         if let Some(accept) = accept
             && !headers.contains_key(header::ACCEPT)
         {
@@ -58,170 +60,204 @@ pub async fn simple_get(
         .map_err(|e| anyhow!("upstream request failed: {e}"))
 }
 
-/// Rama-based upstream HTTP client with retry, circuit breaker, and tracing.
+/// Reads `response`'s body into memory and rebuilds it with the same status
+/// and headers, repeated headers included.
+///
+/// `Transfer-Encoding` is dropped when `strip_transfer_encoding` is set, since
+/// the body is no longer chunked.
+pub async fn buffer_response<B>(
+    response: Response<B>,
+    strip_transfer_encoding: bool,
+) -> Result<Response<Body>>
+where
+    B: StreamingBody<Error: Into<BoxError>>,
+{
+    let (parts, body) = response.into_parts();
+    let bytes = body
+        .collect()
+        .await
+        .map_err(|e| anyhow::Error::from_boxed(e.into()))
+        .context("reading upstream response body")?
+        .to_bytes();
+
+    let mut buffered = Response::new(Body::from(bytes));
+    *buffered.status_mut() = parts.status;
+    *buffered.headers_mut() = parts.headers;
+    if strip_transfer_encoding {
+        buffered.headers_mut().remove(header::TRANSFER_ENCODING);
+    }
+    Ok(buffered)
+}
+
+/// Why a single upstream attempt is worth retrying.
+enum AttemptError {
+    /// Upstream answered, but with a 5xx or 429. Kept so the last answer can
+    /// be handed to the caller once retries run out.
+    Status(Box<Response<Body>>),
+    /// Connection, TLS, or body-read failure.
+    Transport(anyhow::Error),
+}
+
+impl fmt::Display for AttemptError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Status(response) => write!(f, "upstream returned {}", response.status()),
+            Self::Transport(err) => write!(f, "{err:#}"),
+        }
+    }
+}
+
+impl AttemptError {
+    /// The upstream's `Retry-After`, if it sent a usable one.
+    fn retry_after(&self) -> Option<Duration> {
+        let Self::Status(response) = self else {
+            return None;
+        };
+        match response.headers().typed_get::<RetryAfter>()?.after() {
+            After::Delay(seconds) => Some(seconds.into()),
+            After::DateTime(date) => SystemTime::from(date)
+                .duration_since(SystemTime::now())
+                .ok(),
+        }
+    }
+}
+
+/// Rama-based upstream HTTP client with retry, per-upstream circuit breakers,
+/// tracing, and a pooled connection set shared by every clone.
 #[derive(Clone)]
 pub struct UpstreamClient {
-    pub backoff: BackoffPolicy,
-    pub breaker: Arc<Mutex<CircuitBreaker>>,
+    backoff: BackoffPolicy,
+    http: DefaultHttpWebClient,
+    breakers: Arc<Mutex<HashMap<String, Arc<AsyncCircuitBreaker>>>>,
+    half_open_timeout_secs: f64,
 }
 
 impl UpstreamClient {
     pub fn new(config: &UpstreamConfig) -> Result<Self> {
-        // Configure circuit breaker for upstream resilience
-        // Open circuit after 5 server errors in 60s window, reset after 30s
-        let breaker = CircuitBreaker::builder("rubygems_upstream")
-            .failure_threshold(5)
-            .failure_window_secs(60.0)
-            .half_open_timeout_secs(30.0)
-            .success_threshold(2)
-            .jitter_factor(0.1) // 10% jitter on reset timeout
-            .on_open(|name| {
-                warn!(circuit = %name, "Circuit breaker opened - upstream is failing");
-            })
-            .on_close(|name| {
-                info!(circuit = %name, "Circuit breaker closed - upstream recovered");
-            })
-            .on_half_open(|name| {
-                info!(circuit = %name, "Circuit breaker half-open - testing upstream");
-            })
-            .build();
-
-        let retry = &config.reliability.retry;
-        let max_delay_ms = retry.max_backoff_secs * 1000;
-        let jitter = retry.jitter_factor;
-        let max_attempts = retry.max_attempts as u8;
-
-        let backoff: BackoffPolicy = match retry.backoff_strategy {
-            ConfigBackoffStrategy::Exponential => ExponentialBackoff::new()
-                .base_delay_ms(retry.initial_backoff_ms)
-                .max_delay_ms(max_delay_ms)
-                .max_attempts(max_attempts)
-                .jitter_factor(jitter)
-                .into(),
-            ConfigBackoffStrategy::Fibonacci => FibonacciBackoff::new()
-                .base_delay_ms(retry.initial_backoff_ms)
-                .max_delay_ms(max_delay_ms)
-                .max_attempts(max_attempts)
-                .jitter_factor(jitter)
-                .into(),
-            ConfigBackoffStrategy::Constant => ConstantBackoff::new()
-                .delay_ms(retry.initial_backoff_ms)
-                .max_attempts(max_attempts)
-                .jitter_factor(jitter)
-                .into(),
-        };
-
         Ok(Self {
-            backoff,
-            breaker: Arc::new(Mutex::new(breaker)),
+            backoff: config.reliability.retry.backoff_policy(),
+            http: DefaultHttpWebClient::default(),
+            breakers: Arc::default(),
+            half_open_timeout_secs: 30.0,
         })
     }
 
-    /// Sleeps for the backoff delay computed for `attempt`, if any.
-    async fn sleep_backoff(&self, attempt: u8, rng: &mut SmallRng) {
-        if let Some(delay_ms) = self.backoff.delay(attempt, rng) {
-            tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+    /// The breaker guarding `url`'s host. Each upstream trips on its own, so
+    /// a failing primary does not also lock out its fallbacks.
+    fn breaker_for(&self, url: &Uri) -> Arc<AsyncCircuitBreaker> {
+        let key = url
+            .authority()
+            .map(|authority| authority.to_string())
+            .unwrap_or_default();
+        let mut breakers = self
+            .breakers
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        breakers
+            .entry(key)
+            .or_insert_with_key(|key| Arc::new(build_breaker(key, self.half_open_timeout_secs)))
+            .clone()
+    }
+
+    /// `GET url`, retrying 5xx, 429, and transport failures with backoff (or
+    /// the upstream's `Retry-After`). The whole retry sequence counts as one
+    /// call against the upstream's circuit breaker; 429s never trip it.
+    ///
+    /// Once retries run out on a 5xx or 429, that response is returned as
+    /// `Ok` so callers can relay it.
+    pub async fn get_with_headers(&self, url: Uri, headers: &HeaderMap) -> Result<Response<Body>> {
+        let breaker = self.breaker_for(&url);
+        match breaker.call(|| self.fetch_with_retry(&url, headers)).await {
+            Ok(response) => Ok(response),
+            Err(CircuitError::Execution(AttemptError::Status(response))) => Ok(*response),
+            Err(CircuitError::Execution(AttemptError::Transport(err))) => Err(err),
+            Err(err) => Err(anyhow!("upstream {url} unavailable: {err}")),
         }
     }
 
-    pub async fn get_with_headers(&self, url: Uri, headers: &HeaderMap) -> Result<Response<Body>> {
-        // Check if circuit is open before attempting request
-        if self
-            .breaker
-            .lock()
-            .expect("circuit breaker lock poisoned")
-            .is_open()
-        {
-            return Err(anyhow!(
-                "Circuit breaker is open - upstream is currently unavailable"
-            ));
+    async fn fetch_with_retry(
+        &self,
+        url: &Uri,
+        headers: &HeaderMap,
+    ) -> Result<Response<Body>, AttemptError> {
+        let result = (|| self.attempt(url, headers))
+            .retry_async(self.backoff)
+            .delay_from(|err: &AttemptError, _attempt| match err.retry_after() {
+                Some(delay) => DelayHint::Ms(u64::try_from(delay.as_millis()).unwrap_or(u64::MAX)),
+                None => DelayHint::Backoff,
+            })
+            .call_async(crate::util::sleep_ms)
+            .await;
+
+        match result {
+            Ok(outcome) => Ok(outcome.into_inner()),
+            Err(err) => match err.into_cause() {
+                // Being rate limited says nothing about upstream health.
+                Some(AttemptError::Status(response))
+                    if response.status() == StatusCode::TOO_MANY_REQUESTS =>
+                {
+                    Ok(*response)
+                }
+                Some(cause) => Err(cause),
+                None => Err(AttemptError::Transport(anyhow!(
+                    "upstream retry for {url} ended without a cause"
+                ))),
+            },
         }
+    }
 
-        let client = (TraceLayer::new_for_http(),).into_layer(EasyHttpWebClient::default());
-        let mut attempt: u8 = 0;
-        let mut rng = {
-            let mut seed_rng = rand::rng();
-            SmallRng::from_rng(&mut seed_rng)
-        };
-        let start_time = std::time::Instant::now();
-        let max_attempts = self.backoff.max_attempts();
+    async fn attempt(
+        &self,
+        url: &Uri,
+        headers: &HeaderMap,
+    ) -> Result<Response<Body>, AttemptError> {
+        let mut request = Request::new(Body::empty());
+        *request.method_mut() = Method::GET;
+        *request.uri_mut() = url.clone();
+        *request.headers_mut() = headers.clone();
+        request
+            .headers_mut()
+            .insert(USER_AGENT, HeaderValue::from_static(UA));
 
-        loop {
-            attempt += 1;
+        let client = TraceLayer::new_for_http().into_layer(self.http.clone());
+        let response = client
+            .serve(request)
+            .await
+            .map_err(|e| AttemptError::Transport(anyhow!("upstream request failed: {e}")))?;
+        // Buffer inside the attempt so a body cut short is retried like any
+        // other transport failure.
+        let response = buffer_response(response, false)
+            .await
+            .map_err(AttemptError::Transport)?;
 
-            let mut builder = Request::builder().method(Method::GET).uri(url.clone());
-            {
-                let h = builder
-                    .headers_mut()
-                    .ok_or_else(|| anyhow!("cannot get headers mut"))?;
-                for (name, value) in headers {
-                    h.insert(name, value.clone());
-                }
-                h.insert(USER_AGENT, HeaderValue::from_static(UA));
-            }
-
-            let request = builder
-                .body(Body::empty())
-                .map_err(|e| anyhow!("building upstream request: {e}"))?;
-
-            match client.serve(request).await {
-                Ok(response) if response.status().is_server_error() && attempt < max_attempts => {
-                    // Server error but we have retries left - use chrono-machines backoff
-                    self.sleep_backoff(attempt, &mut rng).await;
-                    continue;
-                }
-                Ok(response) => {
-                    let status = response.status();
-                    let duration = start_time.elapsed().as_secs_f64();
-
-                    // Record success or failure based on status code
-                    if status.is_server_error() {
-                        // This is the final attempt and it failed with 5xx
-                        let mut breaker =
-                            self.breaker.lock().expect("circuit breaker lock poisoned");
-                        breaker.record_failure(duration);
-                        breaker.check_and_trip();
-                    } else {
-                        // Success or client error (4xx) - don't trip on client errors
-                        self.breaker
-                            .lock()
-                            .expect("circuit breaker lock poisoned")
-                            .record_success(duration);
-                    }
-
-                    let resp_headers = response.headers().clone();
-                    let body_bytes = response.into_body().collect().await?.to_bytes();
-
-                    let mut builder = Response::builder().status(status);
-                    {
-                        let h = builder
-                            .headers_mut()
-                            .ok_or_else(|| anyhow!("cannot get headers mut"))?;
-                        for (name, value) in resp_headers.iter() {
-                            h.insert(name, value.clone());
-                        }
-                    }
-
-                    return builder
-                        .body(Body::from(body_bytes))
-                        .map_err(|e| anyhow!("rebuilding upstream response: {e}"));
-                }
-                Err(err) => {
-                    let duration = start_time.elapsed().as_secs_f64();
-
-                    if attempt >= max_attempts {
-                        // All retries exhausted - record failure and try to trip
-                        let mut breaker =
-                            self.breaker.lock().expect("circuit breaker lock poisoned");
-                        breaker.record_failure(duration);
-                        breaker.check_and_trip();
-                        return Err(anyhow!("upstream request failed: {err}"));
-                    }
-
-                    // Use chrono-machines backoff with jitter
-                    self.sleep_backoff(attempt, &mut rng).await;
-                }
-            }
+        let status = response.status();
+        if status.is_server_error() || status == StatusCode::TOO_MANY_REQUESTS {
+            Err(AttemptError::Status(Box::new(response)))
+        } else {
+            Ok(response)
         }
     }
 }
+
+fn build_breaker(name: &str, half_open_timeout_secs: f64) -> AsyncCircuitBreaker {
+    // Open after 5 failed calls in 60s, then probe again once the timeout lapses.
+    AsyncCircuitBreaker::builder(format!("upstream:{name}"))
+        .failure_threshold(5)
+        .failure_window_secs(60.0)
+        .half_open_timeout_secs(half_open_timeout_secs)
+        .success_threshold(2)
+        .jitter_factor(0.1) // 10% jitter on reset timeout
+        .on_open(|name| {
+            warn!(circuit = %name, "Circuit breaker opened - upstream is failing");
+        })
+        .on_close(|name| {
+            info!(circuit = %name, "Circuit breaker closed - upstream recovered");
+        })
+        .on_half_open(|name| {
+            info!(circuit = %name, "Circuit breaker half-open - testing upstream");
+        })
+        .build_async()
+}
+
+#[cfg(test)]
+mod tests;

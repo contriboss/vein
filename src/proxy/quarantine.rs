@@ -47,7 +47,7 @@ pub async fn record_new_version(
     let status_reason = if status == VersionStatus::Pinned {
         config
             .pin_reason(name, version)
-            .map(|r| format!("pinned: {}", r))
+            .map(|r| format!("pinned: {r}"))
             .or_else(|| Some("zero-delay gem".to_string()))
     } else {
         Some("auto".to_string())
@@ -101,9 +101,9 @@ pub async fn filter_compact_info(
         return Ok(body.to_vec());
     }
 
-    let body_str = match std::str::from_utf8(body) {
-        Ok(s) => s,
-        Err(_) => return Ok(body.to_vec()), // Not UTF-8, pass through
+    // Not UTF-8: pass through untouched.
+    let Ok(body_str) = std::str::from_utf8(body) else {
+        return Ok(body.to_vec());
     };
 
     let now = Utc::now();
@@ -166,7 +166,7 @@ pub async fn filter_compact_info(
 
 /// Parses a compact index line to extract the version key.
 ///
-/// Returns (version_key, rest_of_line) where version_key is "version" or "version:platform"
+/// Returns (`version_key`, `rest_of_line`) where `version_key` is "version" or "version:platform"
 fn parse_compact_line(line: &str) -> Option<(String, &str)> {
     // Find the first pipe which separates version info from checksum
     let pipe_pos = line.find('|')?;
@@ -185,42 +185,10 @@ fn parse_compact_line(line: &str) -> Option<(String, &str)> {
 /// Formats a version key for lookup.
 fn format_version_key(version: &str, platform: Option<&str>) -> String {
     match platform {
-        Some(p) if p != "ruby" => format!("{}:{}", version, p),
+        Some(p) if p != "ruby" => format!("{version}:{p}"),
         _ => version.to_string(),
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_compact_line_simple() {
-        let (key, rest) = parse_compact_line("1.0.0 |abc123|dep1").unwrap();
-        assert_eq!(key, "1.0.0");
-        assert_eq!(rest, "|abc123|dep1");
-    }
-
-    #[test]
-    fn test_parse_compact_line_with_platform() {
-        let (key, rest) = parse_compact_line("1.0.0 x86_64-linux|abc123|dep1").unwrap();
-        assert_eq!(key, "1.0.0:x86_64-linux");
-        assert_eq!(rest, "|abc123|dep1");
-    }
-
-    #[test]
-    fn test_parse_compact_line_ruby_platform() {
-        let (key, _) = parse_compact_line("1.0.0 ruby|abc123|").unwrap();
-        assert_eq!(key, "1.0.0"); // ruby platform treated as no platform
-    }
-
-    #[test]
-    fn test_format_version_key() {
-        assert_eq!(format_version_key("1.0.0", None), "1.0.0");
-        assert_eq!(format_version_key("1.0.0", Some("ruby")), "1.0.0");
-        assert_eq!(
-            format_version_key("1.0.0", Some("x86_64-linux")),
-            "1.0.0:x86_64-linux"
-        );
-    }
-}
+mod tests;

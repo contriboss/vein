@@ -8,6 +8,7 @@ use rama::net::Protocol;
 use serde::Deserialize;
 
 // Re-export all submodules
+pub mod admin;
 pub mod database;
 pub mod delay_policy;
 pub mod logging;
@@ -27,6 +28,7 @@ pub(crate) fn resolve_relative(path: &mut PathBuf, base_dir: &Path) {
 }
 
 // Re-export types from submodules for convenience
+pub use admin::{AdminConfig, McpSettings};
 pub use database::{DatabaseBackend, DatabaseConfig};
 pub use delay_policy::DelayPolicyConfig;
 pub use logging::LoggingConfig;
@@ -49,6 +51,8 @@ pub struct Config {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub delay_policy: DelayPolicyConfig,
+    #[serde(default)]
+    pub admin: AdminConfig,
 }
 
 impl Config {
@@ -57,14 +61,11 @@ impl Config {
         if candidate.exists() {
             let raw = fs::read_to_string(&candidate)
                 .with_context(|| format!("failed to read config {}", candidate.display()))?;
-            let mut config: Config = toml::from_str(&raw)
+            let mut config: Self = toml::from_str(&raw)
                 .with_context(|| format!("invalid config {}", candidate.display()))?;
             config
                 .storage
-                .normalize_paths(candidate.parent().unwrap_or(Path::new(".")));
-            config
-                .database
-                .normalize_paths(candidate.parent().unwrap_or(Path::new(".")));
+                .normalize_paths(candidate.parent().unwrap_or_else(|| Path::new(".")));
             Ok(config)
         } else {
             if let Some(path) = candidate.to_str() {
@@ -74,10 +75,9 @@ impl Config {
             } else {
                 rama::telemetry::tracing::warn!("configuration file not found, using defaults");
             }
-            let mut config = Config::default();
+            let mut config = Self::default();
             let cwd = std::env::current_dir().context("reading current directory")?;
             config.storage.normalize_paths(&cwd);
-            config.database.normalize_paths(&cwd);
             Ok(config)
         }
     }

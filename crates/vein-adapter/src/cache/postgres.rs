@@ -1,5 +1,7 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
+#[cfg(any(test, feature = "test-support"))]
+use sqlx::{Connection as _, PgConnection, postgres::PgConnectOptions};
 use sqlx::{
     PgPool, Transaction,
     postgres::{PgPoolOptions, Postgres},
@@ -9,16 +11,39 @@ use super::{
     CacheBackendTrait, GemVersion, QuarantineStats, VersionStatus,
     backend_common::{
         build_index_stats, build_quarantine_stats, build_sbom_coverage, into_gem_versions,
-        json_array_like_pattern, latest_gem_version, search_like_pattern,
+        json_array_like_pattern, latest_gem_version, newest_first, search_like_pattern,
+        search_prefix_pattern,
     },
-    models::{DbGemMetadataRow, PostgresCachedAssetRow, PostgresGemVersionRow, format_timestamp},
+    models::{CachedAssetRow, CachedVersionRow, DbGemMetadataRow, GemVersionRow, format_timestamp},
     serialization::{hydrate_metadata_row, parse_language_rows, prepare_metadata_strings},
-    types::{AssetKey, CachedAsset, GemMetadata, IndexStats, SbomCoverage},
+    types::{
+        AssetKey, AssetKind, CachedAsset, CachedVersion, GemMetadata, IndexStats, SbomCoverage,
+    },
 };
+
+/// Ranks name matches: exact, then case-insensitive exact, then prefix, then
+/// the rest, in code-point order within each (`COLLATE ucs_basic`, so results
+/// do not depend on the database collation). Binds `$2` limit, `$3` query,
+/// `$4` prefix pattern.
+macro_rules! rank_by_name {
+    () => {
+        "ORDER BY CASE
+             WHEN name = $3 THEN 0
+             WHEN lower(name) = lower($3) THEN 1
+             WHEN name ILIKE $4 THEN 2
+             ELSE 3
+         END,
+         name COLLATE ucs_basic
+         LIMIT $2"
+    };
+}
 
 #[derive(Debug, Clone)]
 pub struct PostgresCacheBackend {
     pool: PgPool,
+    /// Drops the per-test schema once the last clone is gone.
+    #[cfg(any(test, feature = "test-support"))]
+    isolation: Option<std::sync::Arc<test_schema::SchemaGuard>>,
 }
 
 impl PostgresCacheBackend {
@@ -30,25 +55,72 @@ impl PostgresCacheBackend {
             .test_before_acquire(true)
             .connect(url)
             .await
-            .with_context(|| format!("connecting to postgres database {}", url))?;
+            .with_context(|| format!("connecting to postgres database {url}"))?;
 
-        // Run migrations
+        let backend = Self::migrate(pool).await?;
+        Ok(backend)
+    }
+
+    /// A backend on a fresh, uniquely named schema of the database at `url`,
+    /// so concurrent tests never see each other's rows. The schema is dropped
+    /// when the last clone of the backend goes away; schemas a killed run
+    /// left behind are swept once per process.
+    ///
+    /// # Errors
+    ///
+    /// When `url` does not parse, the database is unreachable, the schema
+    /// cannot be created, or migrations fail.
+    #[cfg(any(test, feature = "test-support"))]
+    pub async fn connect_isolated(url: &str) -> Result<Self> {
+        let options: PgConnectOptions = url
+            .parse()
+            .with_context(|| format!("parsing postgres url {url}"))?;
+        let schema = test_schema::fresh_name();
+
+        let mut admin = PgConnection::connect_with(&options)
+            .await
+            .with_context(|| format!("connecting to postgres database {url}"))?;
+        test_schema::sweep_stale(&mut admin).await?;
+        sqlx::query(sqlx::AssertSqlSafe(format!("CREATE SCHEMA {schema}")))
+            .execute(&mut admin)
+            .await
+            .with_context(|| format!("creating test schema {schema}"))?;
+        admin.close().await.context("closing admin connection")?;
+
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect_with(options.clone().options([("search_path", schema.as_str())]))
+            .await
+            .with_context(|| format!("connecting to test schema {schema}"))?;
+
+        let mut backend = Self::migrate(pool).await?;
+        backend.isolation = Some(std::sync::Arc::new(test_schema::SchemaGuard::new(
+            options, schema,
+        )));
+        Ok(backend)
+    }
+
+    async fn migrate(pool: PgPool) -> Result<Self> {
         sqlx::migrate!("./migrations/postgres")
             .run(&pool)
             .await
             .context("running postgres migrations")?;
 
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            #[cfg(any(test, feature = "test-support"))]
+            isolation: None,
+        })
     }
 
     async fn touch(&self, key: &AssetKey<'_>) -> Result<()> {
         sqlx::query(
-            r#"
+            r"
             UPDATE cached_assets
             SET last_accessed = NOW()
             WHERE kind = $1 AND name = $2 AND version = $3 AND
                   ((platform IS NULL AND $4 IS NULL) OR platform = $4)
-            "#,
+            ",
         )
         .bind(key.kind.as_str())
         .bind(key.name)
@@ -67,7 +139,7 @@ impl PostgresCacheBackend {
         platform: Option<&str>,
     ) -> Result<Option<GemMetadata>> {
         let record = sqlx::query_as::<_, DbGemMetadataRow>(
-            r#"
+            r"
             SELECT
                 name,
                 version,
@@ -103,7 +175,7 @@ impl PostgresCacheBackend {
             WHERE name = $1
               AND version = $2
               AND platform = $3
-            "#,
+            ",
         )
         .bind(name)
         .bind(version)
@@ -120,7 +192,7 @@ impl PostgresCacheBackend {
 
     pub async fn sbom_coverage_stats(&self) -> Result<SbomCoverage> {
         let (total, with_sbom) = sqlx::query_as::<_, (i64, i64)>(
-            r#"
+            r"
             SELECT
                 COUNT(*) as total,
                 COALESCE(
@@ -129,7 +201,7 @@ impl PostgresCacheBackend {
                     0
                 ) as with_sbom
             FROM gem_metadata
-            "#,
+            ",
         )
         .fetch_one(&self.pool)
         .await
@@ -140,11 +212,11 @@ impl PostgresCacheBackend {
 
     pub async fn catalog_languages_list(&self) -> Result<Vec<String>> {
         let rows = sqlx::query_scalar::<_, Option<String>>(
-            r#"
+            r"
             SELECT native_languages_json
             FROM gem_metadata
             WHERE native_languages_json IS NOT NULL AND native_languages_json <> ''
-            "#,
+            ",
         )
         .fetch_all(&self.pool)
         .await
@@ -164,7 +236,7 @@ impl PostgresCacheBackend {
         let prepared = prepare_metadata_strings(metadata)?;
 
         sqlx::query(
-            r#"
+            r"
             INSERT INTO gem_metadata(
                 name,
                 version,
@@ -230,7 +302,7 @@ impl PostgresCacheBackend {
                 size_bytes = EXCLUDED.size_bytes,
                 sha256 = EXCLUDED.sha256,
                 sbom_json = EXCLUDED.sbom_json
-            "#,
+            ",
         )
         .bind(&metadata.name)
         .bind(&metadata.version)
@@ -272,13 +344,13 @@ impl PostgresCacheBackend {
 
 impl CacheBackendTrait for PostgresCacheBackend {
     async fn get(&self, key: &AssetKey<'_>) -> Result<Option<CachedAsset>> {
-        let record = sqlx::query_as::<_, PostgresCachedAssetRow>(
-            r#"
+        let record = sqlx::query_as::<_, CachedAssetRow>(
+            r"
             SELECT path, sha256, size_bytes, last_accessed
             FROM cached_assets
             WHERE kind = $1 AND name = $2 AND version = $3 AND
                   ((platform IS NULL AND $4 IS NULL) OR platform = $4)
-            "#,
+            ",
         )
         .bind(key.kind.as_str())
         .bind(key.name)
@@ -304,7 +376,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         size_bytes: u64,
     ) -> Result<()> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO cached_assets(
                 kind, name, version, platform, path, sha256, size_bytes, last_accessed
             )
@@ -315,7 +387,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
                 sha256 = EXCLUDED.sha256,
                 size_bytes = EXCLUDED.size_bytes,
                 last_accessed = EXCLUDED.last_accessed
-            "#,
+            ",
         )
         .bind(key.kind.as_str())
         .bind(key.name)
@@ -323,7 +395,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         .bind(key.platform)
         .bind(path)
         .bind(sha256)
-        .bind(size_bytes as i64)
+        .bind(i64::try_from(size_bytes).context("asset size exceeds i64")?)
         .execute(&self.pool)
         .await
         .context("inserting cached asset (postgres)")?;
@@ -332,17 +404,50 @@ impl CacheBackendTrait for PostgresCacheBackend {
 
     async fn get_all_gems(&self) -> Result<Vec<(String, String)>> {
         let rows = sqlx::query_as::<_, (String, String)>(
-            r#"
-            SELECT DISTINCT name, version
+            r"
+            SELECT name, version
             FROM cached_assets
             WHERE kind = 'gem'
-            ORDER BY name, version
-            "#,
+            GROUP BY name, version
+            ORDER BY name COLLATE ucs_basic, version COLLATE ucs_basic
+            ",
         )
         .fetch_all(&self.pool)
         .await
         .context("fetching all gems (postgres)")?;
 
+        Ok(rows)
+    }
+
+    async fn cached_versions(&self, kind: AssetKind, name: &str) -> Result<Vec<CachedVersion>> {
+        let rows = sqlx::query_as::<_, CachedVersionRow>(
+            r"
+            SELECT version, platform, sha256, size_bytes, last_accessed
+            FROM cached_assets
+            WHERE kind = $1 AND name = $2
+            ",
+        )
+        .bind(kind.as_str())
+        .bind(name)
+        .fetch_all(&self.pool)
+        .await
+        .context("fetching cached versions (postgres)")?;
+        Ok(newest_first(rows, |cached: &CachedVersion| &cached.version))
+    }
+
+    async fn search_cached(&self, kind: AssetKind, query: &str, limit: i64) -> Result<Vec<String>> {
+        let rows = sqlx::query_scalar::<_, String>(concat!(
+            "SELECT name FROM cached_assets WHERE name ILIKE $1 AND kind = $5 GROUP BY name ",
+            rank_by_name!()
+        ))
+        .bind(search_like_pattern(query))
+        .bind(limit)
+        .bind(query)
+        .bind(search_prefix_pattern(query))
+        .bind(kind.as_str())
+        .fetch_all(&self.pool)
+        .await
+        .context("searching cached packages (postgres)")?;
         Ok(rows)
     }
 
@@ -372,7 +477,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
                 .context("counting npm assets (postgres)")?;
 
         let unique_packages: i64 = sqlx::query_scalar(
-            r#"
+            r"
             SELECT COUNT(
                 DISTINCT CASE
                     WHEN kind IN ('gem', 'gemspec') THEN 'rubygems:' || name
@@ -382,7 +487,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
                 END
             )
             FROM cached_assets
-            "#,
+            ",
         )
         .fetch_one(&self.pool)
         .await
@@ -418,16 +523,16 @@ impl CacheBackendTrait for PostgresCacheBackend {
         let mut tx = self.begin_tx().await?;
         for name in names {
             sqlx::query(
-                r#"
+                r"
                 INSERT INTO catalog_gems(name, synced_at)
                 VALUES($1, NOW())
                 ON CONFLICT(name) DO UPDATE SET synced_at = EXCLUDED.synced_at
-                "#,
+                ",
             )
             .bind(name)
             .execute(&mut *tx)
             .await
-            .with_context(|| format!("upserting catalog entry {} (postgres)", name))?;
+            .with_context(|| format!("upserting catalog entry {name} (postgres)"))?;
         }
         tx.commit()
             .await
@@ -440,17 +545,17 @@ impl CacheBackendTrait for PostgresCacheBackend {
             .fetch_one(&self.pool)
             .await
             .context("counting catalog gems (postgres)")?;
-        Ok(total.max(0) as u64)
+        Ok(total.max(0).cast_unsigned())
     }
 
     async fn catalog_page(&self, offset: i64, limit: i64) -> Result<Vec<String>> {
         let rows = sqlx::query_scalar::<_, String>(
-            r#"
+            r"
             SELECT name
             FROM catalog_gems
-            ORDER BY name
+            ORDER BY name COLLATE ucs_basic
             LIMIT $1 OFFSET $2
-            "#,
+            ",
         )
         .bind(limit)
         .bind(offset)
@@ -461,18 +566,14 @@ impl CacheBackendTrait for PostgresCacheBackend {
     }
 
     async fn catalog_search(&self, query: &str, limit: i64) -> Result<Vec<String>> {
-        let pattern = search_like_pattern(query);
-        let rows = sqlx::query_scalar::<_, String>(
-            r#"
-            SELECT name
-            FROM catalog_gems
-            WHERE name LIKE $1
-            ORDER BY name
-            LIMIT $2
-            "#,
-        )
-        .bind(&pattern)
+        let rows = sqlx::query_scalar::<_, String>(concat!(
+            "SELECT name FROM catalog_gems WHERE name ILIKE $1 ",
+            rank_by_name!()
+        ))
+        .bind(search_like_pattern(query))
         .bind(limit)
+        .bind(query)
+        .bind(search_prefix_pattern(query))
         .fetch_all(&self.pool)
         .await
         .context("searching catalog (postgres)")?;
@@ -491,11 +592,11 @@ impl CacheBackendTrait for PostgresCacheBackend {
 
     async fn catalog_meta_set(&self, key: &str, value: &str) -> Result<()> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO catalog_meta(key, value)
             VALUES($1, $2)
             ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value
-            "#,
+            ",
         )
         .bind(key)
         .bind(value)
@@ -534,13 +635,14 @@ impl CacheBackendTrait for PostgresCacheBackend {
     ) -> Result<Vec<String>> {
         let pattern = json_array_like_pattern(language);
         let rows = sqlx::query_scalar::<_, String>(
-            r#"
-            SELECT DISTINCT name
+            r"
+            SELECT name
             FROM gem_metadata
             WHERE native_languages_json LIKE $1
-            ORDER BY name
+            GROUP BY name
+            ORDER BY name COLLATE ucs_basic
             LIMIT $2 OFFSET $3
-            "#,
+            ",
         )
         .bind(pattern)
         .bind(limit)
@@ -554,17 +656,17 @@ impl CacheBackendTrait for PostgresCacheBackend {
     async fn catalog_total_by_language(&self, language: &str) -> Result<u64> {
         let pattern = json_array_like_pattern(language);
         let total: i64 = sqlx::query_scalar(
-            r#"
+            r"
             SELECT COUNT(DISTINCT name)
             FROM gem_metadata
             WHERE native_languages_json LIKE $1
-            "#,
+            ",
         )
         .bind(pattern)
         .fetch_one(&self.pool)
         .await
         .context("counting catalog gems by language (postgres)")?;
-        Ok(total.max(0) as u64)
+        Ok(total.max(0).cast_unsigned())
     }
 
     // ==================== Quarantine Methods ====================
@@ -575,15 +677,15 @@ impl CacheBackendTrait for PostgresCacheBackend {
         version: &str,
         platform: Option<&str>,
     ) -> Result<Option<GemVersion>> {
-        let row = sqlx::query_as::<_, PostgresGemVersionRow>(
-            r#"
+        let row = sqlx::query_as::<_, GemVersionRow>(
+            r"
             SELECT id, name, version, platform, sha256, published_at, available_after,
                    status, status_reason, upstream_yanked, created_at, updated_at
             FROM gem_versions
             WHERE name = $1
               AND version = $2
               AND ((platform IS NULL AND $3 IS NULL) OR platform = $3)
-            "#,
+            ",
         )
         .bind(name)
         .bind(version)
@@ -597,7 +699,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
 
     async fn upsert_gem_version(&self, gem_version: &GemVersion) -> Result<()> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO gem_versions (
                 name, version, platform, sha256, published_at, available_after,
                 status, status_reason, upstream_yanked, created_at, updated_at
@@ -611,7 +713,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
                 status_reason = EXCLUDED.status_reason,
                 upstream_yanked = EXCLUDED.upstream_yanked,
                 updated_at = NOW()
-            "#,
+            ",
         )
         .bind(&gem_version.name)
         .bind(&gem_version.version)
@@ -636,9 +738,9 @@ impl CacheBackendTrait for PostgresCacheBackend {
         platform: Option<&str>,
         now: DateTime<Utc>,
     ) -> Result<Option<GemVersion>> {
-        // Get all available versions and sort in Rust for proper semver comparison
-        let rows = sqlx::query_as::<_, PostgresGemVersionRow>(
-            r#"
+        // Get all available versions and sort in Rust by RubyGems version order
+        let rows = sqlx::query_as::<_, GemVersionRow>(
+            r"
             SELECT id, name, version, platform, sha256, published_at, available_after,
                    status, status_reason, upstream_yanked, created_at, updated_at
             FROM gem_versions
@@ -647,7 +749,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
               AND upstream_yanked = FALSE
               AND (status = 'available' OR status = 'pinned'
                    OR (status = 'quarantine' AND available_after <= $3))
-            "#,
+            ",
         )
         .bind(name)
         .bind(platform)
@@ -664,16 +766,16 @@ impl CacheBackendTrait for PostgresCacheBackend {
         name: &str,
         now: DateTime<Utc>,
     ) -> Result<Vec<GemVersion>> {
-        let rows = sqlx::query_as::<_, PostgresGemVersionRow>(
-            r#"
+        let rows = sqlx::query_as::<_, GemVersionRow>(
+            r"
             SELECT id, name, version, platform, sha256, published_at, available_after,
                    status, status_reason, upstream_yanked, created_at, updated_at
             FROM gem_versions
             WHERE name = $1
               AND status = 'quarantine'
               AND available_after > $2
-            ORDER BY version DESC
-            "#,
+            ORDER BY version COLLATE ucs_basic DESC
+            ",
         )
         .bind(name)
         .bind(now)
@@ -693,13 +795,13 @@ impl CacheBackendTrait for PostgresCacheBackend {
         reason: Option<String>,
     ) -> Result<()> {
         sqlx::query(
-            r#"
+            r"
             UPDATE gem_versions
             SET status = $1, status_reason = $2, updated_at = NOW()
             WHERE name = $3
               AND version = $4
               AND ((platform IS NULL AND $5 IS NULL) OR platform = $5)
-            "#,
+            ",
         )
         .bind(status.to_string())
         .bind(reason)
@@ -715,12 +817,12 @@ impl CacheBackendTrait for PostgresCacheBackend {
 
     async fn promote_expired_quarantines(&self, now: DateTime<Utc>) -> Result<u64> {
         let result = sqlx::query(
-            r#"
+            r"
             UPDATE gem_versions
             SET status = 'available', status_reason = 'auto-promoted', updated_at = NOW()
             WHERE status = 'quarantine'
               AND available_after <= $1
-            "#,
+            ",
         )
         .bind(now)
         .execute(&self.pool)
@@ -732,11 +834,11 @@ impl CacheBackendTrait for PostgresCacheBackend {
 
     async fn mark_yanked(&self, name: &str, version: &str) -> Result<()> {
         sqlx::query(
-            r#"
+            r"
             UPDATE gem_versions
             SET status = 'yanked', upstream_yanked = TRUE, updated_at = NOW()
             WHERE name = $1 AND version = $2
-            "#,
+            ",
         )
         .bind(name)
         .bind(version)
@@ -748,18 +850,18 @@ impl CacheBackendTrait for PostgresCacheBackend {
     }
 
     async fn get_all_quarantined(&self, limit: u32, offset: u32) -> Result<Vec<GemVersion>> {
-        let rows = sqlx::query_as::<_, PostgresGemVersionRow>(
-            r#"
+        let rows = sqlx::query_as::<_, GemVersionRow>(
+            r"
             SELECT id, name, version, platform, sha256, published_at, available_after,
                    status, status_reason, upstream_yanked, created_at, updated_at
             FROM gem_versions
             WHERE status = 'quarantine'
             ORDER BY available_after ASC
             LIMIT $1 OFFSET $2
-            "#,
+            ",
         )
-        .bind(limit as i64)
-        .bind(offset as i64)
+        .bind(i64::from(limit))
+        .bind(i64::from(offset))
         .fetch_all(&self.pool)
         .await
         .context("fetching all quarantined (postgres)")?;
@@ -773,27 +875,27 @@ impl CacheBackendTrait for PostgresCacheBackend {
         let week_end = now + Duration::days(7);
 
         let (quarantined, available, yanked, pinned): (i64, i64, i64, i64) = sqlx::query_as(
-            r#"
+            r"
             SELECT
                 COALESCE(SUM(CASE WHEN status = 'quarantine' THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN status = 'yanked' THEN 1 ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN status = 'pinned' THEN 1 ELSE 0 END), 0)
             FROM gem_versions
-            "#,
+            ",
         )
         .fetch_one(&self.pool)
         .await
         .context("fetching quarantine counts (postgres)")?;
 
         let releasing_today: i64 = sqlx::query_scalar(
-            r#"
+            r"
             SELECT COUNT(*)
             FROM gem_versions
             WHERE status = 'quarantine'
               AND available_after > $1
               AND available_after <= $2
-            "#,
+            ",
         )
         .bind(now)
         .bind(today_end)
@@ -802,13 +904,13 @@ impl CacheBackendTrait for PostgresCacheBackend {
         .context("counting versions releasing today (postgres)")?;
 
         let releasing_week: i64 = sqlx::query_scalar(
-            r#"
+            r"
             SELECT COUNT(*)
             FROM gem_versions
             WHERE status = 'quarantine'
               AND available_after > $1
               AND available_after <= $2
-            "#,
+            ",
         )
         .bind(now)
         .bind(week_end)
@@ -827,26 +929,25 @@ impl CacheBackendTrait for PostgresCacheBackend {
     }
 
     async fn get_gem_versions_for_index(&self, name: &str) -> Result<Vec<GemVersion>> {
-        let rows = sqlx::query_as::<_, PostgresGemVersionRow>(
-            r#"
+        let rows = sqlx::query_as::<_, GemVersionRow>(
+            r"
             SELECT id, name, version, platform, sha256, published_at, available_after,
                    status, status_reason, upstream_yanked, created_at, updated_at
             FROM gem_versions
             WHERE name = $1
-            ORDER BY version DESC
-            "#,
+            ",
         )
         .bind(name)
         .fetch_all(&self.pool)
         .await
         .context("fetching gem versions for index (postgres)")?;
 
-        Ok(into_gem_versions(rows))
+        Ok(newest_first(rows, |version: &GemVersion| &version.version))
     }
 
     async fn insert_symbols(&self, symbol: super::GemSymbolRecord<'_>) -> Result<()> {
         sqlx::query(
-            r#"
+            r"
             INSERT INTO gem_symbols (
                 gem_name,
                 gem_version,
@@ -862,7 +963,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
                 symbol_type = EXCLUDED.symbol_type,
                 parent_name = EXCLUDED.parent_name,
                 line_number = EXCLUDED.line_number
-            "#,
+            ",
         )
         .bind(symbol.gem_name)
         .bind(symbol.gem_version)
@@ -886,12 +987,12 @@ impl CacheBackendTrait for PostgresCacheBackend {
         gem_platform: Option<&str>,
     ) -> Result<()> {
         sqlx::query(
-            r#"
+            r"
             DELETE FROM gem_symbols
             WHERE gem_name = $1
               AND gem_version = $2
               AND gem_platform IS NOT DISTINCT FROM $3
-            "#,
+            ",
         )
         .bind(gem_name)
         .bind(gem_version)
@@ -901,5 +1002,108 @@ impl CacheBackendTrait for PostgresCacheBackend {
         .context("clearing gem symbols (postgres)")?;
 
         Ok(())
+    }
+}
+
+/// Naming and cleanup of the per-test schemas `connect_isolated` creates.
+#[cfg(any(test, feature = "test-support"))]
+mod test_schema {
+    use std::{
+        sync::atomic::{AtomicU32, Ordering},
+        time::{Duration, SystemTime, UNIX_EPOCH},
+    };
+
+    use anyhow::{Context, Result};
+    use sqlx::{
+        AssertSqlSafe, Connection as _, PgConnection, Row as _, postgres::PgConnectOptions,
+    };
+    use tokio::sync::OnceCell;
+
+    const PREFIX: &str = "vein_test_";
+    /// A schema this old belongs to a run that is no longer alive; a suite
+    /// run finishes well within it, and each process only sweeps once.
+    const STALE_AFTER: Duration = Duration::from_mins(10);
+
+    static COUNTER: AtomicU32 = AtomicU32::new(0);
+    static SWEPT: OnceCell<()> = OnceCell::const_new();
+
+    fn now_secs() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs())
+    }
+
+    /// `vein_test_<unix seconds>_<pid>_<n>`: unique per call, and old enough
+    /// runs can be told apart by the timestamp.
+    pub(super) fn fresh_name() -> String {
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        format!("{PREFIX}{}_{}_{n}", now_secs(), std::process::id())
+    }
+
+    /// Drops `schema` when dropped, on its own thread and runtime because
+    /// `Drop` is synchronous and the owning test runtime may be shutting down.
+    #[derive(Debug)]
+    pub(super) struct SchemaGuard {
+        options: PgConnectOptions,
+        schema: String,
+    }
+
+    impl SchemaGuard {
+        pub(super) const fn new(options: PgConnectOptions, schema: String) -> Self {
+            Self { options, schema }
+        }
+    }
+
+    impl Drop for SchemaGuard {
+        fn drop(&mut self) {
+            let options = self.options.clone();
+            let schema = std::mem::take(&mut self.schema);
+            // Detached and best-effort: a test binary may exit before the
+            // drop lands, and `sweep_stale` then catches the leftover.
+            std::thread::spawn(move || {
+                let Ok(runtime) = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                else {
+                    return;
+                };
+                runtime.block_on(async {
+                    if let Ok(mut conn) = PgConnection::connect_with(&options).await {
+                        let _ = sqlx::query(AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
+                            .execute(&mut conn)
+                            .await;
+                    }
+                });
+            });
+        }
+    }
+
+    fn created_at(schema: &str) -> Option<u64> {
+        schema.strip_prefix(PREFIX)?.split('_').next()?.parse().ok()
+    }
+
+    /// Drop schemas from runs older than [`STALE_AFTER`], once per process.
+    pub(super) async fn sweep_stale(conn: &mut PgConnection) -> Result<()> {
+        SWEPT
+            .get_or_try_init(|| async {
+                let rows = sqlx::query("SELECT nspname FROM pg_namespace WHERE nspname LIKE $1")
+                    .bind(format!("{PREFIX}%"))
+                    .fetch_all(&mut *conn)
+                    .await
+                    .context("listing test schemas")?;
+                let cutoff = now_secs().saturating_sub(STALE_AFTER.as_secs());
+                for row in rows {
+                    let schema: String = row.try_get("nspname")?;
+                    if created_at(&schema).is_some_and(|created| created < cutoff) {
+                        sqlx::query(sqlx::AssertSqlSafe(format!("DROP SCHEMA {schema} CASCADE")))
+                            .execute(&mut *conn)
+                            .await
+                            .with_context(|| format!("dropping stale test schema {schema}"))?;
+                    }
+                }
+                Ok(())
+            })
+            .await
+            .map(drop)
     }
 }

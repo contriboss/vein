@@ -1,113 +1,15 @@
-use anyhow::{Context, Result};
 use serde_json::json;
-use sqlx::SqlitePool;
 
-use crate::CacheBackendTrait;
+use crate::CacheBackend;
 use crate::cache::{
-    sqlite::SqliteCacheBackend,
+    CacheBackendTrait,
     types::{AssetKey, AssetKind, CachedAsset, DependencyKind, GemDependency, GemMetadata},
 };
 
-async fn setup_test_db() -> SqliteCacheBackend {
-    let backend = SqliteCacheBackend::connect_memory()
+async fn setup_test_db() -> CacheBackend {
+    crate::test_support::connect_test_backend()
         .await
-        .expect("Failed to create test database");
-
-    // Initialize test schema (schema is normally managed by migrations)
-    init_test_schema(&backend.pool)
-        .await
-        .expect("Failed to initialize test schema");
-
-    backend
-}
-
-async fn init_test_schema(pool: &SqlitePool) -> Result<()> {
-    sqlx::query(
-        r#"
-            CREATE TABLE IF NOT EXISTS cached_assets (
-                kind TEXT NOT NULL,
-                name TEXT NOT NULL,
-                version TEXT NOT NULL,
-                platform TEXT,
-                path TEXT NOT NULL,
-                sha256 TEXT NOT NULL,
-                size_bytes INTEGER NOT NULL,
-                last_accessed TIMESTAMP DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-                PRIMARY KEY (kind, name, version, platform)
-            )
-            "#,
-    )
-    .execute(pool)
-    .await
-    .context("creating cached_assets table")?;
-
-    sqlx::query(
-        r#"
-            CREATE TABLE IF NOT EXISTS catalog_gems (
-                name TEXT PRIMARY KEY,
-                latest_version TEXT,
-                synced_at TIMESTAMP DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
-            )
-            "#,
-    )
-    .execute(pool)
-    .await
-    .context("creating catalog_gems table")?;
-
-    sqlx::query(
-        r#"
-            CREATE TABLE IF NOT EXISTS catalog_meta (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-            )
-            "#,
-    )
-    .execute(pool)
-    .await
-    .context("creating catalog_meta table")?;
-
-    sqlx::query(
-        r#"
-            CREATE TABLE IF NOT EXISTS gem_metadata (
-                name TEXT NOT NULL,
-                version TEXT NOT NULL,
-                platform TEXT,
-                summary TEXT,
-                description TEXT,
-                licenses TEXT,
-                authors TEXT,
-                emails TEXT,
-                homepage TEXT,
-                documentation_url TEXT,
-                changelog_url TEXT,
-                source_code_url TEXT,
-                bug_tracker_url TEXT,
-                wiki_url TEXT,
-                funding_url TEXT,
-                metadata_json TEXT,
-                dependencies_json TEXT NOT NULL,
-                executables_json TEXT,
-                extensions_json TEXT,
-                native_languages_json TEXT,
-                has_native_extensions INTEGER NOT NULL,
-                has_embedded_binaries INTEGER NOT NULL,
-                required_ruby_version TEXT,
-                required_rubygems_version TEXT,
-                rubygems_version TEXT,
-                specification_version INTEGER,
-                built_at TEXT,
-                size_bytes INTEGER,
-                sha256 TEXT,
-                sbom_json TEXT,
-                PRIMARY KEY (name, version, platform)
-            )
-            "#,
-    )
-    .execute(pool)
-    .await
-    .context("creating gem_metadata table")?;
-
-    Ok(())
+        .expect("Failed to create test database")
 }
 
 #[tokio::test]
@@ -414,7 +316,7 @@ async fn test_negative_size_clamped_to_zero() {
         path: "/test".to_string(),
         sha256: "hash".to_string(),
         size_bytes: -1000,
-        last_accessed: "2024-01-01T12:00:00Z".to_string(),
+        last_accessed: chrono::Utc::now(),
     };
 
     let asset: CachedAsset = row.into();
@@ -636,4 +538,78 @@ async fn catalog_languages_and_filters() {
         .await
         .expect("c total");
     assert_eq!(c_total, 1);
+}
+
+#[tokio::test]
+async fn test_catalog_search_ranks_exact_then_prefix_matches() {
+    let backend = setup_test_db().await;
+    let names = [
+        "HornsAndHooves-sidekiq-limit_fetch",
+        "active_sidekiq",
+        "sidekiq-cron",
+        "Sidekiq",
+        "sidekiq",
+        "rack",
+    ]
+    .map(String::from);
+    backend.catalog_upsert_names(&names).await.unwrap();
+
+    let results = backend.catalog_search("sidekiq", 10).await.unwrap();
+
+    assert_eq!(
+        results,
+        [
+            "sidekiq",
+            "Sidekiq",
+            "sidekiq-cron",
+            "HornsAndHooves-sidekiq-limit_fetch",
+            "active_sidekiq"
+        ]
+    );
+}
+
+#[tokio::test]
+async fn test_cached_versions_and_search_are_per_ecosystem() {
+    let backend = setup_test_db().await;
+    let assets = [
+        (AssetKind::Crate, "serde", "1.0.9"),
+        (AssetKind::Crate, "serde", "1.0.10"),
+        (AssetKind::Crate, "serde_json", "1.0.0"),
+        (AssetKind::Crate, "erased-serde", "0.4.0"),
+        (AssetKind::Gem, "serde", "0.1.0"),
+        (AssetKind::NpmPackage, "@types/node", "22.1.0"),
+    ];
+    for (kind, name, version) in assets {
+        let key = AssetKey {
+            kind,
+            name,
+            version,
+            platform: None,
+        };
+        backend
+            .insert_or_replace(&key, "path", "00", 1)
+            .await
+            .unwrap();
+    }
+
+    let versions: Vec<String> = backend
+        .cached_versions(AssetKind::Crate, "serde")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|cached| cached.version)
+        .collect();
+    assert_eq!(versions, ["1.0.10", "1.0.9"]);
+
+    let names = backend
+        .search_cached(AssetKind::Crate, "serde", 10)
+        .await
+        .unwrap();
+    assert_eq!(names, ["serde", "serde_json", "erased-serde"]);
+
+    let names = backend
+        .search_cached(AssetKind::NpmPackage, "types/", 10)
+        .await
+        .unwrap();
+    assert_eq!(names, ["@types/node"]);
 }

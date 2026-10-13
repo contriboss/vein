@@ -1,0 +1,54 @@
+//! HTTP router for the admin dashboard.
+
+use mcp_host::transport::http::McpHttpService;
+use rama::http::service::fs::ServeDir;
+use rama::http::service::web::Router;
+use rama::http::service::web::response::DatastarScript;
+use rama::utils::include_dir::{Dir, include_dir};
+
+use super::controllers;
+use super::state::AdminState;
+
+/// Embedded CSS assets.
+const CSS_ASSETS: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/assets/admin/css");
+
+/// Build the main application router, mounting `mcp` at `/mcp` when given.
+pub fn build(state: AdminState, mcp: Option<McpHttpService>) -> Router<AdminState> {
+    let router = Router::new_with_state(state)
+        // Static assets
+        .with_endpoint_service("/assets/css", ServeDir::new_embedded(CSS_ASSETS))
+        // Dashboard
+        .with_get("/", controllers::dashboard::index)
+        .with_get("/stats", controllers::dashboard::stats)
+        .with_get("/stats/stream", controllers::dashboard::stats_stream)
+        // Datastar assets (direct from rama - no bridge!)
+        .with_get("/assets/datastar.js", DatastarScript::default())
+        // Catalog
+        .with_get("/catalog", controllers::catalog::list)
+        .with_get("/catalog/search", controllers::catalog::search)
+        .with_get("/catalog/{name}", controllers::catalog::detail)
+        .with_get("/catalog/{name}/sbom", controllers::catalog::sbom)
+        // Quarantine
+        .with_get("/quarantine", controllers::quarantine::index)
+        .with_get("/quarantine/api/stats", controllers::quarantine::api_stats)
+        .with_get(
+            "/quarantine/api/pending",
+            controllers::quarantine::api_pending,
+        )
+        .with_post(
+            "/quarantine/{gem}/{version}/approve",
+            controllers::quarantine::approve,
+        )
+        .with_post(
+            "/quarantine/{gem}/{version}/block",
+            controllers::quarantine::block,
+        )
+        // Health
+        .with_get("/up", controllers::health::up)
+        .with_get("/debug", controllers::health::debug);
+
+    match mcp {
+        Some(mcp) => router.with_endpoint_service("/mcp", mcp),
+        None => router,
+    }
+}

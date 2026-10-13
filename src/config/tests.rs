@@ -17,9 +17,8 @@ fn test_default_config() {
     );
     assert!(config.upstream.is_none());
     assert_eq!(config.storage.path, PathBuf::from("./cache"));
-    #[cfg(feature = "sqlite")]
-    assert_eq!(config.database.path, PathBuf::from("./vein.db"));
     assert!(config.database.url.is_none());
+    assert_eq!(config.database.max_connections, 10);
     assert_eq!(config.logging.level, "info");
     assert!(!config.logging.json);
 }
@@ -50,9 +49,8 @@ fn test_default_storage_config() {
 #[test]
 fn test_default_database_config() {
     let db = DatabaseConfig::default();
-    #[cfg(feature = "sqlite")]
-    assert_eq!(db.path, PathBuf::from("./vein.db"));
     assert!(db.url.is_none());
+    assert_eq!(db.max_connections, 10);
 }
 
 #[test]
@@ -94,7 +92,8 @@ fn test_parse_full_config() {
         path = "/var/lib/vein/gems"
 
         [database]
-        path = "/var/lib/vein/db.sqlite"
+        url = "postgres://vein:secret@db.internal/vein"
+        max_connections = 32
 
         [logging]
         level = "debug"
@@ -110,12 +109,12 @@ fn test_parse_full_config() {
     assert_eq!(upstream.url.to_string(), "https://example.com/");
 
     assert_eq!(config.storage.path, PathBuf::from("/var/lib/vein/gems"));
-    #[cfg(feature = "sqlite")]
     assert_eq!(
-        config.database.path,
-        PathBuf::from("/var/lib/vein/db.sqlite")
+        config.database.url.as_deref(),
+        Some("postgres://vein:secret@db.internal/vein")
     );
-    assert!(config.database.url.is_none());
+    assert_eq!(config.database.max_connections, 32);
+    assert_eq!(config.database.location(), "postgres://db.internal/vein");
 
     assert_eq!(config.logging.level, "debug");
     assert!(config.logging.json);
@@ -123,10 +122,10 @@ fn test_parse_full_config() {
 
 #[test]
 fn test_parse_config_with_defaults() {
-    let toml = r#"
+    let toml = r"
         [server]
         port = 9000
-    "#;
+    ";
     let config: Config = toml::from_str(toml).unwrap();
     assert_eq!(config.server.host, "0.0.0.0");
     assert_eq!(config.server.port, 9000);
@@ -163,7 +162,7 @@ fn test_load_config_from_existing_file() {
 
     fs::write(&config_path, toml_content).unwrap();
 
-    let config = Config::load(Some(config_path.clone())).unwrap();
+    let config = Config::load(Some(config_path)).unwrap();
     assert_eq!(config.server.host, "127.0.0.1");
     assert_eq!(config.server.port, 4000);
 
@@ -239,38 +238,6 @@ fn test_storage_path_normalization_absolute() {
 }
 
 #[test]
-#[cfg(feature = "sqlite")]
-fn test_database_path_normalization_relative() {
-    let mut db = DatabaseConfig {
-        path: PathBuf::from("vein.db"),
-        ..DatabaseConfig::default()
-    };
-    let base = Path::new("/var/lib/vein");
-    db.normalize_paths(base);
-    assert_eq!(db.path, PathBuf::from("/var/lib/vein/vein.db"));
-}
-
-#[test]
-#[cfg(feature = "sqlite")]
-fn test_database_path_normalization_absolute() {
-    let mut db = DatabaseConfig {
-        path: PathBuf::from("/absolute/path/db.sqlite"),
-        ..DatabaseConfig::default()
-    };
-    let base = Path::new("/var/lib/vein");
-    db.normalize_paths(base);
-    assert_eq!(db.path, PathBuf::from("/absolute/path/db.sqlite"));
-}
-
-#[test]
-#[cfg(feature = "sqlite")]
-fn test_database_backend_sqlite_default() {
-    let backend = DatabaseConfig::default().backend().unwrap();
-    assert_eq!(backend.path, PathBuf::from("./vein.db"));
-}
-
-#[test]
-#[cfg(feature = "postgres")]
 fn test_database_backend_postgres() {
     let db = DatabaseConfig {
         url: Some("postgres://user:pass@localhost/vein".to_string()),
@@ -290,31 +257,6 @@ fn test_database_backend_invalid_scheme() {
 }
 
 #[test]
-#[cfg(feature = "sqlite")]
-fn test_database_backend_sqlite_url_absolute() {
-    let db = DatabaseConfig {
-        path: PathBuf::from("./vein.db"),
-        url: Some("sqlite:///var/lib/vein/cache.db".to_string()),
-        ..DatabaseConfig::default()
-    };
-    let backend = db.backend().unwrap();
-    assert_eq!(backend.path, PathBuf::from("/var/lib/vein/cache.db"));
-}
-
-#[test]
-#[cfg(feature = "sqlite")]
-fn test_database_backend_sqlite_url_localhost() {
-    let db = DatabaseConfig {
-        path: PathBuf::from("./vein.db"),
-        url: Some("sqlite://localhost/var/lib/vein/cache.db".to_string()),
-        ..DatabaseConfig::default()
-    };
-    let backend = db.backend().unwrap();
-    assert_eq!(backend.path, PathBuf::from("/var/lib/vein/cache.db"));
-}
-
-#[test]
-#[cfg(feature = "sqlite")]
 fn test_config_normalizes_paths_on_load() {
     let temp_dir = tempdir().unwrap();
     let config_path = temp_dir.path().join("test.toml");
@@ -322,68 +264,57 @@ fn test_config_normalizes_paths_on_load() {
     let toml = r#"
         [storage]
         path = "relative-gems"
-
-        [database]
-        path = "relative.db"
     "#;
 
     fs::write(&config_path, toml).unwrap();
     let config = Config::load(Some(config_path)).unwrap();
 
     assert_eq!(config.storage.path, temp_dir.path().join("relative-gems"));
-    assert_eq!(config.database.path, temp_dir.path().join("relative.db"));
-    assert!(config.database.url.is_none());
 }
 
 #[test]
-#[cfg(feature = "sqlite")]
-fn test_config_sqlite_url_sets_path() {
-    let temp_dir = tempdir().unwrap();
-    let config_path = temp_dir.path().join("vein.toml");
-
-    let toml = r#"
-        [database]
-        url = "sqlite://./db/vein.sqlite"
-    "#;
-
-    fs::write(&config_path, toml).unwrap();
-    let config = Config::load(Some(config_path)).unwrap();
-
-    let expected = temp_dir.path().join("db/vein.sqlite");
-    assert!(config.database.path.is_absolute());
-    assert!(config.database.path.ends_with("db/vein.sqlite"));
-    let backend = config.database.backend().unwrap();
-    assert!(backend.path.is_absolute());
-    assert!(backend.path.ends_with("db/vein.sqlite"));
-    assert_eq!(backend.path, expected);
+fn test_database_backend_requires_url() {
+    let err = DatabaseConfig::default().backend().unwrap_err();
+    assert!(
+        err.to_string().contains("database.url is required"),
+        "{err}"
+    );
 }
 
 // === VALIDATION TESTS ===
 
-#[test]
-#[cfg(feature = "sqlite")]
-fn test_validate_https_upstream() {
-    let config = Config {
-        upstream: Some(UpstreamConfig {
-            url: Uri::parse("https://rubygems.org/").unwrap(),
-            ..UpstreamConfig::default()
-        }),
-        ..Default::default()
-    };
-    assert!(config.validate().is_ok());
+/// A config that passes `validate()` on its own: it names a database.
+fn configured() -> Config {
+    Config {
+        database: DatabaseConfig {
+            url: Some("postgres://vein@localhost/vein".to_string()),
+            ..DatabaseConfig::default()
+        },
+        ..Config::default()
+    }
 }
 
 #[test]
-#[cfg(feature = "sqlite")]
-fn test_validate_http_upstream() {
-    let config = Config {
-        upstream: Some(UpstreamConfig {
-            url: Uri::parse("http://localhost:8346/").unwrap(),
-            ..UpstreamConfig::default()
-        }),
-        ..Default::default()
-    };
-    assert!(config.validate().is_ok());
+fn test_validate_accepts_http_and_https_upstreams() {
+    for url in ["https://rubygems.org/", "http://localhost:8346/"] {
+        let config = Config {
+            upstream: Some(UpstreamConfig {
+                url: Uri::parse(url).unwrap(),
+                ..UpstreamConfig::default()
+            }),
+            ..configured()
+        };
+        assert!(config.validate().is_ok(), "upstream {url}");
+    }
+}
+
+#[test]
+fn test_validate_requires_database_url() {
+    let err = Config::default().validate().unwrap_err();
+    assert!(
+        err.to_string().contains("database.url is required"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -406,11 +337,10 @@ fn test_validate_invalid_scheme() {
 }
 
 #[test]
-#[cfg(feature = "sqlite")]
 fn test_validate_no_upstream() {
     let config = Config {
         upstream: None,
-        ..Default::default()
+        ..configured()
     };
     assert!(config.validate().is_ok());
 }
@@ -452,16 +382,16 @@ fn test_config_clone() {
 #[test]
 fn test_config_debug() {
     let config = Config::default();
-    let debug_str = format!("{:?}", config);
+    let debug_str = format!("{config:?}");
     assert!(debug_str.contains("Config"));
 }
 
 #[test]
 fn test_zero_workers() {
-    let toml = r#"
+    let toml = r"
         [server]
         workers = 0
-    "#;
+    ";
     let config: Config = toml::from_str(toml).unwrap();
     assert_eq!(config.server.workers, 0);
 }
@@ -472,9 +402,8 @@ fn test_various_log_levels() {
         let toml = format!(
             r#"
             [logging]
-            level = "{}"
-        "#,
-            level
+            level = "{level}"
+        "#
         );
         let config: Config = toml::from_str(&toml).unwrap();
         assert_eq!(config.logging.level, level);
@@ -483,20 +412,20 @@ fn test_various_log_levels() {
 
 #[test]
 fn test_json_logging_enabled() {
-    let toml = r#"
+    let toml = r"
         [logging]
         json = true
-    "#;
+    ";
     let config: Config = toml::from_str(toml).unwrap();
     assert!(config.logging.json);
 }
 
 #[test]
 fn test_json_logging_disabled() {
-    let toml = r#"
+    let toml = r"
         [logging]
         json = false
-    "#;
+    ";
     let config: Config = toml::from_str(toml).unwrap();
     assert!(!config.logging.json);
 }
@@ -549,20 +478,20 @@ fn test_ipv6_host() {
 
 #[test]
 fn test_low_port_number() {
-    let toml = r#"
+    let toml = r"
         [server]
         port = 80
-    "#;
+    ";
     let config: Config = toml::from_str(toml).unwrap();
     assert_eq!(config.server.port, 80);
 }
 
 #[test]
 fn test_high_port_number() {
-    let toml = r#"
+    let toml = r"
         [server]
         port = 65535
-    "#;
+    ";
     let config: Config = toml::from_str(toml).unwrap();
     assert_eq!(config.server.port, 65535);
 }
@@ -570,7 +499,6 @@ fn test_high_port_number() {
 // === INTEGRATION TESTS ===
 
 #[test]
-#[cfg(feature = "sqlite")]
 fn test_full_workflow_load_validate() {
     let temp_dir = tempdir().unwrap();
     let config_path = temp_dir.path().join("vein.toml");
@@ -589,7 +517,7 @@ fn test_full_workflow_load_validate() {
         path = "gems"
 
         [database]
-        path = "vein.db"
+        url = "postgres://vein@localhost/vein"
 
         [logging]
         level = "info"
@@ -598,7 +526,7 @@ fn test_full_workflow_load_validate() {
 
     fs::write(&config_path, toml).unwrap();
 
-    let config = Config::load(Some(config_path.clone())).unwrap();
+    let config = Config::load(Some(config_path)).unwrap();
     assert!(config.validate().is_ok());
 
     assert_eq!(config.server.host, "0.0.0.0");
@@ -610,8 +538,6 @@ fn test_full_workflow_load_validate() {
 
     // Paths should be normalized relative to config file location
     assert_eq!(config.storage.path, temp_dir.path().join("gems"));
-    #[cfg(feature = "sqlite")]
-    assert_eq!(config.database.path, temp_dir.path().join("vein.db"));
 }
 
 #[test]
@@ -631,4 +557,40 @@ fn test_parent_directory_resolution() {
 
     // Should be relative to the config file's parent directory
     assert_eq!(config.storage.path, subdir.join("gems"));
+}
+
+#[test]
+fn test_retry_attempts_saturate_instead_of_wrapping() {
+    let retry = RetryConfig {
+        max_attempts: 256,
+        ..RetryConfig::default()
+    };
+    assert_eq!(retry.attempts(), u8::MAX);
+    assert_eq!(retry.backoff_policy().max_attempts(), u8::MAX);
+}
+
+#[test]
+fn test_disabled_retry_makes_a_single_attempt() {
+    let retry = RetryConfig {
+        enabled: false,
+        max_attempts: 5,
+        ..RetryConfig::default()
+    };
+    assert_eq!(retry.attempts(), 1);
+    assert_eq!(retry.backoff_policy().max_attempts(), 1);
+}
+
+#[test]
+fn database_location_hides_credentials() {
+    const CASES: &[(&str, &str)] = &[
+        (
+            "postgres://user:pass@db.internal/vein",
+            "postgres://db.internal/vein",
+        ),
+        ("postgres://db.internal/vein", "postgres://db.internal/vein"),
+        ("postgres://localhost/vein", "postgres://localhost/vein"),
+    ];
+    for (url, expected) in CASES {
+        assert_eq!(database::redact_credentials(url), *expected, "url: {url:?}");
+    }
 }

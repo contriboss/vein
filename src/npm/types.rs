@@ -67,14 +67,14 @@ impl NpmPackageRequest {
             let version = parts
                 .get(2)
                 .filter(|s| !s.is_empty())
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
 
             // Validate scope and name
             if !is_valid_package_name(scope) || !is_valid_package_name(pkg_name) {
                 return None;
             }
 
-            (format!("{}/{}", scope, pkg_name), version)
+            (format!("{scope}/{pkg_name}"), version)
         } else {
             // Unscoped: name or name/version
             let parts: Vec<&str> = decoded.splitn(2, '/').collect();
@@ -82,7 +82,7 @@ impl NpmPackageRequest {
             let version = parts
                 .get(1)
                 .filter(|s| !s.is_empty())
-                .map(|s| s.to_string());
+                .map(std::string::ToString::to_string);
 
             if !is_valid_package_name(pkg_name) {
                 return None;
@@ -142,7 +142,7 @@ impl NpmPackageRequest {
         // Format: {short_name}-{version}.tgz
         let short_name = name.rsplit('/').next().unwrap_or(&name);
         let tarball_stem = tarball.strip_suffix(".tgz")?;
-        let version = tarball_stem.strip_prefix(&format!("{}-", short_name))?;
+        let version = tarball_stem.strip_prefix(&format!("{short_name}-"))?;
 
         if !is_valid_version_segment(version) {
             return None;
@@ -163,14 +163,14 @@ impl NpmPackageRequest {
             // npm/{name}/{tarball}
             let safe_tarball =
                 sanitize_segment(self.tarball_name.as_deref().unwrap_or("unknown.tgz"));
-            format!("npm/{}/{}", safe_name, safe_tarball)
+            format!("npm/{safe_name}/{safe_tarball}")
         } else {
             // npm_index/{name}/metadata.json or npm_index/{name}/versions/{version}.json
             if let Some(version) = self.version.as_deref() {
                 let safe_version = sanitize_segment(version);
-                format!("npm_index/{}/versions/{}.json", safe_name, safe_version)
+                format!("npm_index/{safe_name}/versions/{safe_version}.json")
             } else {
-                format!("npm_index/{}/metadata.json", safe_name)
+                metadata_storage_path(&self.name)
             }
         }
     }
@@ -191,6 +191,12 @@ impl NpmPackageRequest {
     }
 }
 
+/// Storage path of the cached registry metadata (packument) for `name`.
+#[must_use]
+pub fn metadata_storage_path(name: &str) -> String {
+    format!("npm_index/{}/metadata.json", sanitize_segment(name))
+}
+
 fn is_invalid_path(decoded: &str) -> bool {
     decoded.contains('\\')
         || decoded
@@ -207,6 +213,10 @@ fn is_valid_version_segment(segment: &str) -> bool {
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '+'))
 }
 
+#[expect(
+    clippy::case_sensitive_file_extension_comparisons,
+    reason = "npm tarball names are lowercase `.tgz`; `.TGZ` is not a valid npm tarball"
+)]
 fn is_valid_tarball_name(name: &str) -> bool {
     if !is_safe_segment(name) || !name.ends_with(".tgz") {
         return false;
@@ -245,86 +255,4 @@ fn is_valid_package_name(name: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_unscoped_metadata() {
-        let req = NpmPackageRequest::from_path("/lodash").unwrap();
-        assert_eq!(req.name, "lodash");
-        assert!(req.version.is_none());
-        assert!(!req.is_tarball);
-    }
-
-    #[test]
-    fn test_parse_unscoped_with_version() {
-        let req = NpmPackageRequest::from_path("/lodash/4.17.21").unwrap();
-        assert_eq!(req.name, "lodash");
-        assert_eq!(req.version, Some("4.17.21".to_string()));
-        assert!(!req.is_tarball);
-    }
-
-    #[test]
-    fn test_parse_scoped_metadata() {
-        let req = NpmPackageRequest::from_path("/@types/node").unwrap();
-        assert_eq!(req.name, "@types/node");
-        assert!(req.version.is_none());
-        assert!(!req.is_tarball);
-    }
-
-    #[test]
-    fn test_parse_scoped_encoded() {
-        let req = NpmPackageRequest::from_path("/@types%2fnode").unwrap();
-        assert_eq!(req.name, "@types/node");
-        assert!(!req.is_tarball);
-    }
-
-    #[test]
-    fn test_parse_unscoped_tarball() {
-        let req = NpmPackageRequest::from_path("/lodash/-/lodash-4.17.21.tgz").unwrap();
-        assert_eq!(req.name, "lodash");
-        assert_eq!(req.version, Some("4.17.21".to_string()));
-        assert!(req.is_tarball);
-        assert_eq!(req.tarball_name, Some("lodash-4.17.21.tgz".to_string()));
-    }
-
-    #[test]
-    fn test_parse_scoped_tarball() {
-        let req = NpmPackageRequest::from_path("/@types/node/-/node-18.0.0.tgz").unwrap();
-        assert_eq!(req.name, "@types/node");
-        assert_eq!(req.version, Some("18.0.0".to_string()));
-        assert!(req.is_tarball);
-    }
-
-    #[test]
-    fn test_storage_path_metadata() {
-        let req = NpmPackageRequest::from_path("/@types/node").unwrap();
-        assert_eq!(req.storage_path(), "npm_index/@types_node/metadata.json");
-    }
-
-    #[test]
-    fn test_storage_path_metadata_version() {
-        let req = NpmPackageRequest::from_path("/lodash/4.17.21").unwrap();
-        assert_eq!(req.storage_path(), "npm_index/lodash/versions/4.17.21.json");
-    }
-
-    #[test]
-    fn test_storage_path_tarball() {
-        let req = NpmPackageRequest::from_path("/lodash/-/lodash-4.17.21.tgz").unwrap();
-        assert_eq!(req.storage_path(), "npm/lodash/lodash-4.17.21.tgz");
-    }
-
-    #[test]
-    fn test_reject_path_traversal() {
-        assert!(NpmPackageRequest::from_path("/../etc/passwd").is_none());
-        assert!(NpmPackageRequest::from_path("/foo/../bar").is_none());
-        assert!(NpmPackageRequest::from_path("/..%2fetc/passwd").is_none());
-        assert!(NpmPackageRequest::from_path("/%2e%2e/secret").is_none());
-    }
-
-    #[test]
-    fn test_reject_empty() {
-        assert!(NpmPackageRequest::from_path("/").is_none());
-        assert!(NpmPackageRequest::from_path("").is_none());
-    }
-}
+mod tests;

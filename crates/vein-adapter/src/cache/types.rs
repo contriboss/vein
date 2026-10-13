@@ -2,23 +2,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Ecosystem {
-    RubyGems,
-    CratesIo,
-    Npm,
-}
-
-impl Ecosystem {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Ecosystem::RubyGems => "rubygems",
-            Ecosystem::CratesIo => "crates",
-            Ecosystem::Npm => "npm",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssetKind {
     Gem,
     Spec,
@@ -27,20 +10,13 @@ pub enum AssetKind {
 }
 
 impl AssetKind {
-    pub fn as_str(&self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            AssetKind::Gem => "gem",
-            AssetKind::Spec => "gemspec",
-            AssetKind::Crate => "crate",
-            AssetKind::NpmPackage => "npm",
-        }
-    }
-
-    pub fn ecosystem(&self) -> Ecosystem {
-        match self {
-            AssetKind::Gem | AssetKind::Spec => Ecosystem::RubyGems,
-            AssetKind::Crate => Ecosystem::CratesIo,
-            AssetKind::NpmPackage => Ecosystem::Npm,
+            Self::Gem => "gem",
+            Self::Spec => "gemspec",
+            Self::Crate => "crate",
+            Self::NpmPackage => "npm",
         }
     }
 }
@@ -56,6 +32,16 @@ pub struct AssetKey<'a> {
 #[derive(Debug, Clone)]
 pub struct CachedAsset {
     pub path: String,
+    pub sha256: String,
+    pub size_bytes: u64,
+    pub last_accessed: String,
+}
+
+/// One cached artifact of a package, as listed per package.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CachedVersion {
+    pub version: String,
+    pub platform: Option<String>,
     pub sha256: String,
     pub size_bytes: u64,
     pub last_accessed: String,
@@ -90,7 +76,7 @@ pub struct GemDependency {
     pub kind: DependencyKind,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GemMetadata {
     pub name: String,
     pub version: String,

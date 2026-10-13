@@ -17,7 +17,7 @@ impl LoggingConfig {
 impl Default for LoggingConfig {
     fn default() -> Self {
         Self {
-            level: LoggingConfig::default_level(),
+            level: Self::default_level(),
             json: false,
         }
     }

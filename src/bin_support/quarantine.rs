@@ -13,7 +13,7 @@ struct QuarantineContext {
     index: Arc<CacheBackend>,
 }
 
-pub(crate) fn run_quarantine_status(config_path: PathBuf) -> Result<()> {
+pub fn run_quarantine_status(config_path: PathBuf) -> Result<()> {
     let Some(ctx) = load_quarantine_context(config_path)? else {
         println!("Quarantine feature is disabled in configuration.");
         println!("Enable it by setting delay_policy.enabled = true in vein.toml");
@@ -47,7 +47,7 @@ pub(crate) fn run_quarantine_status(config_path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn run_quarantine_list(config_path: PathBuf, limit: u32) -> Result<()> {
+pub fn run_quarantine_list(config_path: PathBuf, limit: u32) -> Result<()> {
     let Some(ctx) = load_quarantine_context(config_path)? else {
         println!("Quarantine feature is disabled in configuration.");
         return Ok(());
@@ -84,7 +84,7 @@ pub(crate) fn run_quarantine_list(config_path: PathBuf, limit: u32) -> Result<()
     Ok(())
 }
 
-pub(crate) fn run_quarantine_promote(config_path: PathBuf) -> Result<()> {
+pub fn run_quarantine_promote(config_path: PathBuf) -> Result<()> {
     let Some(ctx) = load_quarantine_context(config_path)? else {
         println!("Quarantine feature is disabled in configuration.");
         return Ok(());
@@ -96,10 +96,7 @@ pub(crate) fn run_quarantine_promote(config_path: PathBuf) -> Result<()> {
         .context("promoting expired quarantines")?;
 
     if count > 0 {
-        println!(
-            "Promoted {} version(s) from quarantine to available.",
-            count
-        );
+        println!("Promoted {count} version(s) from quarantine to available.");
     } else {
         println!("No versions ready for promotion.");
     }
@@ -107,12 +104,12 @@ pub(crate) fn run_quarantine_promote(config_path: PathBuf) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn run_quarantine_approve(
+pub fn run_quarantine_approve(
     config_path: PathBuf,
-    gem: String,
-    version: String,
-    platform: Option<String>,
-    reason: String,
+    gem: &str,
+    version: &str,
+    platform: Option<&str>,
+    reason: &str,
 ) -> Result<()> {
     let Some(ctx) = load_quarantine_context(config_path)? else {
         println!("Quarantine feature is disabled in configuration.");
@@ -121,27 +118,27 @@ pub(crate) fn run_quarantine_approve(
 
     set_version_status(
         &ctx,
-        &gem,
-        &version,
-        platform.as_deref(),
+        gem,
+        version,
+        platform,
         VersionStatus::Pinned,
         format!("approved: {reason}"),
         "approving version",
     )?;
 
-    let platform_str = platform.as_deref().unwrap_or("ruby");
+    let platform_str = platform.unwrap_or("ruby");
     println!("Approved {gem}-{version} ({platform_str}) for immediate availability.");
     println!("Reason: {reason}");
 
     Ok(())
 }
 
-pub(crate) fn run_quarantine_block(
+pub fn run_quarantine_block(
     config_path: PathBuf,
-    gem: String,
-    version: String,
-    platform: Option<String>,
-    reason: String,
+    gem: &str,
+    version: &str,
+    platform: Option<&str>,
+    reason: &str,
 ) -> Result<()> {
     let Some(ctx) = load_quarantine_context(config_path)? else {
         println!("Quarantine feature is disabled in configuration.");
@@ -150,15 +147,15 @@ pub(crate) fn run_quarantine_block(
 
     set_version_status(
         &ctx,
-        &gem,
-        &version,
-        platform.as_deref(),
+        gem,
+        version,
+        platform,
         VersionStatus::Yanked,
         format!("blocked: {reason}"),
         "blocking version",
     )?;
 
-    let platform_str = platform.as_deref().unwrap_or("ruby");
+    let platform_str = platform.unwrap_or("ruby");
     println!("Blocked {gem}-{version} ({platform_str}).");
     println!("Reason: {reason}");
 

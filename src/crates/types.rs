@@ -28,6 +28,12 @@ impl Default for IndexConfig {
     }
 }
 
+/// Storage path of the cached sparse-index file for crate `name`.
+#[must_use]
+pub fn index_storage_path(name: &str) -> Option<String> {
+    index_path(name).map(|path| format!("crates_index/{path}"))
+}
+
 /// Compute the index path prefix for a crate name
 ///
 /// Cargo uses this to locate crate index files:
@@ -36,13 +42,22 @@ impl Default for IndexConfig {
 /// - 3 chars: `3/{first_char}/{name}`
 /// - 4+ chars: `{first_two}/{next_two}/{name}`
 ///
-/// Returns `None` for empty crate names.
+/// Returns `None` unless `name` is a valid crates.io name (ASCII
+/// alphanumerics, `-`, `_`; at most 64 characters). Callers use the result
+/// as a storage path, so this is also the traversal guard.
 pub fn index_path(name: &str) -> Option<String> {
-    let name_lower = name.to_lowercase();
+    let valid = name.len() <= 64
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+    if !valid {
+        return None;
+    }
+    let name_lower = name.to_ascii_lowercase();
     match name_lower.len() {
         0 => None,
-        1 => Some(format!("1/{}", name_lower)),
-        2 => Some(format!("2/{}", name_lower)),
+        1 => Some(format!("1/{name_lower}")),
+        2 => Some(format!("2/{name_lower}")),
         3 => Some(format!("3/{}/{}", &name_lower[..1], name_lower)),
         _ => Some(format!(
             "{}/{}/{}",
@@ -54,17 +69,4 @@ pub fn index_path(name: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_index_path() {
-        assert_eq!(index_path("a"), Some("1/a".to_string()));
-        assert_eq!(index_path("ab"), Some("2/ab".to_string()));
-        assert_eq!(index_path("abc"), Some("3/a/abc".to_string()));
-        assert_eq!(index_path("abcd"), Some("ab/cd/abcd".to_string()));
-        assert_eq!(index_path("serde"), Some("se/rd/serde".to_string()));
-        assert_eq!(index_path("Tokio"), Some("to/ki/tokio".to_string()));
-        assert_eq!(index_path(""), None);
-    }
-}
+mod tests;

@@ -20,24 +20,24 @@ const META_ETAG: &str = "catalog_names_etag";
 const META_LAST_MODIFIED: &str = "catalog_names_last_modified";
 
 pub async fn sync_names_once(index: &CacheBackend) -> Result<Option<usize>> {
-    let client = build_client()?;
+    let client = build_client();
     sync_names_with_client(index, &client).await
 }
 
-fn build_client() -> Result<impl Service<Request, Output = Response, Error = OpaqueError>> {
+fn build_client() -> impl Service<Request, Output = Response, Error = OpaqueError> {
     // NOTE if you want pooling you'll have to
     // use build_connector to also include the pool desired
     let inner = EasyHttpWebClient::default();
 
     // decompression support would be added as layer on top
 
-    Ok((
+    (
         MapErrLayer::new(|e: rama::error::BoxError| e.into_opaque_error()),
         TimeoutLayer::new(Duration::from_secs(60)),
         AddRequiredRequestHeadersLayer::new()
             .with_user_agent_header_value(HeaderValue::from_static("vein-catalog/0.1.0")),
     )
-        .into_layer(inner))
+        .into_layer(inner)
 }
 
 async fn sync_names_with_client(
@@ -66,7 +66,7 @@ async fn sync_names_with_client(
 
     if !response.status().is_success() {
         return Err(anyhow::anyhow!("fetching rubygems names list"));
-    };
+    }
 
     let etag = response
         .headers()
@@ -88,7 +88,7 @@ async fn sync_names_with_client(
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
-        .map(|line| line.to_owned())
+        .map(std::borrow::ToOwned::to_owned)
         .collect();
 
     let total = names.len();
@@ -114,7 +114,7 @@ async fn sync_names_with_client(
 /// Syncs every 6 hours.
 pub fn spawn_background_sync(backend: Arc<CacheBackend>) -> Result<()> {
     tokio::spawn(async move {
-        let sync_interval = Duration::from_secs(6 * 60 * 60); // 6 hours
+        let sync_interval = Duration::from_hours(6); // 6 hours
 
         loop {
             match sync_names_once(backend.as_ref()).await {

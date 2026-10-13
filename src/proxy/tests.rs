@@ -1,19 +1,16 @@
 use super::*;
+
+use crate::test_support::{install_rustls_provider, raw_response, spawn_sequence_server};
+
 use crate::config::Config;
 use rama::http::{Body, Method, Request};
 use rama::net::{Protocol, uri::Uri};
-use rama::{Service, http::body::util::BodyExt, tls::rustls::dep::rustls};
-use std::{
-    path::Path,
-    sync::{Arc, Once},
-};
+use rama::{Service, http::body::util::BodyExt};
+use std::{path::Path, sync::Arc};
 use tempfile::tempdir;
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::TcpListener,
-};
 use types::{CacheStatus, CacheableRequest, UpstreamTarget};
-use vein_adapter::{AssetKind, CacheBackend, FilesystemStorage};
+use vein_adapter::AssetKind;
+use vein_adapter::FilesystemStorage;
 
 fn req(path: &str) -> Request<Body> {
     Request::builder()
@@ -340,7 +337,6 @@ fn cacheable_request_relative_path_structure_spec() {
     );
 }
 
-#[cfg(feature = "sqlite")]
 #[tokio::test]
 async fn proxy_routes_npm_requests_by_header() {
     install_rustls_provider();
@@ -405,7 +401,6 @@ async fn proxy_routes_npm_requests_by_header() {
     assert!(requests[1].contains("if-none-match: \"lodash-meta-v1\""));
 }
 
-#[cfg(feature = "sqlite")]
 #[tokio::test]
 async fn proxy_does_not_treat_plain_requests_as_npm() {
     let temp_dir = tempdir().unwrap();
@@ -416,7 +411,6 @@ async fn proxy_does_not_treat_plain_requests_as_npm() {
     assert_eq!(body_bytes(response).await, b"not found in cache");
 }
 
-#[cfg(feature = "sqlite")]
 #[tokio::test]
 async fn proxy_routes_crates_index_requests_by_path() {
     install_rustls_provider();
@@ -454,7 +448,6 @@ async fn proxy_routes_crates_index_requests_by_path() {
     assert!(requests[1].contains("if-none-match: \"serde-v1\""));
 }
 
-#[cfg(feature = "sqlite")]
 async fn build_test_proxy(root: &Path) -> VeinProxy {
     let mut config = Config::default();
     config.server.host = "127.0.0.1".to_string();
@@ -464,12 +457,15 @@ async fn build_test_proxy(root: &Path) -> VeinProxy {
     let storage = Arc::new(FilesystemStorage::new(config.storage.path.clone()));
     storage.prepare().await.unwrap();
 
-    let index = Arc::new(CacheBackend::connect_memory().await.unwrap());
+    let index = Arc::new(
+        vein_adapter::test_support::connect_test_backend()
+            .await
+            .unwrap(),
+    );
 
     VeinProxy::new(Arc::new(config), storage, index).unwrap()
 }
 
-#[cfg(feature = "sqlite")]
 fn req_with_headers(path: &str, headers: &[(&str, &str)]) -> Request<Body> {
     let mut builder = Request::builder().method(Method::GET).uri(path);
     for (name, value) in headers {
@@ -478,72 +474,6 @@ fn req_with_headers(path: &str, headers: &[(&str, &str)]) -> Request<Body> {
     builder.body(Body::empty()).unwrap()
 }
 
-#[cfg(feature = "sqlite")]
-fn install_rustls_provider() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
-    });
-}
-
-#[cfg(feature = "sqlite")]
-async fn spawn_sequence_server(
-    responses: Vec<Vec<u8>>,
-) -> (String, tokio::task::JoinHandle<Vec<String>>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-
-    let handle = tokio::spawn(async move {
-        let mut requests = Vec::new();
-        for response in responses {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let request = read_http_request(&mut socket).await;
-            requests.push(request);
-            socket.write_all(&response).await.unwrap();
-        }
-        requests
-    });
-
-    (format!("http://{}", addr), handle)
-}
-
-#[cfg(feature = "sqlite")]
-fn raw_response(status: &str, headers: &[(&str, &str)], body: &[u8]) -> Vec<u8> {
-    let mut response = format!("HTTP/1.1 {}\r\n", status);
-    for (name, value) in headers {
-        response.push_str(name);
-        response.push_str(": ");
-        response.push_str(value);
-        response.push_str("\r\n");
-    }
-    response.push_str(&format!("Content-Length: {}\r\n", body.len()));
-    response.push_str("Connection: close\r\n\r\n");
-
-    let mut bytes = response.into_bytes();
-    bytes.extend_from_slice(body);
-    bytes
-}
-
-#[cfg(feature = "sqlite")]
-async fn read_http_request(socket: &mut tokio::net::TcpStream) -> String {
-    let mut buffer = vec![0_u8; 4096];
-    let mut request = Vec::new();
-
-    loop {
-        let read = socket.read(&mut buffer).await.unwrap();
-        if read == 0 {
-            break;
-        }
-        request.extend_from_slice(&buffer[..read]);
-        if request.windows(4).any(|window| window == b"\r\n\r\n") {
-            break;
-        }
-    }
-
-    String::from_utf8_lossy(&request).to_ascii_lowercase()
-}
-
-#[cfg(feature = "sqlite")]
 async fn body_bytes(response: rama::http::Response<Body>) -> Vec<u8> {
     response
         .into_body()

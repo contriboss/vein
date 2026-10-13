@@ -1,9 +1,11 @@
 use anyhow::{Context, Result, anyhow};
 use rama::{
     Service,
-    http::{Body, HeaderMap, HeaderValue, Method, Request, Response, body::util::BodyExt, header},
+    http::{Body, HeaderMap, HeaderValue, Method, Request, Response, header},
 };
 use vein_adapter::CacheBackendTrait;
+
+use crate::upstream::{UA, buffer_response};
 
 use super::{CacheStatus, RequestContext, VeinProxy, cache, quarantine, types};
 
@@ -111,78 +113,30 @@ impl VeinProxy {
 
     /// Fetch a crate from crates.io CDN.
     async fn fetch_crate(&self, name: &str, version: &str) -> Result<Response<Body>> {
-        use rama::http::client::EasyHttpWebClient;
-
-        let url = format!(
-            "https://static.crates.io/crates/{}/{}-{}.crate",
-            name, name, version
-        );
-
-        let client = EasyHttpWebClient::default();
+        let url = format!("https://static.crates.io/crates/{name}/{name}-{version}.crate");
 
         let request = Request::builder()
             .method(Method::GET)
             .uri(url.as_str())
-            .header(
-                header::USER_AGENT,
-                HeaderValue::from_static(concat!("vein/", env!("CARGO_PKG_VERSION"))),
-            )
+            .header(header::USER_AGENT, HeaderValue::from_static(UA))
             .body(Body::empty())
             .context("building crate request")?;
 
-        let response = client
+        let response = self
+            .http
             .serve(request)
             .await
             .map_err(|e| anyhow!("crate fetch failed: {e}"))?;
 
-        let status = response.status();
-        let headers = response.headers().clone();
-        let body_bytes = response
-            .into_body()
-            .collect()
+        buffer_response(response, false)
             .await
-            .context("reading crate response body")?
-            .to_bytes();
-
-        let mut builder = Response::builder().status(status);
-        {
-            let resp_headers = builder
-                .headers_mut()
-                .ok_or_else(|| anyhow!("cannot get headers mut"))?;
-            for (name, value) in headers.iter() {
-                resp_headers.insert(name, value.clone());
-            }
-        }
-
-        builder
-            .body(Body::from(body_bytes))
-            .context("building crate response")
+            .context("reading crate response")
     }
 
     async fn forward_response(&self, response: Response<Body>) -> Result<Response<Body>> {
-        let status = response.status();
-        let mut builder = Response::builder().status(status);
-        {
-            let headers = builder
-                .headers_mut()
-                .ok_or_else(|| anyhow!("failed to get headers for response build"))?;
-            for (name, value) in response.headers().iter() {
-                if name == header::TRANSFER_ENCODING {
-                    continue;
-                }
-                headers.insert(name, value.clone());
-            }
-        }
-
-        let body = Body::from(
-            response
-                .into_body()
-                .collect()
-                .await
-                .context("reading forwarded response body")?
-                .to_bytes(),
-        );
-        builder.body(body).context("building forwarded response")
+        buffer_response(response, true)
+            .await
+            .context("buffering forwarded response")
     }
 
     pub(super) async fn proxy_generic_get(&self, req: &Request<Body>) -> Result<Response<Body>> {
@@ -208,6 +162,7 @@ impl VeinProxy {
         }
 
         let mut last_err: Option<anyhow::Error> = None;
+        let no_headers = HeaderMap::new();
 
         for upstream in &self.upstreams {
             let upstream_url = upstream
@@ -215,7 +170,7 @@ impl VeinProxy {
                 .with_context(|| format!("constructing upstream url for {}", upstream.base))?;
 
             let response = client
-                .get_with_headers(upstream_url.clone(), headers.unwrap_or(&HeaderMap::new()))
+                .get_with_headers(upstream_url.clone(), headers.unwrap_or(&no_headers))
                 .await;
 
             match response {
@@ -224,7 +179,7 @@ impl VeinProxy {
                 }
                 Ok(r) => return Ok(r),
                 Err(err) => {
-                    last_err = Some(anyhow!("{} failed: {err}", upstream_url));
+                    last_err = Some(anyhow!("{upstream_url} failed: {err}"));
                 }
             }
         }

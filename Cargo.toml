@@ -1,20 +1,77 @@
 [workspace]
-members = ["crates/vein-adapter", "crates/vein-admin"]
+members = ["crates/vein-adapter"]
 resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.99"
+authors = ["Abdelkader Boudih <oss@seuros.com>"]
+license = "AGPL-3.0-only"
+repository = "https://github.com/contriboss/vein"
+homepage = "https://github.com/contriboss/vein"
+
+[workspace.dependencies]
+anyhow = "1.0.104"
+# `oldtime` and `wasmbind` from chrono's default set are dead weight here.
+chrono = { version = "0.4.45", default-features = false, features = ["clock", "std", "serde"] }
+clap = { version = "4.6.7", features = ["derive"] }
+hex = "0.4.3"
+percent-encoding = "2.3"
+# Rama network framework; members add `std`, `tcp`, `rustls`, `opentelemetry`.
+rama = { version = "0.4.0", default-features = false, features = ["http-full"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+serde_yaml = { package = "serde_yaml_ng", version = "0.10.0" }
+sha2 = "0.11.0"
+sqlx = { version = "0.9.0", features = ["runtime-tokio"] }
+tempfile = "3.27.0"
+tokio = "1.53.2"
+toml = "1.1.8"
+tracing = "0.1.44"
+vein-adapter = { version = "0.5.0", path = "crates/vein-adapter", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unused_must_use = "warn"
+rust_2024_compatibility = { level = "warn", priority = -1 }
+# Library test harnesses are binaries too; the lib roots allow this under cfg(test).
+dead_code_pub_in_binary = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+mod_module_files = "warn"
+# The binaries are the product; `vein` is an internal library, not a published API.
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+# Request handlers are long by nature; splitting them is tracked separately.
+too_many_lines = "allow"
+# u64 -> f64 for human-readable sizes and ratios.
+cast_precision_loss = "allow"
+# Opinionated / noisy nursery lints.
+option_if_let_else = "allow"
+similar_names = "allow"
+# rama clients and services carry significant-drop markers, so every ordinary
+# `let client = ...` binding trips this.
+significant_drop_tightening = "allow"
 
 [package]
 name = "vein"
 version = "0.5.1"
-edition = "2024"
-rust-version = "1.97"
-authors = ["Abdelkader Boudih <oss@seuros.com>"]
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 description = "A fast, intelligent multi-ecosystem package proxy/cache"
-license = "AGPL-3.0-only"
-repository = "https://github.com/contriboss/vein"
-homepage = "https://github.com/contriboss/vein"
 readme = "README.md"
 keywords = ["rubygems", "crates", "npm", "proxy", "cache"]
 categories = ["development-tools", "caching", "network-programming"]
+
+[lints]
+workspace = true
 
 [lib]
 name = "vein"
@@ -25,64 +82,71 @@ name = "vein"
 path = "src/main.rs"
 
 [features]
-default = ["tls", "sqlite"]
+default = ["tls", "admin"]
 tls = ["rama/rustls", "vein-adapter/tls"]
-sqlite = ["vein-adapter/sqlite"]
-postgres = ["vein-adapter/postgres"]
-android = []
+# Admin dashboard and MCP endpoint, served next to the proxy (`[admin]` in vein.toml).
+admin = ["dep:tera", "dep:mcp-host"]
 inspect = []
 
 [dependencies]
-# Rama network framework (conditional TLS via feature)
-rama = { version = "0.3.0", features = ["http-full", "tcp", "opentelemetry"] }
+rama = { workspace = true, features = ["std", "tcp", "opentelemetry"] }
 
-# OTLP span exporter (rama 0.3 no longer re-exports the HTTP exporter; only the
+# OTLP span exporter (rama no longer re-exports the HTTP exporter; only the
 # grpc `collector` is bundled). Uses the hyper client already in the tree.
+# Must track the opentelemetry minor rama builds against (0.32 as of rama 0.4):
+# a newer exporter implements a different SDK's `SpanExporter` trait.
 opentelemetry-otlp = { version = "0.32", default-features = false, features = ["trace", "http-proto", "hyper-client"] }
 
 # Async runtime
-tokio = { version = "1.52.3", features = ["full"] }
+tokio = { workspace = true, features = ["full"] }
 
 # Serialization
-serde = { version = "1.0.228", features = ["derive"] }
-serde_json = "1.0.150"
-serde_yaml = { package = "serde_yaml_ng", version = "0.10.0" }
-toml = "1.1.2"
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+toml.workspace = true
 
 # File handling and hashing
-sha2 = "0.11.0"
+sha2.workspace = true
 
 # Archive handling
-hex = "0.4.3"
-flate2 = "1.1.9"
+hex.workspace = true
+flate2 = "1.1.10"
 tar = "0.4.46"
 cyclonedx-bom = "0.8.1"
 
 # Error handling
-anyhow = "1.0.102"
+anyhow.workspace = true
 
 # CLI
-clap = { version = "4.6.1", features = ["derive"] }
+clap.workspace = true
 
 # Utilities
-percent-encoding = "2.3"
-rand = "0.10.1"
+percent-encoding.workspace = true
 
 # Scheduling
 tokio-cron-scheduler = "0.15.1"
 
 # State machines
-state-machines = { version = "0.20.0", features = ["typestate"] }
-breaker-machines = "0.16.0"
-chrono-machines = "0.4.0"
+state-machines = "0.31.0"
+breaker-machines = { version = "0.19.0", features = ["async"] }
+chrono-machines = { version = "0.8.1", features = ["async"] }
 
 # Time handling
-chrono = { version = "0.4.45", features = ["serde"] }
+chrono.workspace = true
 
-vein-adapter = { version = "0.5.0", path = "crates/vein-adapter", default-features = false }
+# Logging (rama re-exports the same crate; the admin modules use it directly)
+tracing.workspace = true
+
+# Admin dashboard (feature `admin`)
+tera = { version = "2.4.0", optional = true }
+mcp-host = { version = "0.9.0", default-features = false, features = ["http", "macros"], optional = true }
+
+vein-adapter.workspace = true
 
 [dev-dependencies]
-tempfile = "3.27.0"
+tempfile.workspace = true
+vein-adapter = { workspace = true, features = ["test-support"] }
 
 [profile.release]
 lto = true

@@ -1,22 +1,21 @@
 use crate::config::reliability::{ReliabilityConfig, RetryConfig};
 use anyhow::{Result, bail};
 use serde::Deserialize;
-use std::path::Path;
-#[cfg(feature = "sqlite")]
-use std::path::PathBuf;
 
+/// The Postgres cache index.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct DatabaseConfig {
-    #[cfg(feature = "sqlite")]
-    #[serde(default = "default_database_path")]
-    pub path: PathBuf,
-    #[serde(default)]
+    /// `postgres://user:pass@host/db`; required to run.
     pub url: Option<String>,
-    #[serde(default = "DatabaseConfig::default_reliability")]
+    /// Connection pool size.
+    pub max_connections: u32,
     pub reliability: ReliabilityConfig,
 }
 
 impl DatabaseConfig {
+    const DEFAULT_MAX_CONNECTIONS: u32 = 10;
+
     fn default_reliability() -> ReliabilityConfig {
         ReliabilityConfig {
             retry: RetryConfig {
@@ -28,138 +27,56 @@ impl DatabaseConfig {
         }
     }
 
-    #[cfg(feature = "sqlite")]
-    pub fn normalize_paths(&mut self, base_dir: &Path) {
-        if let Some(raw_url) = &self.url {
-            let trimmed = raw_url.trim();
-            if let Some(scheme) = Self::parse_scheme(trimmed)
-                && scheme == "sqlite"
-                && let Ok(path) = Self::sqlite_path_from_url(trimmed)
-            {
-                self.path = path;
-            }
-        }
-        crate::config::resolve_relative(&mut self.path, base_dir);
+    /// Where the database lives, for display: the URL with any credentials
+    /// removed.
+    #[must_use]
+    pub fn location(&self) -> String {
+        self.url
+            .as_deref()
+            .map_or_else(String::new, redact_credentials)
     }
 
-    #[cfg(not(feature = "sqlite"))]
-    pub fn normalize_paths(&mut self, _base_dir: &Path) {}
-
-    #[cfg(feature = "sqlite")]
-    pub fn ensure_directories(&self) -> std::io::Result<()> {
-        if let Some(parent) = self.path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        Ok(())
-    }
-
-    #[cfg(not(feature = "sqlite"))]
-    pub fn ensure_directories(&self) -> std::io::Result<()> {
-        Ok(())
-    }
-
+    /// The validated connection target.
+    ///
+    /// # Errors
+    ///
+    /// When `url` is unset or is not a `postgres://` URL.
     pub fn backend(&self) -> Result<DatabaseBackend> {
-        if let Some(raw_url) = &self.url {
-            let trimmed = raw_url.trim();
-            let scheme = Self::parse_scheme(trimmed).unwrap_or_default();
-
-            match scheme {
-                #[cfg(feature = "postgres")]
-                "postgres" | "postgresql" => Ok(DatabaseBackend {
-                    url: trimmed.to_string(),
-                }),
-                #[cfg(not(feature = "postgres"))]
-                "postgres" | "postgresql" => {
-                    bail!("PostgreSQL support not compiled in. Rebuild with --features postgres")
-                }
-                #[cfg(feature = "sqlite")]
-                "sqlite" => {
-                    let parsed_path = Self::sqlite_path_from_url(trimmed)?;
-                    let path = if self.path.is_absolute() {
-                        self.path.clone()
-                    } else {
-                        parsed_path
-                    };
-                    Ok(DatabaseBackend { path })
-                }
-                #[cfg(not(feature = "sqlite"))]
-                "sqlite" => {
-                    bail!("SQLite support not compiled in. Rebuild with --features sqlite")
-                }
-                other => bail!("unsupported database url scheme {other}"),
-            }
-        } else {
-            #[cfg(feature = "sqlite")]
-            {
-                Ok(DatabaseBackend {
-                    path: self.path.clone(),
-                })
-            }
-            #[cfg(not(feature = "sqlite"))]
-            {
-                bail!("No database URL provided. Set database.url for postgres")
-            }
-        }
-    }
-
-    fn parse_scheme(url: &str) -> Option<&str> {
-        url.find("://").map(|idx| &url[..idx])
-    }
-
-    #[cfg(feature = "sqlite")]
-    fn sqlite_path_from_url(url: &str) -> Result<PathBuf> {
-        let after_scheme = url
-            .strip_prefix("sqlite://")
-            .ok_or_else(|| anyhow::anyhow!("invalid sqlite url"))?;
-
-        let (host, path_part) = if let Some(slash_idx) = after_scheme.find('/') {
-            (&after_scheme[..slash_idx], &after_scheme[slash_idx..])
-        } else {
-            ("", after_scheme)
+        let Some(raw_url) = &self.url else {
+            bail!("database.url is required, e.g. postgres://user:pass@host/vein");
         };
-
-        if !host.is_empty() && host != "localhost" && host != "." {
-            bail!("sqlite url must not specify host (got {host})");
+        let url = raw_url.trim();
+        match url.split_once("://").map(|(scheme, _)| scheme) {
+            Some("postgres" | "postgresql") => Ok(DatabaseBackend {
+                url: url.to_string(),
+            }),
+            Some(other) => bail!("unsupported database url scheme {other}; vein needs postgres"),
+            None => bail!("database.url {url:?} is not a URL"),
         }
-
-        if path_part.is_empty() || path_part == "/" {
-            bail!("sqlite url must include database path");
-        }
-
-        let path = if host == "." {
-            PathBuf::from(path_part.trim_start_matches('/'))
-        } else {
-            PathBuf::from(path_part)
-        };
-
-        Ok(path)
     }
 }
 
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
-            #[cfg(feature = "sqlite")]
-            path: default_database_path(),
             url: None,
+            max_connections: Self::DEFAULT_MAX_CONNECTIONS,
             reliability: Self::default_reliability(),
         }
     }
 }
 
-#[cfg(feature = "sqlite")]
-fn default_database_path() -> PathBuf {
-    PathBuf::from("./vein.db")
-}
-
-#[cfg(feature = "sqlite")]
-#[derive(Debug, Clone)]
-pub struct DatabaseBackend {
-    pub path: PathBuf,
-}
-
-#[cfg(feature = "postgres")]
 #[derive(Debug, Clone)]
 pub struct DatabaseBackend {
     pub url: String,
+}
+
+/// `url` without its `user:password@` part, so it can be shown on a dashboard.
+pub(crate) fn redact_credentials(url: &str) -> String {
+    if let Some((scheme, rest)) = url.split_once("://")
+        && let Some((_, host)) = rest.split_once('@')
+    {
+        return format!("{scheme}://{host}");
+    }
+    url.to_owned()
 }

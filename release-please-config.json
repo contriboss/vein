@@ -6,9 +6,6 @@
     },
     "crates/vein-adapter": {
       "package-name": "vein-adapter"
-    },
-    "crates/vein-admin": {
-      "package-name": "vein-admin"
     }
   },
   "plugins": [
@@ -19,7 +16,7 @@
     {
       "type": "linked-versions",
       "groupName": "vein",
-      "components": ["vein", "vein-adapter", "vein-admin"]
+      "components": ["vein", "vein-adapter"]
     }
   ],
   "include-component-in-tag": false,

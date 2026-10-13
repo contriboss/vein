@@ -1,16 +1,12 @@
 # Default configuration file; override with `make CONFIG=custom.toml run`
 CONFIG ?= vein.toml
-ADMIN_BIND ?= 127.0.0.1
-ADMIN_PORT ?= 9400
 
-.PHONY: help run admin dev stats cache-refresh check fmt clippy test build release
+.PHONY: help run dev stats check fmt clippy test build release
 
 help:
 	@echo "Available targets:"
-	@echo "  run            Start the Vein proxy (cargo run -- serve)"
+	@echo "  run            Start the Vein proxy and admin dashboard (cargo run -- serve)"
 	@echo "  stats          Show cache statistics"
-	@echo "  cache-refresh  Refresh the hot cache from SQLite"
-	@echo "  admin          Start the Loco admin dashboard"
 	@echo "  check          Type-check the workspace"
 	@echo "  fmt            Format the workspace"
 	@echo "  clippy         Lint with cargo clippy"
@@ -30,12 +26,6 @@ dev:
 
 stats:
 	cargo run -- stats --config $(CONFIG)
-
-cache-refresh:
-	cargo run -- cache refresh --config $(CONFIG)
-
-admin:
-	cargo run -p vein-admin -- --config $(CONFIG) --bind $(ADMIN_BIND) --port $(ADMIN_PORT)
 
 check:
 	cargo check
