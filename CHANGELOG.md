@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0](https://github.com/contriboss/vein/compare/v0.5.1...v1.0.0) (2026-10-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* maintenance sync from forgejo
+
+### Miscellaneous Chores
+
+* maintenance sync from forgejo ([979313b](https://github.com/contriboss/vein/commit/979313b3e0dbb3e0500fa6c016c5997b2f22e23a))
+
 ## [0.5.1](https://github.com/contriboss/vein/compare/v0.5.0...v0.5.1) (2026-07-30)
 
 
