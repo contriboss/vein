@@ -11,7 +11,7 @@ pub mod types;
 use std::future::Future;
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 
 #[derive(Clone, Copy, Debug)]
 pub struct GemSymbolRecord<'a> {
@@ -116,13 +116,13 @@ pub trait CacheBackendTrait: Send + Sync {
         &self,
         name: &str,
         platform: Option<&str>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> impl Future<Output = Result<Option<GemVersion>>> + Send;
 
     fn get_quarantined_versions(
         &self,
         name: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> impl Future<Output = Result<Vec<GemVersion>>> + Send;
 
     fn update_version_status(
@@ -136,7 +136,7 @@ pub trait CacheBackendTrait: Send + Sync {
 
     fn promote_expired_quarantines(
         &self,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> impl Future<Output = Result<u64>> + Send;
 
     fn mark_yanked(&self, name: &str, version: &str) -> impl Future<Output = Result<()>> + Send;

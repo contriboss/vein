@@ -337,6 +337,15 @@ fn test_validate_invalid_scheme() {
 }
 
 #[test]
+fn test_validate_release_hour_is_an_hour_of_the_day() {
+    for (hour, valid) in [(0, true), (23, true), (24, false), (255, false)] {
+        let mut config = configured();
+        config.delay_policy.release_hour_utc = hour;
+        assert_eq!(config.validate().is_ok(), valid, "hour {hour}");
+    }
+}
+
+#[test]
 fn test_validate_no_upstream() {
     let config = Config {
         upstream: None,

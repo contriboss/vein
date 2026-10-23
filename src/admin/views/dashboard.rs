@@ -1,7 +1,7 @@
 //! Dashboard view helpers.
 
 use crate::util::format_bytes;
-use chrono::Local;
+use jiff::tz::TimeZone;
 use serde::Serialize;
 use tera::{Context, Tera};
 
@@ -138,15 +138,15 @@ fn stats_context(data: &DashboardData) -> Context {
 fn formatted_generated_at(snapshot: &DashboardSnapshot) -> String {
     snapshot
         .generated_at
-        .with_timezone(&Local)
-        .format("%Y-%m-%d %H:%M:%S")
+        .to_zoned(TimeZone::system())
+        .strftime("%Y-%m-%d %H:%M:%S")
         .to_string()
 }
 
 fn ruby_latest_label(snapshot: &DashboardSnapshot) -> String {
     snapshot.ruby_status.latest_release.as_ref().map_or_else(
         || "Unknown".to_string(),
-        |release| format!("{} ({})", release.version, release.date.format("%Y-%m-%d")),
+        |release| format!("{} ({})", release.version, release.date),
     )
 }
 
@@ -163,10 +163,7 @@ fn ruby_security_label(snapshot: &DashboardSnapshot) -> String {
             let deadline = branch
                 .expected_eol_date
                 .or(branch.security_maintenance_date)
-                .map_or_else(
-                    || "TBD".to_string(),
-                    |date| date.format("%Y-%m-%d").to_string(),
-                );
+                .map_or_else(|| "TBD".to_string(), |date| date.to_string());
             format!("{} (until {})", branch.name, deadline)
         })
         .collect::<Vec<_>>()
@@ -183,10 +180,9 @@ fn ruby_eol_label(snapshot: &DashboardSnapshot) -> String {
         .recent_eol
         .iter()
         .map(|branch| {
-            let date = branch.eol_date.map_or_else(
-                || "Unknown".to_string(),
-                |value| value.format("%Y-%m-%d").to_string(),
-            );
+            let date = branch
+                .eol_date
+                .map_or_else(|| "Unknown".to_string(), |value| value.to_string());
             format!("{} ({})", branch.name, date)
         })
         .collect::<Vec<_>>()
@@ -197,7 +193,7 @@ fn ruby_updated_label(snapshot: &DashboardSnapshot) -> String {
     snapshot
         .ruby_status
         .fetched_at
-        .format("%Y-%m-%d %H:%M UTC")
+        .strftime("%Y-%m-%d %H:%M UTC")
         .to_string()
 }
 

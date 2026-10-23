@@ -22,9 +22,10 @@ test-support = []
 
 [dependencies]
 anyhow.workspace = true
-sqlx = { workspace = true, features = ["chrono", "migrate", "postgres"] }
+sqlx = { workspace = true, features = ["migrate", "postgres"] }
 tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread", "sync"] }
-chrono.workspace = true
+jiff.workspace = true
+jiff-sqlx.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true

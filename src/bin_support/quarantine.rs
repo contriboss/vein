@@ -77,7 +77,7 @@ pub fn run_quarantine_list(config_path: PathBuf, limit: u32) -> Result<()> {
             version.version,
             platform,
             format!("{:?}", version.status),
-            version.available_after.format("%Y-%m-%d %H:%M UTC")
+            version.available_after.strftime("%Y-%m-%d %H:%M UTC")
         );
     }
 

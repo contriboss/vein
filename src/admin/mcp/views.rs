@@ -211,7 +211,7 @@ impl From<GemVersion> for TrackedVersion {
     fn from(version: GemVersion) -> Self {
         Self {
             status: version.status.to_string(),
-            available_after: version.available_after.to_rfc3339(),
+            available_after: version.available_after.to_string(),
             name: version.name,
             version: version.version,
             platform: version.platform,

@@ -316,11 +316,30 @@ async fn test_negative_size_clamped_to_zero() {
         path: "/test".to_string(),
         sha256: "hash".to_string(),
         size_bytes: -1000,
-        last_accessed: chrono::Utc::now(),
+        last_accessed: jiff::Timestamp::now().into(),
     };
 
     let asset: CachedAsset = row.into();
     assert_eq!(asset.size_bytes, 0, "Negative sizes should be clamped to 0");
+}
+
+/// What chrono's `to_rfc3339_opts(Millis, true)` printed, kept for the
+/// dashboard and API consumers.
+#[test]
+fn timestamps_format_as_rfc3339_with_milliseconds() {
+    use crate::cache::models::format_timestamp;
+
+    for (input, expected) in [
+        ("2026-10-23T09:00:00Z", "2026-10-23T09:00:00.000Z"),
+        ("2026-10-23T09:00:00.123456Z", "2026-10-23T09:00:00.123Z"),
+        ("2026-10-23T11:00:00+02:00", "2026-10-23T09:00:00.000Z"),
+    ] {
+        assert_eq!(
+            format_timestamp(input.parse().unwrap()),
+            expected,
+            "{input}"
+        );
+    }
 }
 
 #[tokio::test]

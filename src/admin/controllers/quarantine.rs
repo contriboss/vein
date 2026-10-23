@@ -5,7 +5,7 @@
 //! - Approve versions for early release
 //! - Block malicious versions
 
-use chrono::Utc;
+use jiff::Timestamp;
 use rama::http::service::web::extract::{Form, Path, Query, State};
 use rama::http::service::web::response::{Html, IntoResponse, Json, Redirect};
 use serde::{Deserialize, Serialize};
@@ -87,14 +87,14 @@ impl From<AdapterQuarantineStats> for QuarantineStats {
 
 impl From<GemVersion> for PendingGem {
     fn from(gem: GemVersion) -> Self {
-        let time_remaining = gem.available_after.signed_duration_since(Utc::now());
+        let time_remaining = gem.available_after.duration_since(Timestamp::now());
         Self {
             name: gem.name,
             version: gem.version,
             platform: gem.platform.clone(),
             platform_raw: gem.platform.unwrap_or_default(),
             status: status_label(gem.status).to_string(),
-            hours_remaining: time_remaining.num_hours().max(0),
+            hours_remaining: time_remaining.as_hours().max(0),
         }
     }
 }
@@ -270,8 +270,8 @@ fn pending_payload(pending: Vec<GemVersion>) -> Vec<serde_json::Value> {
                 "version": version.version,
                 "platform": version.platform,
                 "status": format!("{:?}", version.status),
-                "published_at": version.published_at.to_rfc3339(),
-                "available_after": version.available_after.to_rfc3339(),
+                "published_at": version.published_at.to_string(),
+                "available_after": version.available_after.to_string(),
             })
         })
         .collect()

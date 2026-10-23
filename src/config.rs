@@ -90,6 +90,12 @@ impl Config {
             bail!("unsupported upstream scheme {}", upstream.url);
         }
         self.database.backend()?;
+        if self.delay_policy.release_hour_utc > 23 {
+            bail!(
+                "delay_policy.release_hour_utc is an hour of the day, 0 to 23; got {}",
+                self.delay_policy.release_hour_utc
+            );
+        }
         Ok(())
     }
 }

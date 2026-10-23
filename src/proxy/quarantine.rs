@@ -4,7 +4,7 @@
 //! `bundle update` and `bundle outdated` from seeing versions still in quarantine.
 
 use anyhow::Result;
-use chrono::Utc;
+use jiff::Timestamp;
 use rama::telemetry::tracing::{debug, warn};
 use vein_adapter::{
     CacheBackend, CacheBackendTrait, GemVersion, VersionStatus, calculate_availability,
@@ -35,7 +35,7 @@ pub async fn record_new_version(
     }
 
     let delay_days = config.delay_for_gem(name);
-    let now = Utc::now();
+    let now = Timestamp::now();
     let available_after = calculate_availability(now, &config.to_adapter_policy());
 
     let status = if delay_days == 0 || config.is_pinned(name, version) {
@@ -106,7 +106,7 @@ pub async fn filter_compact_info(
         return Ok(body.to_vec());
     };
 
-    let now = Utc::now();
+    let now = Timestamp::now();
 
     // Get quarantine status for all versions of this gem
     let versions = match index.get_gem_versions_for_index(gem_name).await {

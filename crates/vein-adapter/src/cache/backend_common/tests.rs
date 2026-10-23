@@ -1,9 +1,8 @@
 use super::*;
 use crate::VersionStatus;
-use chrono::Utc;
 
 fn gem_version(version: &str) -> GemVersion {
-    let now = Utc::now();
+    let now = jiff::Timestamp::now();
     GemVersion {
         id: 0,
         name: "rails".to_string(),

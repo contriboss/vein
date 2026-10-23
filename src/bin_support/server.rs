@@ -46,7 +46,7 @@ pub fn run_server(config_path: PathBuf) -> Result<()> {
 
     let (index, _) = connect_cache_index(&setup_rt, &config)?;
 
-    quarantine::spawn_promotion_scheduler(&config.delay_policy, index.clone(), None);
+    let promotion = quarantine::promotion_task(&config.delay_policy, index.clone(), None)?;
 
     drop(setup_rt);
 
@@ -58,6 +58,9 @@ pub fn run_server(config_path: PathBuf) -> Result<()> {
         .enable_all()
         .build()
         .context("constructing server runtime")?;
+    if let Some(promotion) = promotion {
+        server_rt.spawn(promotion);
+    }
 
     server_rt.block_on(async move {
         let graceful = Shutdown::new(shutdown_signal());

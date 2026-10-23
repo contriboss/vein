@@ -74,7 +74,7 @@ fn latest_release_returns_first_parseable_release() {
     .unwrap();
 
     assert_eq!(latest.version, "3.4.0");
-    assert_eq!(latest.date, NaiveDate::from_ymd_opt(2026, 1, 15).unwrap());
+    assert_eq!(latest.date, jiff::civil::date(2026, 1, 15));
 }
 
 #[test]

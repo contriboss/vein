@@ -1,4 +1,4 @@
-use chrono::{DateTime, SecondsFormat, Utc};
+use jiff::Timestamp;
 use sqlx::FromRow;
 
 use super::quarantine::GemVersion;
@@ -9,7 +9,7 @@ pub struct CachedAssetRow {
     pub path: String,
     pub sha256: String,
     pub size_bytes: i64,
-    pub last_accessed: DateTime<Utc>,
+    pub last_accessed: jiff_sqlx::Timestamp,
 }
 
 impl From<CachedAssetRow> for CachedAsset {
@@ -18,7 +18,7 @@ impl From<CachedAssetRow> for CachedAsset {
             path: value.path,
             sha256: value.sha256,
             size_bytes: value.size_bytes.max(0).cast_unsigned(),
-            last_accessed: format_timestamp(value.last_accessed),
+            last_accessed: format_timestamp(value.last_accessed.to_jiff()),
         }
     }
 }
@@ -29,7 +29,7 @@ pub struct CachedVersionRow {
     pub platform: Option<String>,
     pub sha256: String,
     pub size_bytes: i64,
-    pub last_accessed: DateTime<Utc>,
+    pub last_accessed: jiff_sqlx::Timestamp,
 }
 
 impl From<CachedVersionRow> for CachedVersion {
@@ -39,7 +39,7 @@ impl From<CachedVersionRow> for CachedVersion {
             platform: value.platform,
             sha256: value.sha256,
             size_bytes: value.size_bytes.max(0).cast_unsigned(),
-            last_accessed: format_timestamp(value.last_accessed),
+            last_accessed: format_timestamp(value.last_accessed.to_jiff()),
         }
     }
 }
@@ -78,8 +78,9 @@ pub struct DbGemMetadataRow {
     pub sbom_json: Option<String>,
 }
 
-pub fn format_timestamp(ts: DateTime<Utc>) -> String {
-    ts.to_rfc3339_opts(SecondsFormat::Millis, true)
+/// RFC 3339 in UTC with milliseconds: `2026-10-23T09:00:00.000Z`.
+pub fn format_timestamp(ts: Timestamp) -> String {
+    format!("{ts:.3}")
 }
 
 /// Row of the `gem_versions` table.
@@ -90,13 +91,13 @@ pub struct GemVersionRow {
     pub version: String,
     pub platform: Option<String>,
     pub sha256: Option<String>,
-    pub published_at: DateTime<Utc>,
-    pub available_after: DateTime<Utc>,
+    pub published_at: jiff_sqlx::Timestamp,
+    pub available_after: jiff_sqlx::Timestamp,
     pub status: String,
     pub status_reason: Option<String>,
     pub upstream_yanked: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: jiff_sqlx::Timestamp,
+    pub updated_at: jiff_sqlx::Timestamp,
 }
 
 impl From<GemVersionRow> for GemVersion {
@@ -107,13 +108,13 @@ impl From<GemVersionRow> for GemVersion {
             version: row.version,
             platform: row.platform,
             sha256: row.sha256,
-            published_at: row.published_at,
-            available_after: row.available_after,
+            published_at: row.published_at.to_jiff(),
+            available_after: row.available_after.to_jiff(),
             status: row.status.parse().unwrap_or_default(),
             status_reason: row.status_reason,
             upstream_yanked: row.upstream_yanked,
-            created_at: row.created_at,
-            updated_at: row.updated_at,
+            created_at: row.created_at.to_jiff(),
+            updated_at: row.updated_at.to_jiff(),
         }
     }
 }

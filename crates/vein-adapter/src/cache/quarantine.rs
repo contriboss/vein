@@ -4,7 +4,9 @@
 //! in the index, protecting against supply chain attacks like malicious
 //! gem releases that get yanked within hours.
 
-use chrono::{DateTime, Datelike, Duration, NaiveTime, Utc, Weekday};
+use jiff::civil::{Time, Weekday};
+use jiff::tz::TimeZone;
+use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 
 /// Status of a gem version in the quarantine system.
@@ -56,16 +58,16 @@ pub struct GemVersion {
     pub platform: Option<String>,
     pub sha256: Option<String>,
     /// When this version was first seen/published
-    pub published_at: DateTime<Utc>,
+    pub published_at: Timestamp,
     /// When this version becomes visible in the index
-    pub available_after: DateTime<Utc>,
+    pub available_after: Timestamp,
     pub status: VersionStatus,
     /// Reason for current status (e.g., "auto", "pinned: CVE-2024-XXX")
     pub status_reason: Option<String>,
     /// Whether upstream has yanked this version
     pub upstream_yanked: bool,
-    pub created_at: DateTime<Utc>,
-    pub updated_at: DateTime<Utc>,
+    pub created_at: Timestamp,
+    pub updated_at: Timestamp,
 }
 
 /// Information about a quarantined version, used in HTTP headers.
@@ -73,7 +75,7 @@ pub struct GemVersion {
 pub struct QuarantineInfo {
     pub served_version: String,
     pub requested_version: String,
-    pub available_after: DateTime<Utc>,
+    pub available_after: Timestamp,
     pub reason: String,
     pub quarantined_versions: Vec<String>,
 }
@@ -119,26 +121,37 @@ impl Default for DelayPolicy {
 /// # Returns
 /// `DateTime` when the version should become visible in the index
 #[must_use]
-pub fn calculate_availability(published: DateTime<Utc>, policy: &DelayPolicy) -> DateTime<Utc> {
-    let mut available = published + Duration::days(i64::from(policy.default_delay_days));
+pub fn calculate_availability(published: Timestamp, policy: &DelayPolicy) -> Timestamp {
+    let mut available = after_days(published, i64::from(policy.default_delay_days));
 
     if policy.skip_weekends {
         // Push weekend releases to Monday
-        match available.weekday() {
-            Weekday::Sat => available += Duration::days(2),
-            Weekday::Sun => available += Duration::days(1),
+        match available.to_zoned(TimeZone::UTC).weekday() {
+            Weekday::Saturday => available = after_days(available, 2),
+            Weekday::Sunday => available = after_days(available, 1),
             _ => {}
         }
     }
 
-    if policy.business_hours_only {
-        // Set to configured hour (default 9:00 AM UTC)
-        if let Some(time) = NaiveTime::from_hms_opt(u32::from(policy.release_hour_utc), 0, 0) {
-            available = available.date_naive().and_time(time).and_utc();
-        }
+    // Set to the configured hour (default 9:00 UTC); vein's config
+    // validation refuses an hour past 23, which is left alone here.
+    if policy.business_hours_only
+        && let Ok(hour) = i8::try_from(policy.release_hour_utc)
+        && let Ok(time) = Time::new(hour, 0, 0, 0)
+        && let Ok(at) =
+            TimeZone::UTC.to_timestamp(available.to_zoned(TimeZone::UTC).date().to_datetime(time))
+    {
+        available = at;
     }
 
     available
+}
+
+/// `days` (of 24 hours, as every UTC day is) after `ts`, saturating at the
+/// end of time.
+fn after_days(ts: Timestamp, days: i64) -> Timestamp {
+    ts.saturating_add(SignedDuration::from_hours(days.saturating_mul(24)))
+        .unwrap_or(Timestamp::MAX)
 }
 
 /// Check if a version is currently available (visible in index).
@@ -150,7 +163,7 @@ pub fn calculate_availability(published: DateTime<Utc>, policy: &DelayPolicy) ->
 /// # Returns
 /// `true` if the version should be visible in index responses
 #[must_use]
-pub fn is_version_available(gem_version: &GemVersion, now: DateTime<Utc>) -> bool {
+pub fn is_version_available(gem_version: &GemVersion, now: Timestamp) -> bool {
     match gem_version.status {
         VersionStatus::Available | VersionStatus::Pinned => true,
         VersionStatus::Yanked => false,

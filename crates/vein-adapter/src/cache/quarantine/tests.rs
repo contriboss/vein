@@ -1,52 +1,71 @@
 use super::*;
-use chrono::{TimeZone, Timelike};
-
-#[test]
-fn test_calculate_availability_basic() {
-    let published = Utc.with_ymd_and_hms(2025, 1, 6, 14, 0, 0).unwrap(); // Monday
-    let policy = DelayPolicy {
-        default_delay_days: 3,
-        skip_weekends: false,
-        business_hours_only: false,
-        release_hour_utc: 9,
-    };
-
-    let available = calculate_availability(published, &policy);
-    assert_eq!(available.weekday(), Weekday::Thu);
+fn at(rfc3339: &str) -> Timestamp {
+    rfc3339.parse().unwrap()
 }
 
 #[test]
-fn test_calculate_availability_skip_weekends() {
-    // Thursday + 3 days = Sunday → should push to Monday
-    let published = Utc.with_ymd_and_hms(2025, 1, 9, 14, 0, 0).unwrap(); // Thursday
-    let policy = DelayPolicy {
-        default_delay_days: 3,
-        skip_weekends: true,
-        business_hours_only: false,
-        release_hour_utc: 9,
-    };
-
-    let available = calculate_availability(published, &policy);
-    assert_eq!(available.weekday(), Weekday::Mon);
-}
-
-#[test]
-fn test_calculate_availability_business_hours() {
-    let published = Utc.with_ymd_and_hms(2025, 1, 6, 22, 0, 0).unwrap(); // Monday 10pm
-    let policy = DelayPolicy {
-        default_delay_days: 3,
-        skip_weekends: false,
-        business_hours_only: true,
-        release_hour_utc: 9,
-    };
-
-    let available = calculate_availability(published, &policy);
-    assert_eq!(available.hour(), 9);
+fn availability_follows_the_delay_policy() {
+    // (published, skip_weekends, business_hours_only, release_hour, expected)
+    let cases = [
+        // Monday + 3 days = Thursday, same time of day.
+        (
+            "2025-01-06T14:00:00Z",
+            false,
+            false,
+            9,
+            "2025-01-09T14:00:00Z",
+        ),
+        // Thursday + 3 = Sunday, pushed to Monday.
+        (
+            "2025-01-09T14:00:00Z",
+            true,
+            false,
+            9,
+            "2025-01-13T14:00:00Z",
+        ),
+        // Wednesday + 3 = Saturday, pushed to Monday, at the release hour.
+        (
+            "2025-01-08T22:30:00Z",
+            true,
+            true,
+            9,
+            "2025-01-13T09:00:00Z",
+        ),
+        // Monday 22:00 + 3 = Thursday, at the release hour.
+        (
+            "2025-01-06T22:00:00Z",
+            false,
+            true,
+            9,
+            "2025-01-09T09:00:00Z",
+        ),
+        // Not an hour of the day (config validation refuses it): left alone.
+        (
+            "2025-01-06T22:00:00Z",
+            false,
+            true,
+            24,
+            "2025-01-09T22:00:00Z",
+        ),
+    ];
+    for (published, skip_weekends, business_hours_only, release_hour_utc, expected) in cases {
+        let policy = DelayPolicy {
+            default_delay_days: 3,
+            skip_weekends,
+            business_hours_only,
+            release_hour_utc,
+        };
+        assert_eq!(
+            calculate_availability(at(published), &policy),
+            at(expected),
+            "published {published}, {policy:?}"
+        );
+    }
 }
 
 #[test]
 fn test_is_version_available() {
-    let now = Utc::now();
+    let now = Timestamp::now();
 
     // Quarantined, not yet available
     let quarantined = GemVersion {
@@ -55,8 +74,8 @@ fn test_is_version_available() {
         version: "1.0.0".to_string(),
         platform: None,
         sha256: None,
-        published_at: now - Duration::days(1),
-        available_after: now + Duration::days(2),
+        published_at: now - SignedDuration::from_hours(24),
+        available_after: now + SignedDuration::from_hours(2 * 24),
         status: VersionStatus::Quarantine,
         status_reason: None,
         upstream_yanked: false,
@@ -67,7 +86,7 @@ fn test_is_version_available() {
 
     // Quarantined but time has passed
     let expired_quarantine = GemVersion {
-        available_after: now - Duration::hours(1),
+        available_after: now - SignedDuration::from_hours(1),
         ..quarantined.clone()
     };
     assert!(is_version_available(&expired_quarantine, now));
@@ -96,7 +115,7 @@ fn test_is_version_available() {
 
 #[test]
 fn test_is_version_downloadable() {
-    let now = Utc::now();
+    let now = Timestamp::now();
 
     let base = GemVersion {
         id: 1,
@@ -105,7 +124,7 @@ fn test_is_version_downloadable() {
         platform: None,
         sha256: None,
         published_at: now,
-        available_after: now + Duration::days(3),
+        available_after: now + SignedDuration::from_hours(3 * 24),
         status: VersionStatus::Quarantine,
         status_reason: None,
         upstream_yanked: false,

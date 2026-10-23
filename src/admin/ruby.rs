@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
-use chrono::{NaiveDate, Utc};
+use jiff::Timestamp;
+use jiff::civil::Date;
 use rama::{
     Service,
     error::{ErrorExt as _, extra::OpaqueError},
@@ -25,7 +26,7 @@ const USER_AGENT: &str = crate::upstream::UA;
 
 #[derive(Debug, Clone)]
 pub struct RubyStatus {
-    pub fetched_at: chrono::DateTime<Utc>,
+    pub fetched_at: Timestamp,
     pub latest_release: Option<RubyRelease>,
     pub security_maintenance: Vec<BranchInfo>,
     pub recent_eol: Vec<BranchInfo>,
@@ -34,16 +35,16 @@ pub struct RubyStatus {
 #[derive(Debug, Clone)]
 pub struct RubyRelease {
     pub version: String,
-    pub date: NaiveDate,
+    pub date: Date,
 }
 
 #[derive(Debug, Clone)]
 pub struct BranchInfo {
     pub name: String,
     pub status: String,
-    pub security_maintenance_date: Option<NaiveDate>,
-    pub eol_date: Option<NaiveDate>,
-    pub expected_eol_date: Option<NaiveDate>,
+    pub security_maintenance_date: Option<Date>,
+    pub eol_date: Option<Date>,
+    pub expected_eol_date: Option<Date>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -75,7 +76,7 @@ enum RubyResource {
 impl Default for RubyStatus {
     fn default() -> Self {
         Self {
-            fetched_at: Utc::now(),
+            fetched_at: Timestamp::now(),
             latest_release: None,
             security_maintenance: Vec::new(),
             recent_eol: Vec::new(),
@@ -88,7 +89,7 @@ impl RubyStatus {
         let (security_maintenance, recent_eol) = partition_branches(branches);
 
         Self {
-            fetched_at: Utc::now(),
+            fetched_at: Timestamp::now(),
             latest_release: latest_release(releases),
             security_maintenance,
             recent_eol,
@@ -220,8 +221,10 @@ pub async fn fetch_ruby_status() -> Result<RubyStatus> {
     Ok(RubyStatus::from_sources(branches, releases))
 }
 
-fn parse_date(raw: Option<String>) -> Option<NaiveDate> {
-    raw.and_then(|value| NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok())
+/// A `YYYY-MM-DD` date, as ruby-lang.org writes them; anything else is no
+/// date.
+fn parse_date(raw: Option<String>) -> Option<Date> {
+    raw.and_then(|value| Date::strptime("%Y-%m-%d", &value).ok())
 }
 
 fn build_request(resource: RubyResource) -> Result<Request<Body>> {
@@ -252,8 +255,8 @@ fn partition_branches(branches: Vec<BranchEntry>) -> (Vec<BranchInfo>, Vec<Branc
         }
     }
 
-    security.sort_by_key(|branch| branch.expected_eol_date.unwrap_or(NaiveDate::MAX));
-    eol.sort_by_key(|branch| branch.eol_date.unwrap_or(NaiveDate::MIN));
+    security.sort_by_key(|branch| branch.expected_eol_date.unwrap_or(Date::MAX));
+    eol.sort_by_key(|branch| branch.eol_date.unwrap_or(Date::MIN));
     eol.reverse();
     eol.truncate(RECENT_EOL_LIMIT);
 

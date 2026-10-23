@@ -1,103 +1,84 @@
-//! Quarantine background tasks.
-//!
-//! Provides scheduled jobs for managing gem version quarantine:
-//! - Automatic promotion of versions when quarantine expires
-//! - Database migration for quarantine tables
+//! Quarantine background tasks: promoting versions whose quarantine has
+//! expired, on a cron schedule evaluated in UTC.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
-use chrono::Utc;
+use croner::Cron;
+use jiff::Timestamp;
+use jiff::tz::TimeZone;
 use rama::telemetry::tracing;
-use tokio_cron_scheduler::{Job, JobScheduler};
 use vein_adapter::{CacheBackend, CacheBackendTrait};
 
 use crate::config::DelayPolicyConfig;
 
-/// Default cron schedule for quarantine promotion (every hour at minute 5)
+/// Default cron schedule for quarantine promotion: every hour at minute 5
+/// (`sec min hour day month weekday`).
 pub const DEFAULT_PROMOTION_SCHEDULE: &str = "0 5 * * * *";
 
-/// Spawns the quarantine promotion scheduler.
-///
-/// This job runs periodically to promote versions whose quarantine period has expired.
-pub fn spawn_promotion_scheduler(
+/// The promotion loop, for the server runtime to spawn; `None` when the
+/// delay policy is off. The schedule is parsed here, so a bad one stops
+/// startup instead of the scheduler.
+pub fn promotion_task(
     config: &DelayPolicyConfig,
     index: Arc<CacheBackend>,
     schedule: Option<&str>,
-) {
+) -> Result<Option<impl Future<Output = ()> + Send + 'static>> {
     if !config.enabled {
         tracing::info!("Quarantine not enabled, skipping promotion scheduler");
-        return;
+        return Ok(None);
     }
 
-    let schedule = schedule.unwrap_or(DEFAULT_PROMOTION_SCHEDULE).to_string();
+    let cron = parse_schedule(schedule.unwrap_or(DEFAULT_PROMOTION_SCHEDULE))?;
+    tracing::info!(schedule = %cron, "Quarantine promotion scheduler started");
 
-    std::thread::spawn(move || {
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to create quarantine scheduler runtime");
+    Ok(Some(async move {
+        loop {
+            let Some(wait) = until_next(&cron, Timestamp::now()) else {
+                tracing::error!(%cron, "schedule has no next run; promotion scheduler stopped");
+                return;
+            };
+            tokio::time::sleep(wait).await;
+            promote_logged(&index).await;
+        }
+    }))
+}
 
-        rt.block_on(async {
-            let sched = JobScheduler::new()
-                .await
-                .expect("Failed to create quarantine scheduler");
+fn parse_schedule(pattern: &str) -> Result<Cron> {
+    pattern
+        .parse()
+        .with_context(|| format!("parsing the quarantine promotion schedule `{pattern}`"))
+}
 
-            let job = Job::new_async(schedule.as_str(), move |_uuid, _l| {
-                let index = index.clone();
-                Box::pin(async move {
-                    let now = Utc::now();
-                    tracing::debug!("Running quarantine promotion check");
+/// How long from `now` until `cron` next fires; `None` when it never does.
+fn until_next(cron: &Cron, now: Timestamp) -> Option<Duration> {
+    let now = now.to_zoned(TimeZone::UTC);
+    let next = cron.find_next_occurrence(&now, false).ok()?;
+    // `next` is strictly after `now`, so the zero fallback is never taken.
+    Some(Duration::try_from(next.duration_since(&now)).unwrap_or(Duration::ZERO))
+}
 
-                    match index.promote_expired_quarantines(now).await {
-                        Ok(count) if count > 0 => {
-                            tracing::info!(
-                                promoted = count,
-                                "Promoted quarantined versions to available"
-                            );
-                        }
-                        Ok(_) => {
-                            tracing::debug!("No quarantined versions ready for promotion");
-                        }
-                        Err(err) => {
-                            tracing::error!(error = %err, "Failed to promote quarantined versions");
-                        }
-                    }
-                })
-            })
-            .expect("Failed to create promotion job");
-
-            sched
-                .add(job)
-                .await
-                .expect("Failed to add promotion job to scheduler");
-
-            sched
-                .start()
-                .await
-                .expect("Failed to start quarantine scheduler");
-
-            tracing::info!(
-                schedule = %schedule,
-                "Quarantine promotion scheduler started"
-            );
-
-            // Keep the scheduler runtime alive forever
-            loop {
-                tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-            }
-        });
-    });
+async fn promote_logged(index: &CacheBackend) {
+    tracing::debug!("Running quarantine promotion check");
+    match index.promote_expired_quarantines(Timestamp::now()).await {
+        Ok(0) => tracing::debug!("No quarantined versions ready for promotion"),
+        Ok(promoted) => {
+            tracing::info!(promoted, "Promoted quarantined versions to available");
+        }
+        Err(err) => tracing::error!(error = %err, "Failed to promote quarantined versions"),
+    }
 }
 
 /// Manually triggers promotion of expired quarantines.
 ///
 /// Useful for CLI commands.
 pub async fn promote_now(index: &CacheBackend) -> Result<u64> {
-    let now = Utc::now();
-    let count = index
-        .promote_expired_quarantines(now)
+    index
+        .promote_expired_quarantines(Timestamp::now())
         .await
-        .context("promoting expired quarantines")?;
-    Ok(count)
+        .context("promoting expired quarantines")
 }
+
+#[cfg(test)]
+mod tests;

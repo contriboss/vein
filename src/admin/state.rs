@@ -4,7 +4,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use crate::config::Config as VeinConfig;
 use anyhow::{Context, Result, bail};
-use chrono::{DateTime, Utc};
+use jiff::Timestamp;
 use rama::{
     Layer,
     http::{
@@ -69,7 +69,7 @@ impl AdminResources {
         let upstream = self.config.upstream.as_ref().map(|up| up.url.to_string());
 
         Ok(DashboardSnapshot {
-            generated_at: Utc::now(),
+            generated_at: Timestamp::now(),
             index: index_stats,
             storage_path: self.config.storage.path.clone(),
             database: self.config.database.location(),
@@ -274,7 +274,7 @@ impl AdminResources {
 }
 
 pub struct DashboardSnapshot {
-    pub generated_at: DateTime<Utc>,
+    pub generated_at: Timestamp,
     pub index: IndexStats,
     pub storage_path: PathBuf,
     pub database: String,

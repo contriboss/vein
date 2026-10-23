@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Utc};
+use jiff::{SignedDuration, Timestamp};
+use jiff_sqlx::ToSqlx;
 #[cfg(any(test, feature = "test-support"))]
 use sqlx::{Connection as _, PgConnection, postgres::PgConnectOptions};
 use sqlx::{
@@ -499,7 +500,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
                 .await
                 .context("summing cached asset sizes (postgres)")?;
 
-        let last_accessed: Option<DateTime<Utc>> =
+        let last_accessed: Option<jiff_sqlx::Timestamp> =
             sqlx::query_scalar("SELECT MAX(last_accessed) FROM cached_assets")
                 .fetch_one(&self.pool)
                 .await
@@ -512,7 +513,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
             npm_assets,
             unique_packages,
             total_size_bytes,
-            last_accessed.map(format_timestamp),
+            last_accessed.map(|ts| format_timestamp(ts.to_jiff())),
         ))
     }
 
@@ -719,12 +720,12 @@ impl CacheBackendTrait for PostgresCacheBackend {
         .bind(&gem_version.version)
         .bind(gem_version.platform.as_deref())
         .bind(gem_version.sha256.as_deref())
-        .bind(gem_version.published_at)
-        .bind(gem_version.available_after)
+        .bind(gem_version.published_at.to_sqlx())
+        .bind(gem_version.available_after.to_sqlx())
         .bind(gem_version.status.to_string())
         .bind(gem_version.status_reason.as_deref())
         .bind(gem_version.upstream_yanked)
-        .bind(gem_version.created_at)
+        .bind(gem_version.created_at.to_sqlx())
         .execute(&self.pool)
         .await
         .context("upserting gem version (postgres)")?;
@@ -736,7 +737,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         &self,
         name: &str,
         platform: Option<&str>,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Option<GemVersion>> {
         // Get all available versions and sort in Rust by RubyGems version order
         let rows = sqlx::query_as::<_, GemVersionRow>(
@@ -753,7 +754,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         )
         .bind(name)
         .bind(platform)
-        .bind(now)
+        .bind(now.to_sqlx())
         .fetch_all(&self.pool)
         .await
         .context("fetching available versions (postgres)")?;
@@ -764,7 +765,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
     async fn get_quarantined_versions(
         &self,
         name: &str,
-        now: DateTime<Utc>,
+        now: Timestamp,
     ) -> Result<Vec<GemVersion>> {
         let rows = sqlx::query_as::<_, GemVersionRow>(
             r"
@@ -778,7 +779,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
             ",
         )
         .bind(name)
-        .bind(now)
+        .bind(now.to_sqlx())
         .fetch_all(&self.pool)
         .await
         .context("fetching quarantined versions (postgres)")?;
@@ -815,7 +816,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         Ok(())
     }
 
-    async fn promote_expired_quarantines(&self, now: DateTime<Utc>) -> Result<u64> {
+    async fn promote_expired_quarantines(&self, now: Timestamp) -> Result<u64> {
         let result = sqlx::query(
             r"
             UPDATE gem_versions
@@ -824,7 +825,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
               AND available_after <= $1
             ",
         )
-        .bind(now)
+        .bind(now.to_sqlx())
         .execute(&self.pool)
         .await
         .context("promoting expired quarantines (postgres)")?;
@@ -870,9 +871,13 @@ impl CacheBackendTrait for PostgresCacheBackend {
     }
 
     async fn quarantine_stats(&self) -> Result<QuarantineStats> {
-        let now = Utc::now();
-        let today_end = now + Duration::days(1);
-        let week_end = now + Duration::days(7);
+        let now = Timestamp::now();
+        let today_end = now
+            .checked_add(SignedDuration::from_hours(24))
+            .context("a day from now")?;
+        let week_end = now
+            .checked_add(SignedDuration::from_hours(7 * 24))
+            .context("a week from now")?;
 
         let (quarantined, available, yanked, pinned): (i64, i64, i64, i64) = sqlx::query_as(
             r"
@@ -897,8 +902,8 @@ impl CacheBackendTrait for PostgresCacheBackend {
               AND available_after <= $2
             ",
         )
-        .bind(now)
-        .bind(today_end)
+        .bind(now.to_sqlx())
+        .bind(today_end.to_sqlx())
         .fetch_one(&self.pool)
         .await
         .context("counting versions releasing today (postgres)")?;
@@ -912,8 +917,8 @@ impl CacheBackendTrait for PostgresCacheBackend {
               AND available_after <= $2
             ",
         )
-        .bind(now)
-        .bind(week_end)
+        .bind(now.to_sqlx())
+        .bind(week_end.to_sqlx())
         .fetch_one(&self.pool)
         .await
         .context("counting versions releasing this week (postgres)")?;
