@@ -69,6 +69,7 @@ description = "A fast, intelligent multi-ecosystem package proxy/cache"
 readme = "README.md"
 keywords = ["rubygems", "crates", "npm", "proxy", "cache"]
 categories = ["development-tools", "caching", "network-programming"]
+exclude = ["tests/", "assets/"]
 
 [lints]
 workspace = true
@@ -146,6 +147,7 @@ vein-adapter.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
+sqlx.workspace = true
 vein-adapter = { workspace = true, features = ["test-support"] }
 
 [profile.release]
