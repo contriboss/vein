@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::DelayPolicyConfig;
 
 use crate::test_support::{install_rustls_provider, raw_response, spawn_sequence_server};
 
@@ -48,6 +49,7 @@ async fn test_handle_sparse_index_caches_and_revalidates() {
         "http://localhost:8346",
         storage.clone(),
         index.clone(),
+        &DelayPolicyConfig::default(),
         &upstream_base,
     )
     .await
@@ -61,6 +63,7 @@ async fn test_handle_sparse_index_caches_and_revalidates() {
         "http://localhost:8346",
         storage.clone(),
         index.clone(),
+        &DelayPolicyConfig::default(),
         &upstream_base,
     )
     .await

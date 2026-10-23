@@ -18,7 +18,7 @@ use rama::{
     telemetry::tracing,
     tls::rustls::dep::rustls,
 };
-use vein::{proxy::VeinProxy, quarantine};
+use vein::proxy::VeinProxy;
 use vein_adapter::FilesystemStorage;
 
 use super::setup::{
@@ -46,8 +46,6 @@ pub fn run_server(config_path: PathBuf) -> Result<()> {
 
     let (index, _) = connect_cache_index(&setup_rt, &config)?;
 
-    let promotion = quarantine::promotion_task(&config.delay_policy, index.clone(), None)?;
-
     drop(setup_rt);
 
     let proxy = VeinProxy::new(config.clone(), storage.clone(), index.clone())
@@ -58,9 +56,6 @@ pub fn run_server(config_path: PathBuf) -> Result<()> {
         .enable_all()
         .build()
         .context("constructing server runtime")?;
-    if let Some(promotion) = promotion {
-        server_rt.spawn(promotion);
-    }
 
     server_rt.block_on(async move {
         let graceful = Shutdown::new(shutdown_signal());
@@ -82,6 +77,7 @@ pub fn run_server(config_path: PathBuf) -> Result<()> {
             )
         });
 
+        spawn_jobs(&graceful, Arc::clone(&config), Arc::clone(&index));
         spawn_admin(&graceful, config, index, storage).await?;
 
         // Resolves once `shutdown_signal` fires and in-flight work drains.
@@ -93,6 +89,32 @@ pub fn run_server(config_path: PathBuf) -> Result<()> {
     })?;
 
     Ok(())
+}
+
+/// vein's background jobs (catalog syncs, delay promotions) on stampeded,
+/// stopped with the server. Failing to start them leaves the proxy serving.
+fn spawn_jobs(
+    graceful: &Shutdown,
+    config: Arc<vein::config::Config>,
+    index: Arc<vein_adapter::CacheBackend>,
+) {
+    graceful.spawn_task_fn(move |guard| async move {
+        let (stop, stopped) = tokio::sync::watch::channel(false);
+        let mut jobs = tokio::spawn(vein::jobs::run(config, index, stopped));
+        let finished = tokio::select! {
+            finished = &mut jobs => finished,
+            () = guard.cancelled() => {
+                // A send error means the jobs already ended; `jobs` says how.
+                stop.send(true).ok();
+                jobs.await
+            }
+        };
+        match finished {
+            Ok(Ok(())) => tracing::info!("background jobs stopped"),
+            Ok(Err(err)) => tracing::error!(error = %format!("{err:#}"), "background jobs failed"),
+            Err(err) => tracing::error!(error = %err, "background jobs panicked"),
+        }
+    });
 }
 
 /// Serve the admin dashboard on its own listener when `[admin]` is enabled.

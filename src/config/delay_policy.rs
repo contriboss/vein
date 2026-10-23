@@ -1,10 +1,11 @@
 //! Delay policy configuration for supply chain protection.
 //!
-//! Configures the quarantine buffer that delays new gem versions from
-//! appearing in the index, protecting against supply chain attacks.
+//! Configures the quarantine buffer that delays new versions of gems,
+//! crates and npm packages from appearing in the index, protecting against
+//! supply chain attacks.
 
 use serde::Deserialize;
-use vein_adapter::DelayPolicy as AdapterDelayPolicy;
+use vein_adapter::{AssetKind, DelayPolicy as AdapterDelayPolicy};
 
 /// Main delay policy configuration.
 #[derive(Debug, Clone, Deserialize)]
@@ -25,9 +26,10 @@ pub struct DelayPolicyConfig {
     /// Hour in UTC for `business_hours_only` releases (0-23).
     #[serde(default = "DelayPolicyConfig::default_release_hour_utc")]
     pub release_hour_utc: u8,
-    /// Per-gem delay overrides.
-    #[serde(default)]
-    pub gems: Vec<GemDelayOverride>,
+    /// Per-package delay overrides; the first match wins. `gems` is the
+    /// name configs used when only gems were delayed.
+    #[serde(default, alias = "gems")]
+    pub packages: Vec<PackageDelayOverride>,
     /// Pinned versions (bypass quarantine immediately).
     #[serde(default)]
     pub pinned: Vec<PinnedVersion>,
@@ -50,48 +52,40 @@ impl DelayPolicyConfig {
         9
     }
 
-    /// Convert to the adapter's `DelayPolicy` type.
+    /// The timing for package `name` in registry `kind`: the defaults with
+    /// its override's delay, if one matches.
     #[must_use]
-    pub const fn to_adapter_policy(&self) -> AdapterDelayPolicy {
+    pub fn policy_for(&self, kind: AssetKind, name: &str) -> AdapterDelayPolicy {
         AdapterDelayPolicy {
-            default_delay_days: self.default_delay_days,
+            default_delay_days: self.delay_days_for(kind, name),
             skip_weekends: self.skip_weekends,
             business_hours_only: self.business_hours_only,
             release_hour_utc: self.release_hour_utc,
         }
     }
 
-    /// Get the delay days for a specific gem, considering overrides.
+    /// Delay in days for package `name` in registry `kind`.
     #[must_use]
-    pub fn delay_for_gem(&self, name: &str) -> u32 {
-        for override_config in &self.gems {
-            if override_config.pattern {
-                if glob_match(&override_config.name, name) {
-                    return override_config.delay_days;
-                }
-            } else if override_config.name == name {
-                return override_config.delay_days;
-            }
-        }
-        self.default_delay_days
+    pub fn delay_days_for(&self, kind: AssetKind, name: &str) -> u32 {
+        self.packages
+            .iter()
+            .find(|entry| covers(entry.registry, kind) && entry.matches(name))
+            .map_or(self.default_delay_days, |entry| entry.delay_days)
     }
 
-    /// Check if a specific version is pinned (bypass quarantine).
+    /// Why `name` `version` in registry `kind` is pinned, if it is.
     #[must_use]
-    pub fn is_pinned(&self, name: &str, version: &str) -> bool {
+    pub fn pin_reason(&self, kind: AssetKind, name: &str, version: &str) -> Option<&str> {
         self.pinned
             .iter()
-            .any(|p| p.name == name && p.version == version)
+            .find(|pin| covers(pin.registry, kind) && pin.name == name && pin.version == version)
+            .map(|pin| pin.reason.as_str())
     }
+}
 
-    /// Get the pin reason if version is pinned.
-    #[must_use]
-    pub fn pin_reason(&self, name: &str, version: &str) -> Option<&str> {
-        self.pinned
-            .iter()
-            .find(|p| p.name == name && p.version == version)
-            .map(|p| p.reason.as_str())
-    }
+/// An entry without a registry covers that name in every registry.
+fn covers(registry: Option<AssetKind>, kind: AssetKind) -> bool {
+    registry.is_none_or(|registry| registry == kind)
 }
 
 impl Default for DelayPolicyConfig {
@@ -102,28 +96,50 @@ impl Default for DelayPolicyConfig {
             skip_weekends: Self::default_skip_weekends(),
             business_hours_only: Self::default_business_hours_only(),
             release_hour_utc: Self::default_release_hour_utc(),
-            gems: Vec::new(),
+            packages: Vec::new(),
             pinned: Vec::new(),
         }
     }
 }
 
-/// Per-gem delay override configuration.
+/// A delay for one package, or a glob of them.
 #[derive(Debug, Clone, Deserialize)]
-pub struct GemDelayOverride {
-    /// Gem name (or glob pattern if `pattern` is true).
+pub struct PackageDelayOverride {
+    /// `gem`, `crate` or `npm`; every registry when left out.
+    #[serde(default)]
+    pub registry: Option<AssetKind>,
+    /// Package name (or glob pattern if `pattern` is true).
+    #[serde(default)]
     pub name: String,
-    /// Delay in days for this gem.
+    /// More exact names under the same delay: a publisher's own packages,
+    /// one entry for all of them.
+    #[serde(default)]
+    pub names: Vec<String>,
+    /// Delay in days for this package; 0 releases it at once.
     pub delay_days: u32,
-    /// If true, `name` is a glob pattern (e.g., "rails-*", "*-internal").
+    /// If true, `name` is a glob pattern (e.g., "rails-*", "@my-org/*").
     #[serde(default)]
     pub pattern: bool,
+}
+
+impl PackageDelayOverride {
+    fn matches(&self, name: &str) -> bool {
+        let named = if self.pattern {
+            glob_match(&self.name, name)
+        } else {
+            !self.name.is_empty() && self.name == name
+        };
+        named || self.names.iter().any(|listed| listed == name)
+    }
 }
 
 /// Pinned version configuration (bypass quarantine).
 #[derive(Debug, Clone, Deserialize)]
 pub struct PinnedVersion {
-    /// Gem name.
+    /// `gem`, `crate` or `npm`; every registry when left out.
+    #[serde(default)]
+    pub registry: Option<AssetKind>,
+    /// Package name.
     pub name: String,
     /// Version string.
     pub version: String,

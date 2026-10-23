@@ -1,13 +1,11 @@
 use anyhow::Result;
 use percent_encoding::percent_decode_str;
-use rama::{
-    http::{Body, Request, Response},
-    telemetry::tracing::warn,
-};
+use rama::http::{Body, Request, Response};
 
 use crate::http_cache::{CacheOutcome, CachedTextOptions, MetaStoreMode, fetch_cached_text};
 
-use super::{CacheStatus, RequestContext, VeinProxy, quarantine, utils};
+use super::{CacheStatus, RequestContext, VeinProxy, utils};
+use crate::delay;
 
 #[derive(Debug, Clone)]
 pub(super) enum CompactRequest {
@@ -88,21 +86,10 @@ impl VeinProxy {
             },
             |headers| async move { self.fetch_with_fallback(req, Some(&headers)).await },
             move |body| async move {
-                if let Some(name) = info_name {
-                    match quarantine::filter_compact_info(delay_policy, index, &name, &body).await {
-                        Ok(filtered) => Ok(filtered),
-                        Err(err) => {
-                            warn!(
-                                error = %err,
-                                gem = %name,
-                                "Failed to filter quarantined versions"
-                            );
-                            Ok(body)
-                        }
-                    }
-                } else {
-                    Ok(body)
-                }
+                Ok(match info_name {
+                    Some(name) => delay::gems::filter_info(delay_policy, index, &name, body).await,
+                    None => body,
+                })
             },
         )
         .await?;

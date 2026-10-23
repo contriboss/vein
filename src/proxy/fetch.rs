@@ -7,7 +7,8 @@ use vein_adapter::CacheBackendTrait;
 
 use crate::upstream::{UA, buffer_response};
 
-use super::{CacheStatus, RequestContext, VeinProxy, cache, quarantine, types};
+use super::{CacheStatus, RequestContext, VeinProxy, cache, types};
+use crate::delay;
 
 impl VeinProxy {
     pub(super) async fn try_handle_cached_request(
@@ -27,6 +28,21 @@ impl VeinProxy {
         let Some(cacheable) = CacheableRequest::from_request(req) else {
             return Ok(None);
         };
+
+        if delay::is_blocked(
+            &self.config.delay_policy,
+            &self.index,
+            &cacheable.asset_key(),
+        )
+        .await
+        {
+            let response = Response::builder()
+                .status(rama::http::StatusCode::FORBIDDEN)
+                .header(header::CONTENT_TYPE, HeaderValue::from_static("text/plain"))
+                .body(Body::from(delay::BLOCKED))
+                .context("building blocked response")?;
+            return Ok(Some((CacheStatus::Pass, response)));
+        }
 
         match self.index.get(&cacheable.asset_key()).await? {
             Some(entry) => match cache::serve_cached(&cacheable, entry, &self.storage).await {
@@ -78,7 +94,7 @@ impl VeinProxy {
             .await
             .context("creating temp file")?;
 
-        let result = cache::run_cache_miss_flow(
+        cache::run_cache_miss_flow(
             cacheable,
             self.index.clone(),
             self.storage.clone(),
@@ -86,29 +102,7 @@ impl VeinProxy {
             temp_file,
             treating_as_revalidation,
         )
-        .await;
-
-        if result.is_ok()
-            && cacheable.kind == vein_adapter::AssetKind::Gem
-            && let Err(err) = quarantine::record_new_version(
-                &self.config.delay_policy,
-                self.index.as_ref(),
-                &cacheable.name,
-                &cacheable.version,
-                cacheable.platform.as_deref(),
-                "",
-            )
-            .await
-        {
-            rama::telemetry::tracing::warn!(
-                error = %err,
-                gem = %cacheable.name,
-                version = %cacheable.version,
-                "Failed to record version in quarantine system"
-            );
-        }
-
-        result
+        .await
     }
 
     /// Fetch a crate from crates.io CDN.

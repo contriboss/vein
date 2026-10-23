@@ -148,7 +148,11 @@ pub fn respond_homepage(config: &Config, base: &str) -> Result<Response<Body>> {
 replace-with = "vein"
 
 [source.vein]
-registry = "sparse+{base}/index/"</pre>
+registry = "sparse+{base}/index/"
+
+# For `cargo search --registry vein`: crates.io's search, through vein.
+[registries.vein]
+index = "sparse+{base}/index/"</pre>
       <p>
         Cargo cannot replace a source through environment variables
         (<code>CARGO_REGISTRIES_CRATES_IO_INDEX</code> is ignored for crates.io).

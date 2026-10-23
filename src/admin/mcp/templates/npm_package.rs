@@ -11,8 +11,10 @@ use crate::admin::mcp::untrusted::{
     clean_url,
 };
 use crate::admin::mcp::version_list::{is_semver_prerelease, newer_prerelease, newest_releases};
-use crate::admin::mcp::views::{cached_labels, same_repository, total_if_truncated};
-use crate::admin::mcp::{VeinMcp, json_resource, unknown_package, uri_param};
+use crate::admin::mcp::views::{
+    TrackedVersion, cached_labels, same_repository, total_if_truncated,
+};
+use crate::admin::mcp::{VeinMcp, json_resource, read_error, unknown_package, uri_param};
 
 #[derive(Serialize)]
 struct Package {
@@ -51,6 +53,10 @@ struct Package {
     /// Versions whose tarball is held here, newest first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     cached: Vec<String>,
+    /// Versions the release delay policy holds back or decided on, newest
+    /// first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    quarantine: Vec<TrackedVersion>,
 }
 
 impl VeinMcp {
@@ -67,6 +73,11 @@ impl VeinMcp {
         let name = uri_param(&ctx, "name")?;
         let packument = self.packument(name).await?;
         let cached = self.artifacts(AssetKind::NpmPackage, name).await?;
+        let quarantine = self
+            .resources
+            .tracked_versions(AssetKind::NpmPackage, name)
+            .await
+            .map_err(read_error)?;
         if packument.is_none() && cached.is_empty() {
             return Err(unknown_package(format_args!("npm package {name}")));
         }
@@ -133,6 +144,7 @@ impl VeinMcp {
                 },
                 versions: listed,
                 cached: cached_labels(&cached),
+                quarantine: quarantine.into_iter().map(TrackedVersion::from).collect(),
                 name: name.to_owned(),
             },
         )

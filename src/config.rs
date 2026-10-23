@@ -6,9 +6,11 @@ use std::{
 use anyhow::{Context, Result, bail};
 use rama::net::Protocol;
 use serde::Deserialize;
+use vein_adapter::AssetKind;
 
 // Re-export all submodules
 pub mod admin;
+pub mod catalog;
 pub mod database;
 pub mod delay_policy;
 pub mod logging;
@@ -29,6 +31,7 @@ pub(crate) fn resolve_relative(path: &mut PathBuf, base_dir: &Path) {
 
 // Re-export types from submodules for convenience
 pub use admin::{AdminConfig, McpSettings};
+pub use catalog::CatalogConfig;
 pub use database::{DatabaseBackend, DatabaseConfig};
 pub use delay_policy::DelayPolicyConfig;
 pub use logging::LoggingConfig;
@@ -53,6 +56,8 @@ pub struct Config {
     pub delay_policy: DelayPolicyConfig,
     #[serde(default)]
     pub admin: AdminConfig,
+    #[serde(default)]
+    pub catalog: CatalogConfig,
 }
 
 impl Config {
@@ -90,6 +95,25 @@ impl Config {
             bail!("unsupported upstream scheme {}", upstream.url);
         }
         self.database.backend()?;
+        if let Some(kind) = self.catalog.registries.iter().find(|kind| {
+            !matches!(
+                kind,
+                AssetKind::Gem | AssetKind::Crate | AssetKind::NpmPackage
+            )
+        }) {
+            bail!(
+                "catalog.registries holds gem, crate or npm; got {}",
+                kind.as_str()
+            );
+        }
+        if let Some(index) = self
+            .delay_policy
+            .packages
+            .iter()
+            .position(|entry| entry.name.is_empty() && entry.names.is_empty())
+        {
+            bail!("delay_policy.packages[{index}] names no package: give `name` or `names`");
+        }
         if self.delay_policy.release_hour_utc > 23 {
             bail!(
                 "delay_policy.release_hour_utc is an hour of the day, 0 to 23; got {}",

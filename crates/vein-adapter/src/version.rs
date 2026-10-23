@@ -27,6 +27,16 @@ pub fn compare_gem_versions(a: &str, b: &str) -> Ordering {
         .unwrap_or(Ordering::Equal)
 }
 
+/// A semver prerelease (`7.1.0-beta`, `1.0.0-rc.1`), as crates.io and npm
+/// spell them: a `-` before any `+build` metadata.
+#[must_use]
+pub fn is_semver_prerelease(version: &str) -> bool {
+    version
+        .split('+')
+        .next()
+        .is_some_and(|core| core.contains('-'))
+}
+
 /// Sorts `items` newest first by the `RubyGems` order of `version(item)`.
 pub fn sort_newest_first<T>(items: &mut [T], version: impl Fn(&T) -> &str) {
     items.sort_by(|a, b| compare_gem_versions(version(b), version(a)));

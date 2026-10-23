@@ -5,19 +5,22 @@
 //! and no URI is listed that the instructions' templates already give.
 
 use serde::Serialize;
-use vein_adapter::{CachedVersion, GemMetadata, GemVersion, QuarantineStats};
+use vein_adapter::{CachedVersion, GemMetadata, PackageVersion as TrackedRow, QuarantineStats};
 
 use super::untrusted::{
     DESCRIPTION_LIMIT, GemText, SUMMARY_LIMIT, clean_list, clean_opt, clean_url,
 };
 
-/// Result of any `.../search/{query}` resource.
+/// Result of any `vein://search/{ecosystem}/{query}` resource.
 #[derive(Serialize)]
 pub struct Search {
-    /// `rubygems.org`: every published name. `cached`: packages this proxy
-    /// holds, so a miss says nothing about whether the package exists.
+    /// `rubygems.org`, `crates.io` or `npm`: the registry's own search.
+    /// `catalog`: vein's list of every name it publishes (the registry was
+    /// out of reach). `cached`: only packages held here, so a miss says
+    /// nothing about whether the package exists.
     pub scope: &'static str,
-    /// Exact match first, then prefix matches, then the rest.
+    /// The registry's ranking; from the catalog or cache, exact match
+    /// first, then prefix matches, then the rest.
     pub names: Vec<String>,
 }
 
@@ -120,21 +123,19 @@ pub struct TrackedVersion {
     pub version: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
-    /// `quarantine`, `available`, `yanked`, or `pinned`.
+    /// `quarantine`, `available`, `blocked`, or `pinned`.
     pub status: String,
     /// RFC 3339 time the version leaves quarantine.
     pub available_after: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status_reason: Option<String>,
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
-    pub upstream_yanked: bool,
 }
 
 #[derive(Serialize)]
 pub struct QuarantineCounts {
     pub quarantined: u64,
     pub available: u64,
-    pub yanked: u64,
+    pub blocked: u64,
     pub pinned: u64,
     pub releasing_today: u64,
     pub releasing_this_week: u64,
@@ -207,8 +208,8 @@ impl From<GemMetadata> for VersionDetails {
     }
 }
 
-impl From<GemVersion> for TrackedVersion {
-    fn from(version: GemVersion) -> Self {
+impl From<TrackedRow> for TrackedVersion {
+    fn from(version: TrackedRow) -> Self {
         Self {
             status: version.status.to_string(),
             available_after: version.available_after.to_string(),
@@ -216,7 +217,6 @@ impl From<GemVersion> for TrackedVersion {
             version: version.version,
             platform: version.platform,
             status_reason: version.status_reason,
-            upstream_yanked: version.upstream_yanked,
         }
     }
 }
@@ -226,7 +226,7 @@ impl From<QuarantineStats> for QuarantineCounts {
         Self {
             quarantined: stats.total_quarantined,
             available: stats.total_available,
-            yanked: stats.total_yanked,
+            blocked: stats.total_blocked,
             pinned: stats.total_pinned,
             releasing_today: stats.versions_releasing_today,
             releasing_this_week: stats.versions_releasing_this_week,

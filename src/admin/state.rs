@@ -8,14 +8,14 @@ use jiff::Timestamp;
 use rama::{
     Layer,
     http::{
-        StatusCode, body::util::BodyExt, client::EasyHttpWebClient, layer::timeout::TimeoutLayer,
-        service::client::HttpClientExt,
+        HeaderMap, StatusCode, body::util::BodyExt, client::EasyHttpWebClient,
+        layer::timeout::TimeoutLayer, service::client::HttpClientExt,
     },
 };
 use tera::Tera;
 use vein_adapter::{
-    AssetKind, CacheBackend, CacheBackendTrait, CachedVersion, FilesystemStorage, GemMetadata,
-    GemVersion, IndexStats, QuarantineStats, SbomCoverage, VersionStatus,
+    AssetKey, AssetKind, CacheBackend, CacheBackendTrait, CachedVersion, FilesystemStorage,
+    GemMetadata, IndexStats, PackageVersion, QuarantineStats, SbomCoverage, VersionStatus,
 };
 
 use crate::admin::ruby::RubyStatus;
@@ -165,6 +165,39 @@ impl AdminResources {
     }
 
     async fn fetch_through_proxy(&self, path: &str, npm: bool) -> Result<Option<Vec<u8>>> {
+        Ok(self.proxy_get(path, npm).await?.map(|(_, body)| body))
+    }
+
+    /// A search through the proxy's own endpoint, the one `cargo search`
+    /// and `npm search` use: the names, best first, and where they came
+    /// from (`registry`, `catalog` or `cached`).
+    pub async fn search(
+        &self,
+        kind: AssetKind,
+        query: &str,
+        limit: i64,
+    ) -> Result<(String, Vec<String>)> {
+        let text = percent_encoding::utf8_percent_encode(query, percent_encoding::NON_ALPHANUMERIC);
+        let path = match kind {
+            AssetKind::Gem | AssetKind::Spec => format!("/api/v1/search.json?query={text}"),
+            AssetKind::Crate => format!("/api/v1/crates?q={text}&per_page={limit}"),
+            AssetKind::NpmPackage => format!("/-/v1/search?text={text}&size={limit}"),
+        };
+        let (headers, body) = self
+            .proxy_get(&path, false)
+            .await?
+            .with_context(|| format!("the proxy has no search at {path}"))?;
+        let source = headers
+            .get(crate::search::SOURCE_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("registry")
+            .to_owned();
+        let answer: serde_json::Value = serde_json::from_slice(&body)
+            .with_context(|| format!("reading the search answer for {path}"))?;
+        Ok((source, crate::search::names(kind, &answer)))
+    }
+
+    async fn proxy_get(&self, path: &str, npm: bool) -> Result<Option<(HeaderMap, Vec<u8>)>> {
         let url = format!("{}{path}", self.proxy_base());
         let client = TimeoutLayer::new(PROXY_TIMEOUT).into_layer(EasyHttpWebClient::default());
         let mut request = client.get(url.as_str());
@@ -177,12 +210,13 @@ impl AdminResources {
             .map_err(|err| anyhow::anyhow!("asking the proxy for {path}: {err}"))?;
         match response.status() {
             status if status.is_success() => {
+                let headers = response.headers().clone();
                 let body = response
                     .into_body()
                     .collect()
                     .await
                     .with_context(|| format!("reading the proxy's answer for {path}"))?;
-                Ok(Some(body.to_bytes().to_vec()))
+                Ok(Some((headers, body.to_bytes().to_vec())))
             }
             StatusCode::NOT_FOUND => Ok(None),
             status => bail!("the proxy answered {status} for {path}"),
@@ -227,46 +261,39 @@ impl AdminResources {
         self.cache.quarantine_stats().await
     }
 
-    pub async fn quarantine_pending(&self, limit: u32, offset: u32) -> Result<Vec<GemVersion>> {
-        self.cache.get_all_quarantined(limit, offset).await
+    /// Versions the delay still holds, soonest released first, across
+    /// registries.
+    pub async fn quarantine_pending(&self, limit: u32, offset: u32) -> Result<Vec<PackageVersion>> {
+        self.cache.held_versions(limit, offset).await
     }
 
-    /// Every version of `name` the quarantine system tracks, newest first.
-    pub async fn tracked_versions(&self, name: &str) -> Result<Vec<GemVersion>> {
-        self.cache.get_gem_versions_for_index(name).await
-    }
-
-    pub async fn approve_version(
+    /// Every version of `name` in registry `kind` the delay policy tracks,
+    /// newest first.
+    pub async fn tracked_versions(
         &self,
+        kind: AssetKind,
         name: &str,
-        version: &str,
-        platform: Option<&str>,
-        reason: &str,
-    ) -> Result<()> {
+    ) -> Result<Vec<PackageVersion>> {
+        self.cache.package_versions(kind, name).await
+    }
+
+    /// Releases `version` now, whatever its delay.
+    pub async fn approve_version(&self, version: &AssetKey<'_>, reason: &str) -> Result<()> {
         self.cache
-            .update_version_status(
-                name,
+            .set_version_status(
                 version,
-                platform,
                 VersionStatus::Pinned,
                 Some(format!("approved: {reason}")),
             )
             .await
     }
 
-    pub async fn block_version(
-        &self,
-        name: &str,
-        version: &str,
-        platform: Option<&str>,
-        reason: &str,
-    ) -> Result<()> {
+    /// Hides `version` from the index and refuses its downloads.
+    pub async fn block_version(&self, version: &AssetKey<'_>, reason: &str) -> Result<()> {
         self.cache
-            .update_version_status(
-                name,
+            .set_version_status(
                 version,
-                platform,
-                VersionStatus::Yanked,
+                VersionStatus::Blocked,
                 Some(format!("blocked: {reason}")),
             )
             .await

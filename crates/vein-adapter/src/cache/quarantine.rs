@@ -1,37 +1,41 @@
-//! Quarantine types and logic for supply chain protection.
+//! Release delay tracking for supply chain protection.
 //!
-//! Implements a time buffer that delays new gem versions from appearing
-//! in the index, protecting against supply chain attacks like malicious
-//! gem releases that get yanked within hours.
+//! Every registry's new versions wait out a delay before they appear in
+//! the index vein serves, so a malicious release that gets yanked within
+//! hours never reaches a client. The policy itself lives in vein; these
+//! are the rows it keeps (versions held, released, pinned or blocked) and
+//! the availability math.
 
 use jiff::civil::{Time, Weekday};
 use jiff::tz::TimeZone;
 use jiff::{SignedDuration, Timestamp};
 use serde::{Deserialize, Serialize};
 
-/// Status of a gem version in the quarantine system.
+use crate::AssetKind;
+
+/// Where a tracked version stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum VersionStatus {
-    /// In delay period - hidden from index but downloadable directly
+    /// In its delay: hidden from the index, still downloadable.
     #[default]
     Quarantine,
-    /// Delay expired - visible in index and downloadable
+    /// Delay over, or approved: visible.
     Available,
-    /// Upstream removed it - hidden and blocked
-    Yanked,
-    /// Manual override - immediately available (e.g., critical security patch)
+    /// Blocked by an admin: hidden, and downloads refused.
+    Blocked,
+    /// Released early by config or an admin (e.g. a security fix).
     Pinned,
 }
 
 impl std::fmt::Display for VersionStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Quarantine => write!(f, "quarantine"),
-            Self::Available => write!(f, "available"),
-            Self::Yanked => write!(f, "yanked"),
-            Self::Pinned => write!(f, "pinned"),
-        }
+        f.write_str(match self {
+            Self::Quarantine => "quarantine",
+            Self::Available => "available",
+            Self::Blocked => "blocked",
+            Self::Pinned => "pinned",
+        })
     }
 }
 
@@ -42,57 +46,48 @@ impl std::str::FromStr for VersionStatus {
         match s {
             "quarantine" => Ok(Self::Quarantine),
             "available" => Ok(Self::Available),
-            "yanked" => Ok(Self::Yanked),
+            "blocked" => Ok(Self::Blocked),
             "pinned" => Ok(Self::Pinned),
             _ => Err(()),
         }
     }
 }
 
-/// A gem version with quarantine tracking information.
+/// A package version the delay policy tracks: one it held back, or one an
+/// admin approved, pinned or blocked.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GemVersion {
+pub struct PackageVersion {
     pub id: i64,
+    pub kind: AssetKind,
     pub name: String,
     pub version: String,
+    /// Gems only: the native platform (`x86_64-linux`); `None` for `ruby`.
     pub platform: Option<String>,
-    pub sha256: Option<String>,
-    /// When this version was first seen/published
+    /// When the registry published it (or vein first saw it, when the
+    /// registry does not say).
     pub published_at: Timestamp,
-    /// When this version becomes visible in the index
+    /// When the delay ends.
     pub available_after: Timestamp,
     pub status: VersionStatus,
-    /// Reason for current status (e.g., "auto", "pinned: CVE-2024-XXX")
+    /// Why it has this status (`auto`, `approved: …`, `blocked: …`).
     pub status_reason: Option<String>,
-    /// Whether upstream has yanked this version
-    pub upstream_yanked: bool,
     pub created_at: Timestamp,
     pub updated_at: Timestamp,
 }
 
-/// Information about a quarantined version, used in HTTP headers.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct QuarantineInfo {
-    pub served_version: String,
-    pub requested_version: String,
-    pub available_after: Timestamp,
-    pub reason: String,
-    pub quarantined_versions: Vec<String>,
-}
-
-/// Statistics about the quarantine system.
+/// Counts across every registry.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct QuarantineStats {
     pub total_quarantined: u64,
     pub total_available: u64,
-    pub total_yanked: u64,
+    pub total_blocked: u64,
     pub total_pinned: u64,
     pub versions_releasing_today: u64,
     pub versions_releasing_this_week: u64,
 }
 
-/// Policy configuration for delay calculation.
-/// This is a simplified version for the adapter crate - full config lives in main crate.
+/// The timing half of vein's delay policy (per-package delays and pins
+/// live in vein's config).
 #[derive(Debug, Clone)]
 pub struct DelayPolicy {
     pub default_delay_days: u32,
@@ -152,36 +147,6 @@ pub fn calculate_availability(published: Timestamp, policy: &DelayPolicy) -> Tim
 fn after_days(ts: Timestamp, days: i64) -> Timestamp {
     ts.saturating_add(SignedDuration::from_hours(days.saturating_mul(24)))
         .unwrap_or(Timestamp::MAX)
-}
-
-/// Check if a version is currently available (visible in index).
-///
-/// # Arguments
-/// * `gem_version` - The version to check
-/// * `now` - Current time
-///
-/// # Returns
-/// `true` if the version should be visible in index responses
-#[must_use]
-pub fn is_version_available(gem_version: &GemVersion, now: Timestamp) -> bool {
-    match gem_version.status {
-        VersionStatus::Available | VersionStatus::Pinned => true,
-        VersionStatus::Yanked => false,
-        VersionStatus::Quarantine => now >= gem_version.available_after,
-    }
-}
-
-/// Check if a version should be served for direct download.
-/// Note: Even quarantined versions can be downloaded directly.
-///
-/// # Arguments
-/// * `gem_version` - The version to check
-///
-/// # Returns
-/// `true` if the version can be downloaded (only yanked versions are blocked)
-#[must_use]
-pub fn is_version_downloadable(gem_version: &GemVersion) -> bool {
-    gem_version.status != VersionStatus::Yanked
 }
 
 #[cfg(test)]

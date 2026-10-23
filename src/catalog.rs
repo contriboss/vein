@@ -1,4 +1,13 @@
-use std::sync::Arc;
+//! Every name each registry publishes, kept so search answers offline.
+//!
+//! Sources: rubygems.org's `names.gz`, crates.io's API, npm's replication
+//! endpoint. Which ones is `[catalog] registries`; [`crate::jobs`] runs the
+//! syncs every 6 hours.
+
+mod crates;
+mod gems;
+mod npm;
+
 use std::time::Duration;
 
 use anyhow::Result;
@@ -6,126 +15,46 @@ use rama::{
     Layer, Service,
     error::{ErrorExt as _, extra::OpaqueError},
     http::{
-        BodyExtractExt, HeaderValue, Request, Response, StatusCode, client::EasyHttpWebClient,
-        header, layer::required_header::AddRequiredRequestHeadersLayer,
-        service::client::HttpClientExt as _,
+        HeaderValue, Request, Response, client::EasyHttpWebClient,
+        layer::required_header::AddRequiredRequestHeadersLayer,
     },
     layer::{MapErrLayer, TimeoutLayer},
-    telemetry::tracing::{error, info},
 };
-use vein_adapter::{CacheBackend, CacheBackendTrait};
+use vein_adapter::{AssetKind, CacheBackend};
 
-const NAMES_URL: &str = "https://rubygems.org/names.gz";
-const META_ETAG: &str = "catalog_names_etag";
-const META_LAST_MODIFIED: &str = "catalog_names_last_modified";
+/// crates.io's crawler policy: one request a second.
+const CRATES_PACE: Duration = Duration::from_secs(1);
+/// npm's replica states no limit; vein keeps a polite gap anyway.
+const NPM_PACE: Duration = Duration::from_millis(250);
 
-pub async fn sync_names_once(index: &CacheBackend) -> Result<Option<usize>> {
+/// crates.io asks crawlers to say who they are and where to read about them.
+const USER_AGENT: &str = concat!(
+    "vein/",
+    env!("CARGO_PKG_VERSION"),
+    " (catalog sync; +https://github.com/contriboss/vein)"
+);
+
+/// Syncs registry `kind`'s names once; how many changed, `None` when the
+/// registry said nothing had.
+pub async fn sync_once(index: &CacheBackend, kind: AssetKind) -> Result<Option<usize>> {
     let client = build_client();
-    sync_names_with_client(index, &client).await
+    match kind {
+        AssetKind::Gem | AssetKind::Spec => gems::sync(index, &client).await,
+        AssetKind::Crate => crates::sync(index, &client, crates::API, CRATES_PACE)
+            .await
+            .map(Some),
+        AssetKind::NpmPackage => npm::sync(index, &client, npm::REPLICATE, NPM_PACE)
+            .await
+            .map(Some),
+    }
 }
 
 fn build_client() -> impl Service<Request, Output = Response, Error = OpaqueError> {
-    // NOTE if you want pooling you'll have to
-    // use build_connector to also include the pool desired
-    let inner = EasyHttpWebClient::default();
-
-    // decompression support would be added as layer on top
-
     (
         MapErrLayer::new(|e: rama::error::BoxError| e.into_opaque_error()),
         TimeoutLayer::new(Duration::from_secs(60)),
         AddRequiredRequestHeadersLayer::new()
-            .with_user_agent_header_value(HeaderValue::from_static("vein-catalog/0.1.0")),
+            .with_user_agent_header_value(HeaderValue::from_static(USER_AGENT)),
     )
-        .into_layer(inner)
-}
-
-async fn sync_names_with_client(
-    index: &CacheBackend,
-    client: &impl Service<Request, Output = Response, Error = OpaqueError>,
-) -> Result<Option<usize>> {
-    let mut request = client.get(NAMES_URL);
-
-    if let Some(etag) = index.catalog_meta_get(META_ETAG).await? {
-        request = request.header(header::IF_NONE_MATCH, etag);
-    }
-
-    if let Some(last_modified) = index.catalog_meta_get(META_LAST_MODIFIED).await? {
-        request = request.header(header::IF_MODIFIED_SINCE, last_modified);
-    }
-
-    let response = request
-        .send()
-        .await
-        .map_err(|e| anyhow::anyhow!("requesting rubygems names list: {e}"))?;
-
-    if response.status() == StatusCode::NOT_MODIFIED {
-        info!("catalog names list is up to date");
-        return Ok(None);
-    }
-
-    if !response.status().is_success() {
-        return Err(anyhow::anyhow!("fetching rubygems names list"));
-    }
-
-    let etag = response
-        .headers()
-        .get(header::ETAG)
-        .and_then(|value| value.to_str().ok())
-        .map(ToOwned::to_owned);
-    let last_modified = response
-        .headers()
-        .get(header::LAST_MODIFIED)
-        .and_then(|value| value.to_str().ok())
-        .map(ToOwned::to_owned);
-
-    let text = response
-        .try_into_string()
-        .await
-        .map_err(|e| anyhow::anyhow!("decoding names list: {e}"))?;
-
-    let names: Vec<String> = text
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .map(std::borrow::ToOwned::to_owned)
-        .collect();
-
-    let total = names.len();
-    for chunk in names.chunks(1_000) {
-        index.catalog_upsert_names(chunk).await?;
-    }
-
-    if let Some(etag) = etag {
-        index.catalog_meta_set(META_ETAG, &etag).await?;
-    }
-    if let Some(last_modified) = last_modified {
-        index
-            .catalog_meta_set(META_LAST_MODIFIED, &last_modified)
-            .await?;
-    }
-
-    info!(total, "catalog names synced");
-
-    Ok(Some(total))
-}
-
-/// Spawns a background task that periodically syncs the catalog names.
-/// Syncs every 6 hours.
-pub fn spawn_background_sync(backend: Arc<CacheBackend>) -> Result<()> {
-    tokio::spawn(async move {
-        let sync_interval = Duration::from_hours(6); // 6 hours
-
-        loop {
-            match sync_names_once(backend.as_ref()).await {
-                Ok(Some(count)) => info!(count, "background catalog sync completed"),
-                Ok(None) => info!("background catalog sync: already up to date"),
-                Err(e) => error!(error = %e, "background catalog sync failed"),
-            }
-
-            tokio::time::sleep(sync_interval).await;
-        }
-    });
-
-    Ok(())
+        .into_layer(EasyHttpWebClient::default())
 }

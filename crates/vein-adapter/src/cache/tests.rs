@@ -632,3 +632,158 @@ async fn test_cached_versions_and_search_are_per_ecosystem() {
         .unwrap();
     assert_eq!(names, ["@types/node"]);
 }
+
+/// Serving an index records what the policy holds; that never undoes an
+/// admin's decision, a held version takes the policy's new timing, and the
+/// same name in another registry is a different package.
+#[tokio::test]
+async fn held_versions_keep_admin_decisions() {
+    use crate::{PackageVersion, VersionStatus};
+
+    let cache = setup_test_db().await;
+    let at = |rfc3339: &str| rfc3339.parse::<jiff::Timestamp>().unwrap();
+    // MOCKED: versions a typosquat might publish; nothing real is held.
+    let held = |version: &str, until: &str| PackageVersion {
+        id: 0,
+        kind: AssetKind::NpmPackage,
+        name: "lefft-pad".into(),
+        version: version.into(),
+        platform: None,
+        published_at: at("2026-10-20T09:00:00Z"),
+        available_after: at(until),
+        status: VersionStatus::Quarantine,
+        status_reason: None,
+        created_at: at("2026-10-20T09:00:00Z"),
+        updated_at: at("2026-10-20T09:00:00Z"),
+    };
+    let key = AssetKey {
+        kind: AssetKind::NpmPackage,
+        name: "lefft-pad",
+        version: "1.4.0",
+        platform: None,
+    };
+
+    cache
+        .record_held(&[
+            held("1.4.0", "2026-10-23T09:00:00Z"),
+            held("1.3.1", "2026-10-23T09:00:00Z"),
+        ])
+        .await
+        .unwrap();
+    cache
+        .set_version_status(
+            &key,
+            VersionStatus::Blocked,
+            Some("blocked: typosquat".into()),
+        )
+        .await
+        .unwrap();
+    // The next index fetch, under a longer delay.
+    cache
+        .record_held(&[
+            held("1.4.0", "2026-10-26T09:00:00Z"),
+            held("1.3.1", "2026-10-26T09:00:00Z"),
+        ])
+        .await
+        .unwrap();
+
+    let versions = cache
+        .package_versions(AssetKind::NpmPackage, "lefft-pad")
+        .await
+        .unwrap();
+    let summary: Vec<_> = versions
+        .iter()
+        .map(|v| (v.version.as_str(), v.status, v.available_after))
+        .collect();
+    assert_eq!(
+        summary,
+        [
+            ("1.4.0", VersionStatus::Blocked, at("2026-10-23T09:00:00Z")),
+            (
+                "1.3.1",
+                VersionStatus::Quarantine,
+                at("2026-10-26T09:00:00Z")
+            ),
+        ],
+        "newest first; the block stands"
+    );
+    assert_eq!(
+        versions[0].status_reason.as_deref(),
+        Some("blocked: typosquat")
+    );
+    assert!(
+        cache
+            .package_versions(AssetKind::Gem, "lefft-pad")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    assert_eq!(cache.held_versions(10, 0).await.unwrap().len(), 1);
+    assert_eq!(
+        cache
+            .promote_expired_quarantines(at("2026-10-26T09:00:00Z"))
+            .await
+            .unwrap(),
+        1
+    );
+    assert!(cache.held_versions(10, 0).await.unwrap().is_empty());
+    let stats = cache.quarantine_stats().await.unwrap();
+    assert_eq!((stats.total_blocked, stats.total_available), (1, 1));
+}
+
+/// One catalog API for every registry: crate and npm names live apart from
+/// gems, and from each other, and come back best match first.
+#[tokio::test]
+async fn registry_names_are_searched_per_registry() {
+    use crate::CatalogName;
+
+    let cache = setup_test_db().await;
+    let entry = |name: &str, version: Option<&str>| CatalogName {
+        name: name.into(),
+        latest_version: version.map(Into::into),
+    };
+    // Real names and versions from crates.io and npm.
+    cache
+        .names_upsert(
+            AssetKind::Crate,
+            &[
+                entry("serde_json", Some("1.0.154")),
+                entry("serde", Some("1.0.229")),
+                entry("miniserde", None),
+            ],
+        )
+        .await
+        .unwrap();
+    cache
+        .names_upsert(AssetKind::NpmPackage, &[entry("serde", Some("0.0.1"))])
+        .await
+        .unwrap();
+    // A later sync that does not know the version keeps the one known.
+    cache
+        .names_upsert(AssetKind::Crate, &[entry("serde", None)])
+        .await
+        .unwrap();
+
+    let found = cache
+        .names_search(AssetKind::Crate, "serde", 10)
+        .await
+        .unwrap();
+    assert_eq!(
+        found,
+        [
+            entry("serde", Some("1.0.229")),
+            entry("serde_json", Some("1.0.154")),
+            entry("miniserde", None)
+        ],
+        "exact, then prefix, then the rest"
+    );
+    assert_eq!(cache.names_count(AssetKind::NpmPackage).await.unwrap(), 1);
+    assert_eq!(cache.names_count(AssetKind::Gem).await.unwrap(), 0);
+
+    cache
+        .names_remove(AssetKind::Crate, &["miniserde".into()])
+        .await
+        .unwrap();
+    assert_eq!(cache.names_count(AssetKind::Crate).await.unwrap(), 2);
+}

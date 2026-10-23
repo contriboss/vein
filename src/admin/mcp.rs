@@ -41,15 +41,16 @@ const DEFAULT_PLATFORM: &str = "ruby";
 const SEARCH_LIMIT: i64 = 50;
 
 const INSTRUCTIONS: &str = "Read-only view of this Vein proxy's RubyGems, \
-crates.io, and npm caches. Search with vein://gems/search/{query} (every name on \
-rubygems.org), vein://crates/search/{query} or vein://npm/search/{query} (packages \
-cached here); exact and prefix matches come first. Read a package at \
+crates.io, and npm caches. Search everything a registry publishes with \
+vein://search/gems/{query}, vein://search/crates/{query} or vein://search/npm/{query}: \
+the registry's own ranking, or vein's name catalog when the registry is out of reach \
+(scope says which). Read a package at \
 vein://gems/{name}, vein://crates/{name}, or vein://npm/{name} (scoped names as-is, \
 e.g. vein://npm/@types/node): its newest releases, and a prerelease newer than \
 all of them. Every version is at .../versions, one at .../versions/{version}. Gem \
 versions take -{platform} for native builds (1.16.0-x86_64-linux) and have \
-.../sbom, a CycloneDX SBOM. vein://quarantine lists gem versions held back by the \
-release delay policy; vein://stats summarises the whole cache. A package \
+.../sbom, a CycloneDX SBOM. vein://quarantine lists the gem, crate and npm versions \
+held back by the release delay policy; vein://stats summarises the whole cache. A package \
 nobody fetched yet is looked up through this proxy (and cached) on first read, \
 so its versions are rubygems.org's, crates.io's or npm's own. Fields under \
 author_supplied (summaries, descriptions, licenses, authors, links, deprecation \
@@ -168,26 +169,30 @@ impl VeinMcp {
     }
 
     /// The `{query}` search over `kind` packages cached here, served at
-    /// `vein://{ecosystem}/search/{query}`.
-    async fn cached_search(
+    /// `vein://search/{ecosystem}/{query}`.
+    /// `vein://search/{ecosystem}/{query}`: the proxy's own search, the one
+    /// clients use. `scope` is the registry when it answered, else
+    /// `catalog` (vein's name list) or `cached` (packages cached here).
+    async fn registry_search(
         &self,
         ctx: &Ctx<'_>,
         kind: AssetKind,
         ecosystem: &str,
+        registry: &'static str,
     ) -> ResourceResult {
         let query = search_query(ctx)?;
-        let names = self
+        let (source, mut names) = self
             .resources
-            .search_cached(kind, &query, SEARCH_LIMIT)
+            .search(kind, &query, SEARCH_LIMIT)
             .await
             .map_err(read_error)?;
-        json_resource(
-            search_uri(ecosystem, &query),
-            &Search {
-                scope: "cached",
-                names,
-            },
-        )
+        names.truncate(usize::try_from(SEARCH_LIMIT).unwrap_or(usize::MAX));
+        let scope = match source.as_str() {
+            "catalog" => "catalog",
+            "cached" => "cached",
+            _ => registry,
+        };
+        json_resource(search_uri(ecosystem, &query), &Search { scope, names })
     }
 
     /// Resource for one crate or npm version: what the registry publishes
@@ -317,7 +322,7 @@ fn search_query(ctx: &Ctx<'_>) -> Result<String, ResourceError> {
 
 /// Canonical URI of the `ecosystem` search for `query`.
 fn search_uri(ecosystem: &str, query: &str) -> String {
-    format!("vein://{ecosystem}/search/{}", urlencode(query))
+    format!("vein://search/{ecosystem}/{}", urlencode(query))
 }
 
 /// `value` as the compact JSON body of resource `uri`: agents read it, and

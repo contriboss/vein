@@ -12,6 +12,8 @@ use rama::http::{
 use vein_adapter::{CacheBackend, FilesystemStorage};
 
 use super::types::{IndexConfig, index_path, index_storage_path};
+use crate::config::DelayPolicyConfig;
+use crate::delay;
 use crate::http_cache::{CacheOutcome, CachedTextOptions, MetaStoreMode, fetch_cached_text};
 use crate::upstream::simple_get;
 
@@ -40,9 +42,19 @@ pub async fn handle_sparse_index(
     our_base: &str,
     storage: Arc<FilesystemStorage>,
     index: Arc<CacheBackend>,
+    delay: &DelayPolicyConfig,
 ) -> Result<(Response<Body>, CacheOutcome)> {
     let index_base = crates_index_base();
-    handle_sparse_index_from(client, path, our_base, storage, index, index_base.as_ref()).await
+    handle_sparse_index_from(
+        client,
+        path,
+        our_base,
+        storage,
+        index,
+        delay,
+        index_base.as_ref(),
+    )
+    .await
 }
 
 async fn handle_sparse_index_from(
@@ -51,6 +63,7 @@ async fn handle_sparse_index_from(
     our_base: &str,
     storage: Arc<FilesystemStorage>,
     index: Arc<CacheBackend>,
+    delay: &DelayPolicyConfig,
     index_base: &str,
 ) -> Result<(Response<Body>, CacheOutcome)> {
     // Handle config.json specially - serve our own
@@ -82,6 +95,7 @@ async fn handle_sparse_index_from(
     let meta_key = format!("crates:index:{crate_name}");
     let upstream_url = format!("{}/{}", index_base.trim_end_matches('/'), expected_path);
 
+    let screen_index = Arc::clone(&index);
     let result =
         fetch_cached_text(
             storage.as_ref(),
@@ -98,7 +112,9 @@ async fn handle_sparse_index_from(
             |headers| async move {
                 simple_get(client, &upstream_url, &headers, Some("text/plain")).await
             },
-            |body| async move { Ok(body) },
+            |body| async move {
+                Ok(delay::crates::filter_index(delay, &screen_index, crate_name, body).await)
+            },
         )
         .await?;
 

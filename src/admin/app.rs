@@ -13,13 +13,12 @@ use super::{
     ruby,
     state::{AdminResources, AdminState},
 };
-use crate::{catalog, config::Config};
+use crate::config::Config;
 
 /// Tera templates, embedded at build time; names are paths under `views/`.
 const TEMPLATES: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/assets/admin/views");
 
-/// The admin state over the proxy's own config, cache, and storage. Starts
-/// the background catalogue sync the dashboard relies on.
+/// The admin state over the proxy's own config, cache, and storage.
 pub async fn bootstrap(
     config: Arc<Config>,
     cache: Arc<CacheBackend>,
@@ -27,7 +26,6 @@ pub async fn bootstrap(
 ) -> Result<AdminState> {
     let tera = load_templates()?;
     let ruby_status = load_ruby_status().await;
-    catalog::spawn_background_sync(cache.clone())?;
     let resources = AdminResources::new(config, cache, storage, ruby_status);
     Ok(AdminState::new(resources, tera))
 }

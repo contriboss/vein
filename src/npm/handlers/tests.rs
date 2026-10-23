@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::DelayPolicyConfig;
 
 use crate::test_support::{install_rustls_provider, raw_response, spawn_sequence_server};
 
@@ -94,9 +95,9 @@ fn test_transform_metadata() {
         }
     }"#;
 
-    let result = transform_metadata(metadata.as_bytes(), "http://localhost:8346").unwrap();
+    let mut transformed: JsonValue = serde_json::from_str(metadata).unwrap();
+    transform_metadata(&mut transformed, "http://localhost:8346");
 
-    let transformed: JsonValue = serde_json::from_slice(&result).unwrap();
     let tarball = transformed["versions"]["4.17.21"]["dist"]["tarball"]
         .as_str()
         .unwrap();
@@ -113,9 +114,9 @@ fn test_transform_metadata_version_only() {
         }
     }"#;
 
-    let result = transform_metadata(metadata.as_bytes(), "http://localhost:8346").unwrap();
+    let mut transformed: JsonValue = serde_json::from_str(metadata).unwrap();
+    transform_metadata(&mut transformed, "http://localhost:8346");
 
-    let transformed: JsonValue = serde_json::from_slice(&result).unwrap();
     let tarball = transformed["dist"]["tarball"].as_str().unwrap();
     assert_eq!(tarball, "http://localhost:8346/lodash/-/lodash-4.17.21.tgz");
 }
@@ -169,6 +170,7 @@ async fn test_handle_npm_metadata_caches_and_revalidates() {
         "http://localhost:8346",
         storage.clone(),
         index.clone(),
+        &DelayPolicyConfig::default(),
         &registry_base,
     )
     .await
@@ -191,6 +193,7 @@ async fn test_handle_npm_metadata_caches_and_revalidates() {
         "http://localhost:8346",
         storage.clone(),
         index.clone(),
+        &DelayPolicyConfig::default(),
         &registry_base,
     )
     .await
@@ -251,6 +254,7 @@ async fn test_handle_npm_tarball_hits_cache_on_second_request() {
         "http://localhost:8346",
         storage.clone(),
         index.clone(),
+        &DelayPolicyConfig::default(),
         &registry_base,
     )
     .await
@@ -273,6 +277,7 @@ async fn test_handle_npm_tarball_hits_cache_on_second_request() {
         "http://localhost:8346",
         storage.clone(),
         index.clone(),
+        &DelayPolicyConfig::default(),
         &registry_base,
     )
     .await

@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use vein_adapter::AssetKind;
+
 use clap::{Parser, Subcommand};
 
 #[derive(Debug, Parser)]
@@ -60,11 +62,14 @@ pub enum Command {
 
 #[derive(Debug, Subcommand)]
 pub enum CatalogCommand {
-    /// Sync the upstream gem catalogue immediately
+    /// Sync the registries' name catalogues immediately
     Sync {
         /// Path to the configuration file
         #[arg(long, default_value = "vein.toml")]
         config: PathBuf,
+        /// Only this registry (gem, crate or npm); default: `[catalog] registries`
+        #[arg(long)]
+        registry: Option<AssetKind>,
     },
 }
 
@@ -113,13 +118,16 @@ pub enum QuarantineCommand {
         #[arg(long, default_value = "vein.toml")]
         config: PathBuf,
     },
-    /// Approve a specific gem version for immediate availability
+    /// Approve a specific version for immediate availability
     Approve {
         /// Path to the configuration file
         #[arg(long, default_value = "vein.toml")]
         config: PathBuf,
-        /// Gem name
-        gem: String,
+        /// Registry: gem, crate or npm
+        #[arg(long, default_value = "gem")]
+        registry: AssetKind,
+        /// Package name
+        name: String,
         /// Version string
         version: String,
         /// Platform (optional)
@@ -129,13 +137,16 @@ pub enum QuarantineCommand {
         #[arg(long, default_value = "cli approval")]
         reason: String,
     },
-    /// Block a specific gem version (mark as yanked)
+    /// Block a specific version: hidden from the index, downloads refused
     Block {
         /// Path to the configuration file
         #[arg(long, default_value = "vein.toml")]
         config: PathBuf,
-        /// Gem name
-        gem: String,
+        /// Registry: gem, crate or npm
+        #[arg(long, default_value = "gem")]
+        registry: AssetKind,
+        /// Package name
+        name: String,
         /// Version string
         version: String,
         /// Platform (optional)

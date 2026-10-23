@@ -1,7 +1,7 @@
 use jiff::Timestamp;
 use sqlx::FromRow;
 
-use super::quarantine::GemVersion;
+use super::quarantine::PackageVersion;
 use super::types::{CachedAsset, CachedVersion};
 
 #[derive(Debug, FromRow)]
@@ -83,38 +83,41 @@ pub fn format_timestamp(ts: Timestamp) -> String {
     format!("{ts:.3}")
 }
 
-/// Row of the `gem_versions` table.
+/// Row of the `package_versions` table.
 #[derive(Debug, FromRow)]
-pub struct GemVersionRow {
+pub struct PackageVersionRow {
     pub id: i64,
+    pub kind: String,
     pub name: String,
     pub version: String,
     pub platform: Option<String>,
-    pub sha256: Option<String>,
     pub published_at: jiff_sqlx::Timestamp,
     pub available_after: jiff_sqlx::Timestamp,
     pub status: String,
     pub status_reason: Option<String>,
-    pub upstream_yanked: bool,
     pub created_at: jiff_sqlx::Timestamp,
     pub updated_at: jiff_sqlx::Timestamp,
 }
 
-impl From<GemVersionRow> for GemVersion {
-    fn from(row: GemVersionRow) -> Self {
-        Self {
+impl TryFrom<PackageVersionRow> for PackageVersion {
+    type Error = anyhow::Error;
+
+    fn try_from(row: PackageVersionRow) -> anyhow::Result<Self> {
+        Ok(Self {
             id: row.id,
+            kind: row.kind.parse().map_err(anyhow::Error::msg)?,
             name: row.name,
             version: row.version,
             platform: row.platform,
-            sha256: row.sha256,
             published_at: row.published_at.to_jiff(),
             available_after: row.available_after.to_jiff(),
-            status: row.status.parse().unwrap_or_default(),
+            status: row
+                .status
+                .parse()
+                .map_err(|()| anyhow::anyhow!("unknown version status `{}`", row.status))?,
             status_reason: row.status_reason,
-            upstream_yanked: row.upstream_yanked,
             created_at: row.created_at.to_jiff(),
             updated_at: row.updated_at.to_jiff(),
-        }
+        })
     }
 }

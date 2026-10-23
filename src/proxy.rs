@@ -4,7 +4,6 @@ mod dispatch;
 mod fetch;
 mod handlers;
 mod public_base;
-mod quarantine;
 mod response;
 #[cfg(test)]
 mod tests;
@@ -31,6 +30,8 @@ pub struct VeinProxy {
     upstream_client: Option<UpstreamClient>,
     /// Pooled client for the fixed npm and crates.io registries.
     http: DefaultHttpWebClient,
+    /// Where package searches go before vein's catalog answers them.
+    search: crate::search::Registries,
 }
 
 impl VeinProxy {
@@ -53,6 +54,15 @@ impl VeinProxy {
             (Vec::new(), None)
         };
 
+        // Gem searches go where gems come from: rubygems.org or a private server.
+        let search = crate::search::Registries {
+            gems: config.upstream.as_ref().map_or_else(
+                || crate::search::Registries::default().gems,
+                |upstream| upstream.url.to_string().trim_end_matches('/').to_owned(),
+            ),
+            ..crate::search::Registries::default()
+        };
+
         Ok(Self {
             config,
             storage,
@@ -60,6 +70,7 @@ impl VeinProxy {
             upstreams,
             upstream_client,
             http: DefaultHttpWebClient::default(),
+            search,
         })
     }
 }

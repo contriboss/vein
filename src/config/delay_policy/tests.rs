@@ -10,53 +10,87 @@ fn test_default_config() {
     assert_eq!(config.release_hour_utc, 9);
 }
 
+const POLICY: &str = r#"
+    enabled = true
+    default_delay_days = 3
+
+    [[packages]]
+    name = "rails"
+    delay_days = 7
+
+    [[packages]]
+    registry = "npm"
+    name = "@my-org/*"
+    pattern = true
+    delay_days = 0
+
+    # A publisher's own crates, released at once; first match wins, so
+    # before the catch-all below.
+    [[packages]]
+    registry = "crate"
+    names = ["mcp-guest", "stampeded"]
+    delay_days = 0
+
+    [[packages]]
+    registry = "crates"
+    name = "*"
+    pattern = true
+    delay_days = 1
+
+    [[pinned]]
+    registry = "gem"
+    name = "nokogiri"
+    version = "1.18.10"
+    reason = "security fix"
+"#;
+
 #[test]
-fn test_delay_for_gem_default() {
-    let config = DelayPolicyConfig::default();
-    assert_eq!(config.delay_for_gem("rails"), 3);
+fn overrides_and_pins_follow_registry_and_name() {
+    let config: DelayPolicyConfig = toml::from_str(POLICY).unwrap();
+    for (kind, name, days) in [
+        (AssetKind::Gem, "rails", 7),
+        // No registry: the name in every registry.
+        (AssetKind::NpmPackage, "rails", 7),
+        (AssetKind::NpmPackage, "@my-org/ui", 0),
+        (AssetKind::Gem, "@my-org/ui", 3),
+        (AssetKind::Crate, "serde", 1),
+        (AssetKind::Crate, "mcp-guest", 0),
+        (AssetKind::Crate, "stampeded", 0),
+        (AssetKind::Gem, "stampeded", 3),
+        (AssetKind::Gem, "rack", 3),
+    ] {
+        assert_eq!(config.delay_days_for(kind, name), days, "{kind:?} {name}");
+        assert_eq!(
+            config.policy_for(kind, name).default_delay_days,
+            days,
+            "the timing uses the override, {kind:?} {name}"
+        );
+    }
+
+    for (kind, version, pinned) in [
+        (AssetKind::Gem, "1.18.10", true),
+        (AssetKind::Gem, "1.18.9", false),
+        (AssetKind::NpmPackage, "1.18.10", false),
+    ] {
+        assert_eq!(
+            config.pin_reason(kind, "nokogiri", version).is_some(),
+            pinned,
+            "{kind:?} nokogiri {version}"
+        );
+    }
 }
 
 #[test]
-fn test_delay_for_gem_override() {
-    let config = DelayPolicyConfig {
-        gems: vec![GemDelayOverride {
-            name: "rails".to_string(),
-            delay_days: 7,
-            pattern: false,
-        }],
-        ..Default::default()
-    };
-    assert_eq!(config.delay_for_gem("rails"), 7);
-    assert_eq!(config.delay_for_gem("rack"), 3);
-}
-
-#[test]
-fn test_delay_for_gem_pattern() {
-    let config = DelayPolicyConfig {
-        gems: vec![GemDelayOverride {
-            name: "*-internal".to_string(),
-            delay_days: 0,
-            pattern: true,
-        }],
-        ..Default::default()
-    };
-    assert_eq!(config.delay_for_gem("my-gem-internal"), 0);
-    assert_eq!(config.delay_for_gem("rails"), 3);
-}
-
-#[test]
-fn test_is_pinned() {
-    let config = DelayPolicyConfig {
-        pinned: vec![PinnedVersion {
-            name: "nokogiri".to_string(),
-            version: "1.16.0".to_string(),
-            reason: "CVE-2024-XXXXX".to_string(),
-        }],
-        ..Default::default()
-    };
-    assert!(config.is_pinned("nokogiri", "1.16.0"));
-    assert!(!config.is_pinned("nokogiri", "1.15.0"));
-    assert!(!config.is_pinned("rails", "7.0.0"));
+fn gem_only_configs_still_parse() {
+    let config: DelayPolicyConfig = toml::from_str(
+        r#"
+        [[gems]]
+        name = "rails"
+        delay_days = 7
+    "#,
+    )
+    .unwrap();
+    assert_eq!(config.delay_days_for(AssetKind::Gem, "rails"), 7);
 }
 
 #[test]
@@ -79,37 +113,4 @@ fn test_glob_match() {
 
     // Wildcard all
     assert!(glob_match("*", "anything"));
-}
-
-#[test]
-fn test_toml_parsing() {
-    let toml = r#"
-        enabled = true
-        default_delay_days = 5
-        skip_weekends = false
-        business_hours_only = true
-        release_hour_utc = 14
-
-        [[gems]]
-        name = "rails"
-        delay_days = 7
-
-        [[gems]]
-        name = "*-internal"
-        delay_days = 0
-        pattern = true
-
-        [[pinned]]
-        name = "nokogiri"
-        version = "1.16.0"
-        reason = "CVE-2024-XXXXX"
-    "#;
-
-    let config: DelayPolicyConfig = toml::from_str(toml).unwrap();
-    assert!(config.enabled);
-    assert_eq!(config.default_delay_days, 5);
-    assert!(!config.skip_weekends);
-    assert_eq!(config.release_hour_utc, 14);
-    assert_eq!(config.gems.len(), 2);
-    assert_eq!(config.pinned.len(), 1);
 }

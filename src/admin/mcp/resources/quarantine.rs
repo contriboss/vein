@@ -14,12 +14,20 @@ struct Quarantine {
     enabled: bool,
     counts: QuarantineCounts,
     /// Versions still held back, soonest release first.
-    pending: Vec<TrackedVersion>,
+    pending: Vec<Pending>,
+}
+
+#[derive(Serialize)]
+struct Pending {
+    /// `gem`, `crate` or `npm`.
+    registry: &'static str,
+    #[serde(flatten)]
+    version: TrackedVersion,
 }
 
 impl VeinMcp {
-    /// New gem versions held back by the release delay policy, and when each
-    /// becomes installable through this proxy.
+    /// New gem, crate and npm versions held back by the release delay
+    /// policy, and when each becomes installable through this proxy.
     #[mcp_resource(
         uri = "vein://quarantine",
         name = "quarantine",
@@ -41,7 +49,13 @@ impl VeinMcp {
             &Quarantine {
                 enabled: self.resources.quarantine_enabled(),
                 counts: counts.into(),
-                pending: pending.into_iter().map(TrackedVersion::from).collect(),
+                pending: pending
+                    .into_iter()
+                    .map(|version| Pending {
+                        registry: version.kind.as_str(),
+                        version: version.into(),
+                    })
+                    .collect(),
             },
         )
     }

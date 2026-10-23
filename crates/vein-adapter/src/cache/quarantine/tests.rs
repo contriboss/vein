@@ -63,105 +63,25 @@ fn availability_follows_the_delay_policy() {
     }
 }
 
+/// Stored as text in `package_versions.status` and `.kind`: every value
+/// reads back as itself.
 #[test]
-fn test_is_version_available() {
-    let now = Timestamp::now();
-
-    // Quarantined, not yet available
-    let quarantined = GemVersion {
-        id: 1,
-        name: "test".to_string(),
-        version: "1.0.0".to_string(),
-        platform: None,
-        sha256: None,
-        published_at: now - SignedDuration::from_hours(24),
-        available_after: now + SignedDuration::from_hours(2 * 24),
-        status: VersionStatus::Quarantine,
-        status_reason: None,
-        upstream_yanked: false,
-        created_at: now,
-        updated_at: now,
-    };
-    assert!(!is_version_available(&quarantined, now));
-
-    // Quarantined but time has passed
-    let expired_quarantine = GemVersion {
-        available_after: now - SignedDuration::from_hours(1),
-        ..quarantined.clone()
-    };
-    assert!(is_version_available(&expired_quarantine, now));
-
-    // Available status
-    let available = GemVersion {
-        status: VersionStatus::Available,
-        ..quarantined.clone()
-    };
-    assert!(is_version_available(&available, now));
-
-    // Pinned status
-    let pinned = GemVersion {
-        status: VersionStatus::Pinned,
-        ..quarantined.clone()
-    };
-    assert!(is_version_available(&pinned, now));
-
-    // Yanked
-    let yanked = GemVersion {
-        status: VersionStatus::Yanked,
-        ..quarantined
-    };
-    assert!(!is_version_available(&yanked, now));
-}
-
-#[test]
-fn test_is_version_downloadable() {
-    let now = Timestamp::now();
-
-    let base = GemVersion {
-        id: 1,
-        name: "test".to_string(),
-        version: "1.0.0".to_string(),
-        platform: None,
-        sha256: None,
-        published_at: now,
-        available_after: now + SignedDuration::from_hours(3 * 24),
-        status: VersionStatus::Quarantine,
-        status_reason: None,
-        upstream_yanked: false,
-        created_at: now,
-        updated_at: now,
-    };
-
-    // Quarantined versions can still be downloaded
-    assert!(is_version_downloadable(&base));
-
-    // Yanked versions cannot be downloaded
-    let yanked = GemVersion {
-        status: VersionStatus::Yanked,
-        ..base
-    };
-    assert!(!is_version_downloadable(&yanked));
-}
-
-#[test]
-fn test_version_status_display() {
-    assert_eq!(VersionStatus::Quarantine.to_string(), "quarantine");
-    assert_eq!(VersionStatus::Available.to_string(), "available");
-    assert_eq!(VersionStatus::Yanked.to_string(), "yanked");
-    assert_eq!(VersionStatus::Pinned.to_string(), "pinned");
-}
-
-#[test]
-fn test_version_status_from_str() {
-    assert_eq!(
-        "quarantine".parse::<VersionStatus>(),
-        Ok(VersionStatus::Quarantine)
+fn statuses_and_kinds_round_trip_through_their_text() {
+    for status in [
+        VersionStatus::Quarantine,
+        VersionStatus::Available,
+        VersionStatus::Blocked,
+        VersionStatus::Pinned,
+    ] {
+        assert_eq!(status.to_string().parse(), Ok(status), "{status}");
+    }
+    assert!(
+        "yanked".parse::<VersionStatus>().is_err(),
+        "migrated to blocked"
     );
-    assert_eq!(
-        "available".parse::<VersionStatus>(),
-        Ok(VersionStatus::Available)
-    );
-    assert_eq!("yanked".parse::<VersionStatus>(), Ok(VersionStatus::Yanked));
-    assert_eq!("pinned".parse::<VersionStatus>(), Ok(VersionStatus::Pinned));
-    assert!("invalid".parse::<VersionStatus>().is_err());
+
+    for kind in [AssetKind::Gem, AssetKind::Crate, AssetKind::NpmPackage] {
+        assert_eq!(kind.as_str().parse::<AssetKind>(), Ok(kind), "{kind:?}");
+    }
+    assert!("pypi".parse::<AssetKind>().is_err());
 }

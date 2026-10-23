@@ -35,3 +35,71 @@ enabled = true
 host = "0.0.0.0"
 port = 9401
 trusted_networks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+
+[catalog]
+# Search answers offline too: every gem, crate and npm name.
+registries = ["gem", "crate", "npm"]
+
+[delay_policy]
+# New gem, crate and npm versions stay out of harbor's index for 3 days
+# (a weekend landing waits for Monday), then appear at 09:00 UTC. Downloads
+# a lockfile already names still work; /quarantine on the dashboard (or
+# `vein quarantine approve --registry ...`) releases one early. Exempt your
+# own packages with [[delay_policy.packages]] name = "..." delay_days = 0.
+enabled = true
+
+# Our own crates and gems (every one crates.io and rubygems.org list for
+# us), released at once: exact names, so nobody else's package rides along.
+[[delay_policy.packages]]
+registry = "crate"
+delay_days = 0
+names = [
+    "behavior-machines", "behavior-machines-circuit", "blackship",
+    "boltwire", "breaker-machines", "breaker_machines_native",
+    "chrono-machines", "chrono_machines_native", "closure-tree",
+    "closure-tree-macros", "crimson", "dictator", "dictator-core",
+    "dictator-datastar", "dictator-decree-abi", "dictator-freebsd",
+    "dictator-frontmatter", "dictator-golang", "dictator-python",
+    "dictator-ruby", "dictator-rust", "dictator-supreme",
+    "dictator-typescript", "efi-compress", "helmsman", "imprimatur",
+    "imprimatur-cli", "intel_ma", "lapsoss", "launchbay", "mcp-guest",
+    "mcp-host", "mcp-host-macros", "mdma", "mothership",
+    "mothership-docking-protocol", "mothership-wasm-guest", "orbitcast",
+    "psychowl", "skipper", "skynet", "stampeded", "state-machines",
+    "state-machines-cli", "state-machines-core", "state-machines-macro",
+    "throttle-machines", "upkg", "vein", "vein-adapter", "vein-admin",
+    "vein-admin-migration",
+]
+
+[[delay_policy.packages]]
+registry = "gem"
+delay_days = 0
+names = [
+    "actionmailer-deliver_later", "actionmcp", "activecypher",
+    "activellm", "activematrix", "activemeasure", "activeproject",
+    "activerag", "activerage", "activerecord-immudb-adapter",
+    "activerecord-postgis", "activerecord-ulid", "activevector",
+    "acts-as-taggable-on", "behavior_machines", "best_in_place",
+    "breaker_machines", "capistrano-inspeqtor", "capistrano-nagios",
+    "capistrano-newrelic", "capistrano-sidekiq", "capistrano3-puma",
+    "cells-erb", "cells-haml", "cells-rails", "cells-slim",
+    "chrono_machines", "closure_tree", "dag_me", "declarative", "derails",
+    "diagram", "dorp", "environmental", "guardship", "hailer",
+    "hosted_graphite", "hyperwallet", "imprimatur", "jsonrpc-rails",
+    "kaunta", "kaunta-rails", "lapsoss", "lovely", "mermaid", "mindsdb",
+    "minitest-reporters-llm", "minitest-trailblazer", "no_fly_list",
+    "noiseless", "orbitcast", "padded_cell", "psychowl",
+    "rails_app_version", "rails_latest", "rails_lens", "reform",
+    "reform-rails", "rubocop-trailblazer", "shuttlebay", "simplecov-db",
+    "solid_mcp", "stampeded", "star_gates", "state_machines",
+    "state_machines-activemodel", "state_machines-activemodel-observers",
+    "state_machines-activerecord", "state_machines-audit_trail",
+    "state_machines-datamapper", "state_machines-diagram",
+    "state_machines-graphviz", "state_machines-mermaid",
+    "state_machines-mongoid", "state_machines-mongomapper",
+    "state_machines-rspec", "state_machines-sequel",
+    "state_machines-yard", "strongroom-rails", "strongroomd",
+    "throttle_machines", "trailblazer-compat", "trailblazer-context",
+    "trailblazer-developer", "trailblazer-finder", "trailblazer-macro",
+    "trailblazer-rails", "vial", "warpdrive-proxy", "with_advisory_lock",
+]

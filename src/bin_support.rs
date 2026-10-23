@@ -9,6 +9,7 @@ mod setup;
 mod stats;
 
 use anyhow::Result;
+use vein_adapter::AssetKey;
 
 use self::cli::{CatalogCommand, Command, GemCommand, QuarantineCommand};
 
@@ -19,7 +20,9 @@ pub fn run(cli: Cli) -> Result<()> {
         Command::Serve { config } => server::run_server(config),
         Command::Stats { config } => stats::run_stats(config),
         Command::Catalog { action } => match action {
-            CatalogCommand::Sync { config } => catalog::run_catalog_sync(config),
+            CatalogCommand::Sync { config, registry } => {
+                catalog::run_catalog_sync(config, registry)
+            }
         },
         Command::Gem { action } => match action {
             GemCommand::Sync {
@@ -45,28 +48,36 @@ pub fn run(cli: Cli) -> Result<()> {
             QuarantineCommand::Promote { config } => quarantine::run_quarantine_promote(config),
             QuarantineCommand::Approve {
                 config,
-                gem,
+                registry,
+                name,
                 version,
                 platform,
                 reason,
             } => quarantine::run_quarantine_approve(
                 config,
-                &gem,
-                &version,
-                platform.as_deref(),
+                &AssetKey {
+                    kind: registry,
+                    name: &name,
+                    version: &version,
+                    platform: platform.as_deref(),
+                },
                 &reason,
             ),
             QuarantineCommand::Block {
                 config,
-                gem,
+                registry,
+                name,
                 version,
                 platform,
                 reason,
             } => quarantine::run_quarantine_block(
                 config,
-                &gem,
-                &version,
-                platform.as_deref(),
+                &AssetKey {
+                    kind: registry,
+                    name: &name,
+                    version: &version,
+                    platform: platform.as_deref(),
+                },
                 &reason,
             ),
         },

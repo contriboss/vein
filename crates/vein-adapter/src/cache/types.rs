@@ -1,11 +1,17 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// What an asset is; also the registry a tracked version belongs to.
+/// Serialized, and stored, as [`AssetKind::as_str`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AssetKind {
+    #[serde(rename = "gem", alias = "gems")]
     Gem,
+    #[serde(rename = "gemspec")]
     Spec,
+    #[serde(rename = "crate", alias = "crates")]
     Crate,
+    #[serde(rename = "npm")]
     NpmPackage,
 }
 
@@ -19,6 +25,27 @@ impl AssetKind {
             Self::NpmPackage => "npm",
         }
     }
+}
+
+impl std::str::FromStr for AssetKind {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "gem" => Ok(Self::Gem),
+            "gemspec" => Ok(Self::Spec),
+            "crate" => Ok(Self::Crate),
+            "npm" => Ok(Self::NpmPackage),
+            other => Err(format!("unknown asset kind `{other}`")),
+        }
+    }
+}
+
+/// A name a registry publishes, as its catalog holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CatalogName {
+    pub name: String,
+    pub latest_version: Option<String>,
 }
 
 #[derive(Debug, Clone)]

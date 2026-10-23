@@ -8,17 +8,21 @@ use sqlx::{
     postgres::{PgPoolOptions, Postgres},
 };
 
+use crate::version::sort_newest_first;
+
 use super::{
-    CacheBackendTrait, GemVersion, QuarantineStats, VersionStatus,
+    CacheBackendTrait, PackageVersion, QuarantineStats, VersionStatus,
     backend_common::{
-        build_index_stats, build_quarantine_stats, build_sbom_coverage, into_gem_versions,
-        json_array_like_pattern, latest_gem_version, newest_first, search_like_pattern,
-        search_prefix_pattern,
+        build_index_stats, build_quarantine_stats, build_sbom_coverage, json_array_like_pattern,
+        newest_first, search_like_pattern, search_prefix_pattern,
     },
-    models::{CachedAssetRow, CachedVersionRow, DbGemMetadataRow, GemVersionRow, format_timestamp},
+    models::{
+        CachedAssetRow, CachedVersionRow, DbGemMetadataRow, PackageVersionRow, format_timestamp,
+    },
     serialization::{hydrate_metadata_row, parse_language_rows, prepare_metadata_strings},
     types::{
-        AssetKey, AssetKind, CachedAsset, CachedVersion, GemMetadata, IndexStats, SbomCoverage,
+        AssetKey, AssetKind, CachedAsset, CachedVersion, CatalogName, GemMetadata, IndexStats,
+        SbomCoverage,
     },
 };
 
@@ -581,6 +585,114 @@ impl CacheBackendTrait for PostgresCacheBackend {
         Ok(rows)
     }
 
+    async fn names_search(
+        &self,
+        kind: AssetKind,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<CatalogName>> {
+        let sql = if kind == AssetKind::Gem {
+            concat!(
+                "SELECT name, latest_version FROM catalog_gems WHERE name ILIKE $1 ",
+                rank_by_name!()
+            )
+        } else {
+            concat!(
+                "SELECT name, latest_version FROM registry_names ",
+                "WHERE kind = $5 AND name ILIKE $1 ",
+                rank_by_name!()
+            )
+        };
+        let mut search = sqlx::query_as::<_, (String, Option<String>)>(sql)
+            .bind(search_like_pattern(query))
+            .bind(limit)
+            .bind(query)
+            .bind(search_prefix_pattern(query));
+        if kind != AssetKind::Gem {
+            search = search.bind(kind.as_str());
+        }
+        let rows = search
+            .fetch_all(&self.pool)
+            .await
+            .context("searching registry names (postgres)")?;
+        Ok(rows
+            .into_iter()
+            .map(|(name, latest_version)| CatalogName {
+                name,
+                latest_version,
+            })
+            .collect())
+    }
+
+    async fn names_upsert(&self, kind: AssetKind, names: &[CatalogName]) -> Result<()> {
+        if names.is_empty() {
+            return Ok(());
+        }
+        let (names, versions): (Vec<&str>, Vec<Option<&str>>) = names
+            .iter()
+            .map(|entry| (entry.name.as_str(), entry.latest_version.as_deref()))
+            .unzip();
+        let sql = if kind == AssetKind::Gem {
+            r"
+            INSERT INTO catalog_gems (name, latest_version, synced_at)
+            SELECT name, version, NOW() FROM UNNEST($1::TEXT[], $2::TEXT[]) AS t(name, version)
+            ON CONFLICT (name) DO UPDATE SET
+                latest_version = COALESCE(EXCLUDED.latest_version, catalog_gems.latest_version),
+                synced_at = EXCLUDED.synced_at
+            "
+        } else {
+            r"
+            INSERT INTO registry_names (kind, name, latest_version, synced_at)
+            SELECT $3, name, version, NOW() FROM UNNEST($1::TEXT[], $2::TEXT[]) AS t(name, version)
+            ON CONFLICT (kind, name) DO UPDATE SET
+                latest_version = COALESCE(EXCLUDED.latest_version, registry_names.latest_version),
+                synced_at = EXCLUDED.synced_at
+            "
+        };
+        let mut upsert = sqlx::query(sql).bind(&names).bind(&versions);
+        if kind != AssetKind::Gem {
+            upsert = upsert.bind(kind.as_str());
+        }
+        upsert
+            .execute(&self.pool)
+            .await
+            .context("upserting registry names (postgres)")?;
+        Ok(())
+    }
+
+    async fn names_remove(&self, kind: AssetKind, names: &[String]) -> Result<()> {
+        if names.is_empty() {
+            return Ok(());
+        }
+        let query = if kind == AssetKind::Gem {
+            sqlx::query("DELETE FROM catalog_gems WHERE name = ANY($1)").bind(names)
+        } else {
+            sqlx::query("DELETE FROM registry_names WHERE kind = $2 AND name = ANY($1)")
+                .bind(names)
+                .bind(kind.as_str())
+        };
+        query
+            .execute(&self.pool)
+            .await
+            .context("removing registry names (postgres)")?;
+        Ok(())
+    }
+
+    async fn names_count(&self, kind: AssetKind) -> Result<u64> {
+        let count: i64 = if kind == AssetKind::Gem {
+            sqlx::query_scalar("SELECT COUNT(*) FROM catalog_gems")
+                .fetch_one(&self.pool)
+                .await
+        } else {
+            sqlx::query_scalar("SELECT COUNT(*) FROM registry_names WHERE kind = $1")
+                .bind(kind.as_str())
+                .fetch_one(&self.pool)
+                .await
+        }
+        .context("counting registry names (postgres)")?;
+        Ok(count.max(0).cast_unsigned())
+    }
+
     async fn catalog_meta_get(&self, key: &str) -> Result<Option<String>> {
         let value =
             sqlx::query_scalar::<_, String>("SELECT value FROM catalog_meta WHERE key = $1")
@@ -670,148 +782,104 @@ impl CacheBackendTrait for PostgresCacheBackend {
         Ok(total.max(0).cast_unsigned())
     }
 
-    // ==================== Quarantine Methods ====================
+    // ==================== Release delay ====================
 
-    async fn get_gem_version(
-        &self,
-        name: &str,
-        version: &str,
-        platform: Option<&str>,
-    ) -> Result<Option<GemVersion>> {
-        let row = sqlx::query_as::<_, GemVersionRow>(
+    async fn package_versions(&self, kind: AssetKind, name: &str) -> Result<Vec<PackageVersion>> {
+        let rows = sqlx::query_as::<_, PackageVersionRow>(
             r"
-            SELECT id, name, version, platform, sha256, published_at, available_after,
-                   status, status_reason, upstream_yanked, created_at, updated_at
-            FROM gem_versions
-            WHERE name = $1
-              AND version = $2
-              AND ((platform IS NULL AND $3 IS NULL) OR platform = $3)
+            SELECT id, kind, name, version, platform, published_at, available_after,
+                   status, status_reason, created_at, updated_at
+            FROM package_versions
+            WHERE kind = $1 AND name = $2
             ",
         )
+        .bind(kind.as_str())
         .bind(name)
-        .bind(version)
-        .bind(platform)
-        .fetch_optional(&self.pool)
+        .fetch_all(&self.pool)
         .await
-        .context("fetching gem version (postgres)")?;
+        .context("fetching tracked versions (postgres)")?;
 
-        Ok(row.map(Into::into))
+        let mut versions = rows
+            .into_iter()
+            .map(PackageVersion::try_from)
+            .collect::<Result<Vec<_>>>()?;
+        sort_newest_first(&mut versions, |version: &PackageVersion| &version.version);
+        Ok(versions)
     }
 
-    async fn upsert_gem_version(&self, gem_version: &GemVersion) -> Result<()> {
-        sqlx::query(
-            r"
-            INSERT INTO gem_versions (
-                name, version, platform, sha256, published_at, available_after,
-                status, status_reason, upstream_yanked, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
-            ON CONFLICT ON CONSTRAINT gem_versions_unique
-            DO UPDATE SET
-                sha256 = EXCLUDED.sha256,
-                published_at = EXCLUDED.published_at,
-                available_after = EXCLUDED.available_after,
-                status = EXCLUDED.status,
-                status_reason = EXCLUDED.status_reason,
-                upstream_yanked = EXCLUDED.upstream_yanked,
-                updated_at = NOW()
-            ",
-        )
-        .bind(&gem_version.name)
-        .bind(&gem_version.version)
-        .bind(gem_version.platform.as_deref())
-        .bind(gem_version.sha256.as_deref())
-        .bind(gem_version.published_at.to_sqlx())
-        .bind(gem_version.available_after.to_sqlx())
-        .bind(gem_version.status.to_string())
-        .bind(gem_version.status_reason.as_deref())
-        .bind(gem_version.upstream_yanked)
-        .bind(gem_version.created_at.to_sqlx())
-        .execute(&self.pool)
-        .await
-        .context("upserting gem version (postgres)")?;
-
+    async fn record_held(&self, versions: &[PackageVersion]) -> Result<()> {
+        if versions.is_empty() {
+            return Ok(());
+        }
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .context("starting held versions transaction (postgres)")?;
+        for version in versions {
+            // An admin's decision (or an earlier release) stands; only the
+            // timing of a version still held follows the current policy.
+            sqlx::query(
+                r"
+                INSERT INTO package_versions (
+                    kind, name, version, platform, published_at, available_after,
+                    status, status_reason
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, 'quarantine', 'auto')
+                ON CONFLICT ON CONSTRAINT package_versions_unique DO UPDATE SET
+                    published_at = EXCLUDED.published_at,
+                    available_after = EXCLUDED.available_after,
+                    updated_at = NOW()
+                WHERE package_versions.status = 'quarantine'
+                  AND package_versions.available_after <> EXCLUDED.available_after
+                ",
+            )
+            .bind(version.kind.as_str())
+            .bind(&version.name)
+            .bind(&version.version)
+            .bind(version.platform.as_deref())
+            .bind(version.published_at.to_sqlx())
+            .bind(version.available_after.to_sqlx())
+            .execute(&mut *tx)
+            .await
+            .context("recording held version (postgres)")?;
+        }
+        tx.commit()
+            .await
+            .context("committing held versions (postgres)")?;
         Ok(())
     }
 
-    async fn get_latest_available_version(
+    async fn set_version_status(
         &self,
-        name: &str,
-        platform: Option<&str>,
-        now: Timestamp,
-    ) -> Result<Option<GemVersion>> {
-        // Get all available versions and sort in Rust by RubyGems version order
-        let rows = sqlx::query_as::<_, GemVersionRow>(
-            r"
-            SELECT id, name, version, platform, sha256, published_at, available_after,
-                   status, status_reason, upstream_yanked, created_at, updated_at
-            FROM gem_versions
-            WHERE name = $1
-              AND ((platform IS NULL AND $2 IS NULL) OR platform = $2)
-              AND upstream_yanked = FALSE
-              AND (status = 'available' OR status = 'pinned'
-                   OR (status = 'quarantine' AND available_after <= $3))
-            ",
-        )
-        .bind(name)
-        .bind(platform)
-        .bind(now.to_sqlx())
-        .fetch_all(&self.pool)
-        .await
-        .context("fetching available versions (postgres)")?;
-
-        Ok(latest_gem_version(rows))
-    }
-
-    async fn get_quarantined_versions(
-        &self,
-        name: &str,
-        now: Timestamp,
-    ) -> Result<Vec<GemVersion>> {
-        let rows = sqlx::query_as::<_, GemVersionRow>(
-            r"
-            SELECT id, name, version, platform, sha256, published_at, available_after,
-                   status, status_reason, upstream_yanked, created_at, updated_at
-            FROM gem_versions
-            WHERE name = $1
-              AND status = 'quarantine'
-              AND available_after > $2
-            ORDER BY version COLLATE ucs_basic DESC
-            ",
-        )
-        .bind(name)
-        .bind(now.to_sqlx())
-        .fetch_all(&self.pool)
-        .await
-        .context("fetching quarantined versions (postgres)")?;
-
-        Ok(into_gem_versions(rows))
-    }
-
-    async fn update_version_status(
-        &self,
-        name: &str,
-        version: &str,
-        platform: Option<&str>,
+        version: &AssetKey<'_>,
         status: VersionStatus,
         reason: Option<String>,
     ) -> Result<()> {
+        // A decision can come before vein ever held the version (blocking
+        // a release ahead of time), so it is an upsert.
         sqlx::query(
             r"
-            UPDATE gem_versions
-            SET status = $1, status_reason = $2, updated_at = NOW()
-            WHERE name = $3
-              AND version = $4
-              AND ((platform IS NULL AND $5 IS NULL) OR platform = $5)
+            INSERT INTO package_versions (
+                kind, name, version, platform, published_at, available_after,
+                status, status_reason
+            )
+            VALUES ($1, $2, $3, $4, NOW(), NOW(), $5, $6)
+            ON CONFLICT ON CONSTRAINT package_versions_unique DO UPDATE SET
+                status = EXCLUDED.status,
+                status_reason = EXCLUDED.status_reason,
+                updated_at = NOW()
             ",
         )
+        .bind(version.kind.as_str())
+        .bind(version.name)
+        .bind(version.version)
+        .bind(version.platform)
         .bind(status.to_string())
         .bind(reason)
-        .bind(name)
-        .bind(version)
-        .bind(platform)
         .execute(&self.pool)
         .await
-        .context("updating version status (postgres)")?;
+        .context("setting version status (postgres)")?;
 
         Ok(())
     }
@@ -819,7 +887,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
     async fn promote_expired_quarantines(&self, now: Timestamp) -> Result<u64> {
         let result = sqlx::query(
             r"
-            UPDATE gem_versions
+            UPDATE package_versions
             SET status = 'available', status_reason = 'auto-promoted', updated_at = NOW()
             WHERE status = 'quarantine'
               AND available_after <= $1
@@ -833,31 +901,14 @@ impl CacheBackendTrait for PostgresCacheBackend {
         Ok(result.rows_affected())
     }
 
-    async fn mark_yanked(&self, name: &str, version: &str) -> Result<()> {
-        sqlx::query(
+    async fn held_versions(&self, limit: u32, offset: u32) -> Result<Vec<PackageVersion>> {
+        let rows = sqlx::query_as::<_, PackageVersionRow>(
             r"
-            UPDATE gem_versions
-            SET status = 'yanked', upstream_yanked = TRUE, updated_at = NOW()
-            WHERE name = $1 AND version = $2
-            ",
-        )
-        .bind(name)
-        .bind(version)
-        .execute(&self.pool)
-        .await
-        .context("marking version yanked (postgres)")?;
-
-        Ok(())
-    }
-
-    async fn get_all_quarantined(&self, limit: u32, offset: u32) -> Result<Vec<GemVersion>> {
-        let rows = sqlx::query_as::<_, GemVersionRow>(
-            r"
-            SELECT id, name, version, platform, sha256, published_at, available_after,
-                   status, status_reason, upstream_yanked, created_at, updated_at
-            FROM gem_versions
+            SELECT id, kind, name, version, platform, published_at, available_after,
+                   status, status_reason, created_at, updated_at
+            FROM package_versions
             WHERE status = 'quarantine'
-            ORDER BY available_after ASC
+            ORDER BY available_after ASC, kind, name, version
             LIMIT $1 OFFSET $2
             ",
         )
@@ -865,9 +916,9 @@ impl CacheBackendTrait for PostgresCacheBackend {
         .bind(i64::from(offset))
         .fetch_all(&self.pool)
         .await
-        .context("fetching all quarantined (postgres)")?;
+        .context("fetching held versions (postgres)")?;
 
-        Ok(into_gem_versions(rows))
+        rows.into_iter().map(PackageVersion::try_from).collect()
     }
 
     async fn quarantine_stats(&self) -> Result<QuarantineStats> {
@@ -879,75 +930,42 @@ impl CacheBackendTrait for PostgresCacheBackend {
             .checked_add(SignedDuration::from_hours(7 * 24))
             .context("a week from now")?;
 
-        let (quarantined, available, yanked, pinned): (i64, i64, i64, i64) = sqlx::query_as(
+        let (quarantined, available, blocked, pinned, releasing_today, releasing_week): (
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+            i64,
+        ) = sqlx::query_as(
             r"
             SELECT
-                COALESCE(SUM(CASE WHEN status = 'quarantine' THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN status = 'yanked' THEN 1 ELSE 0 END), 0),
-                COALESCE(SUM(CASE WHEN status = 'pinned' THEN 1 ELSE 0 END), 0)
-            FROM gem_versions
-            ",
-        )
-        .fetch_one(&self.pool)
-        .await
-        .context("fetching quarantine counts (postgres)")?;
-
-        let releasing_today: i64 = sqlx::query_scalar(
-            r"
-            SELECT COUNT(*)
-            FROM gem_versions
-            WHERE status = 'quarantine'
-              AND available_after > $1
-              AND available_after <= $2
+                COUNT(*) FILTER (WHERE status = 'quarantine'),
+                COUNT(*) FILTER (WHERE status = 'available'),
+                COUNT(*) FILTER (WHERE status = 'blocked'),
+                COUNT(*) FILTER (WHERE status = 'pinned'),
+                COUNT(*) FILTER (WHERE status = 'quarantine'
+                                   AND available_after > $1 AND available_after <= $2),
+                COUNT(*) FILTER (WHERE status = 'quarantine'
+                                   AND available_after > $1 AND available_after <= $3)
+            FROM package_versions
             ",
         )
         .bind(now.to_sqlx())
         .bind(today_end.to_sqlx())
-        .fetch_one(&self.pool)
-        .await
-        .context("counting versions releasing today (postgres)")?;
-
-        let releasing_week: i64 = sqlx::query_scalar(
-            r"
-            SELECT COUNT(*)
-            FROM gem_versions
-            WHERE status = 'quarantine'
-              AND available_after > $1
-              AND available_after <= $2
-            ",
-        )
-        .bind(now.to_sqlx())
         .bind(week_end.to_sqlx())
         .fetch_one(&self.pool)
         .await
-        .context("counting versions releasing this week (postgres)")?;
+        .context("counting tracked versions (postgres)")?;
 
         Ok(build_quarantine_stats(
             quarantined,
             available,
-            yanked,
+            blocked,
             pinned,
             releasing_today,
             releasing_week,
         ))
-    }
-
-    async fn get_gem_versions_for_index(&self, name: &str) -> Result<Vec<GemVersion>> {
-        let rows = sqlx::query_as::<_, GemVersionRow>(
-            r"
-            SELECT id, name, version, platform, sha256, published_at, available_after,
-                   status, status_reason, upstream_yanked, created_at, updated_at
-            FROM gem_versions
-            WHERE name = $1
-            ",
-        )
-        .bind(name)
-        .fetch_all(&self.pool)
-        .await
-        .context("fetching gem versions for index (postgres)")?;
-
-        Ok(newest_first(rows, |version: &GemVersion| &version.version))
     }
 
     async fn insert_symbols(&self, symbol: super::GemSymbolRecord<'_>) -> Result<()> {

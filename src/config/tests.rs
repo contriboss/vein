@@ -603,3 +603,21 @@ fn database_location_hides_credentials() {
         assert_eq!(database::redact_credentials(url), *expected, "url: {url:?}");
     }
 }
+
+#[test]
+fn a_delay_override_names_a_package() {
+    let config: Config = toml::from_str(
+        r#"
+        [database]
+        url = "postgres://vein@localhost/vein"
+        [[delay_policy.packages]]
+        delay_days = 0
+        "#,
+    )
+    .unwrap();
+    let err = config.validate().unwrap_err().to_string();
+    assert!(
+        err.contains("delay_policy.packages[0] names no package"),
+        "{err}"
+    );
+}

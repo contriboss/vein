@@ -9,17 +9,16 @@ mod version;
 
 // Core types (always available)
 pub use cache::{
-    AssetKey, AssetKind, CacheBackendTrait, CachedAsset, CachedVersion, DependencyKind,
-    GemDependency, GemMetadata, GemSymbolRecord, IndexStats, SbomCoverage,
+    AssetKey, AssetKind, CacheBackendTrait, CachedAsset, CachedVersion, CatalogName,
+    DependencyKind, GemDependency, GemMetadata, GemSymbolRecord, IndexStats, SbomCoverage,
 };
 
 pub use cache::PostgresCacheBackend as CacheBackend;
 
 pub use storage::{FileHandle, FilesystemStorage, TempFile};
-pub use version::{compare_gem_versions, sort_newest_first};
+pub use version::{compare_gem_versions, is_semver_prerelease, sort_newest_first};
 
 // Quarantine types
 pub use cache::{
-    DelayPolicy, GemVersion, QuarantineInfo, QuarantineStats, VersionStatus,
-    calculate_availability, is_version_available, is_version_downloadable,
+    DelayPolicy, PackageVersion, QuarantineStats, VersionStatus, calculate_availability,
 };

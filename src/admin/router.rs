@@ -35,14 +35,8 @@ pub fn build(state: AdminState, mcp: Option<McpHttpService>) -> Router<AdminStat
             "/quarantine/api/pending",
             controllers::quarantine::api_pending,
         )
-        .with_post(
-            "/quarantine/{gem}/{version}/approve",
-            controllers::quarantine::approve,
-        )
-        .with_post(
-            "/quarantine/{gem}/{version}/block",
-            controllers::quarantine::block,
-        )
+        .with_post("/quarantine/approve", controllers::quarantine::approve)
+        .with_post("/quarantine/block", controllers::quarantine::block)
         // Health
         .with_get("/up", controllers::health::up)
         .with_get("/debug", controllers::health::debug);

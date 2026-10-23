@@ -1,16 +1,18 @@
-//! Quarantine management API endpoints.
+//! Quarantine management: the versions the release delay holds, in every
+//! registry.
 //!
-//! Provides admin UI and API for managing quarantined gem versions:
 //! - View quarantine statistics and pending versions
 //! - Approve versions for early release
-//! - Block malicious versions
+//! - Block malicious versions (hidden, downloads refused)
 
 use jiff::Timestamp;
-use rama::http::service::web::extract::{Form, Path, Query, State};
+use rama::http::service::web::extract::{Form, Query, State};
 use rama::http::service::web::response::{Html, IntoResponse, Json, Redirect};
 use serde::{Deserialize, Serialize};
 use tera::Context;
-use vein_adapter::{GemVersion, QuarantineStats as AdapterQuarantineStats, VersionStatus};
+use vein_adapter::{
+    AssetKey, AssetKind, PackageVersion, QuarantineStats as AdapterQuarantineStats, VersionStatus,
+};
 
 use crate::admin::controllers::render;
 use crate::admin::state::{AdminResources, AdminState};
@@ -22,10 +24,15 @@ const QUARANTINE_DISABLED: &str = "Quarantine feature is disabled";
 const DEFAULT_APPROVAL_REASON: &str = "admin approval";
 const DEFAULT_BLOCK_REASON: &str = "admin blocked";
 
+/// One version and the decision's reason; the name travels in the form
+/// rather than the path, as a scoped npm name holds a `/`.
 #[derive(Debug, Deserialize)]
 pub struct ActionForm {
-    reason: Option<String>,
+    registry: AssetKind,
+    name: String,
+    version: String,
     platform: Option<String>,
+    reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -39,11 +46,12 @@ struct QuarantineStats {
     quarantined: u64,
     available: u64,
     pinned: u64,
-    yanked: u64,
+    blocked: u64,
 }
 
 #[derive(Debug, Serialize)]
-struct PendingGem {
+struct PendingVersion {
+    registry: &'static str,
     name: String,
     version: String,
     platform: Option<String>,
@@ -53,8 +61,13 @@ struct PendingGem {
 }
 
 impl ActionForm {
-    fn platform(&self) -> Option<&str> {
-        self.platform.as_deref().filter(|p| !p.is_empty())
+    fn key(&self) -> AssetKey<'_> {
+        AssetKey {
+            kind: self.registry,
+            name: &self.name,
+            version: &self.version,
+            platform: self.platform.as_deref().filter(|p| !p.is_empty()),
+        }
     }
 
     fn reason_or<'a>(&'a self, fallback: &'a str) -> &'a str {
@@ -80,15 +93,16 @@ impl From<AdapterQuarantineStats> for QuarantineStats {
             quarantined: stats.total_quarantined,
             available: stats.total_available,
             pinned: stats.total_pinned,
-            yanked: stats.total_yanked,
+            blocked: stats.total_blocked,
         }
     }
 }
 
-impl From<GemVersion> for PendingGem {
-    fn from(gem: GemVersion) -> Self {
+impl From<PackageVersion> for PendingVersion {
+    fn from(gem: PackageVersion) -> Self {
         let time_remaining = gem.available_after.duration_since(Timestamp::now());
         Self {
+            registry: gem.kind.as_str(),
             name: gem.name,
             version: gem.version,
             platform: gem.platform.clone(),
@@ -130,7 +144,7 @@ pub async fn api_stats(State(state): State<AdminState>) -> impl IntoResponse {
             "quarantined": stats.total_quarantined,
             "available": stats.total_available,
             "pinned": stats.total_pinned,
-            "yanked": stats.total_yanked,
+            "blocked": stats.total_blocked,
             "releasing_today": stats.versions_releasing_today,
             "releasing_this_week": stats.versions_releasing_this_week,
         })),
@@ -161,32 +175,28 @@ pub async fn api_pending(
 
 pub async fn approve(
     State(state): State<AdminState>,
-    Path((gem, version)): Path<(String, String)>,
     Form(form): Form<ActionForm>,
 ) -> impl IntoResponse {
     if !state.resources.quarantine_enabled() {
         return Redirect::to("/quarantine");
     }
 
-    let platform = form.platform();
     let reason = form.reason_or(DEFAULT_APPROVAL_REASON);
-
-    match state
-        .resources
-        .approve_version(&gem, &version, platform, reason)
-        .await
-    {
-        Ok(()) => {
-            tracing::info!(gem = %gem, version = %version, reason = %reason, "Version approved");
-        }
-        Err(e) => {
-            tracing::error!(
-                error = %e,
-                gem = %gem,
-                version = %version,
-                "Failed to approve version"
-            );
-        }
+    match state.resources.approve_version(&form.key(), reason).await {
+        Ok(()) => tracing::info!(
+            registry = form.registry.as_str(),
+            name = %form.name,
+            version = %form.version,
+            reason,
+            "Version approved"
+        ),
+        Err(e) => tracing::error!(
+            error = %e,
+            registry = form.registry.as_str(),
+            name = %form.name,
+            version = %form.version,
+            "Failed to approve version"
+        ),
     }
 
     Redirect::to("/quarantine")
@@ -194,27 +204,28 @@ pub async fn approve(
 
 pub async fn block(
     State(state): State<AdminState>,
-    Path((gem, version)): Path<(String, String)>,
     Form(form): Form<ActionForm>,
 ) -> impl IntoResponse {
     if !state.resources.quarantine_enabled() {
         return Redirect::to("/quarantine");
     }
 
-    let platform = form.platform();
     let reason = form.reason_or(DEFAULT_BLOCK_REASON);
-
-    match state
-        .resources
-        .block_version(&gem, &version, platform, reason)
-        .await
-    {
-        Ok(()) => {
-            tracing::warn!(gem = %gem, version = %version, reason = %reason, "Version blocked");
-        }
-        Err(e) => {
-            tracing::error!(error = %e, gem = %gem, version = %version, "Failed to block version");
-        }
+    match state.resources.block_version(&form.key(), reason).await {
+        Ok(()) => tracing::warn!(
+            registry = form.registry.as_str(),
+            name = %form.name,
+            version = %form.version,
+            reason,
+            "Version blocked"
+        ),
+        Err(e) => tracing::error!(
+            error = %e,
+            registry = form.registry.as_str(),
+            name = %form.name,
+            version = %form.version,
+            "Failed to block version"
+        ),
     }
 
     Redirect::to("/quarantine")
@@ -228,12 +239,12 @@ async fn load_pending_versions(
     resources: &AdminResources,
     limit: u32,
     offset: u32,
-) -> anyhow::Result<Vec<PendingGem>> {
+) -> anyhow::Result<Vec<PendingVersion>> {
     Ok(resources
         .quarantine_pending(limit, offset)
         .await?
         .into_iter()
-        .map(PendingGem::from)
+        .map(PendingVersion::from)
         .collect())
 }
 
@@ -261,15 +272,16 @@ fn error_payload(err: impl std::fmt::Display) -> serde_json::Value {
     })
 }
 
-fn pending_payload(pending: Vec<GemVersion>) -> Vec<serde_json::Value> {
+fn pending_payload(pending: Vec<PackageVersion>) -> Vec<serde_json::Value> {
     pending
         .into_iter()
         .map(|version| {
             serde_json::json!({
+                "registry": version.kind.as_str(),
                 "name": version.name,
                 "version": version.version,
                 "platform": version.platform,
-                "status": format!("{:?}", version.status),
+                "status": version.status.to_string(),
                 "published_at": version.published_at.to_string(),
                 "available_after": version.available_after.to_string(),
             })
@@ -281,7 +293,7 @@ const fn status_label(status: VersionStatus) -> &'static str {
     match status {
         VersionStatus::Quarantine => "Quarantine",
         VersionStatus::Available => "Available",
-        VersionStatus::Yanked => "Yanked",
+        VersionStatus::Blocked => "Blocked",
         VersionStatus::Pinned => "Pinned",
     }
 }

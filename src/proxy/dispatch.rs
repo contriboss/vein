@@ -13,7 +13,7 @@ use super::{
     public_base::public_base, response,
 };
 
-use crate::{crates as crates_registry, npm as npm_registry};
+use crate::{crates as crates_registry, npm as npm_registry, search};
 
 impl VeinProxy {
     async fn handle(&self, req: Request<Body>, ctx: &mut RequestContext) -> Result<Response<Body>> {
@@ -22,6 +22,14 @@ impl VeinProxy {
         // What every URL handed back must use: the bind is often loopback.
         let our_base = public_base(req.headers(), &self.config.server);
 
+        if method == Method::GET
+            && let Some(query) = search::Query::parse(req.uri())
+        {
+            ctx.cache = CacheStatus::Pass;
+            let target = req.uri().request_target();
+            return search::respond(&self.http, &self.index, &self.search, &query, &target).await;
+        }
+
         if npm_registry::is_npm_request(&req) {
             let result = npm_registry::handle_npm_request(
                 &self.http,
@@ -29,6 +37,7 @@ impl VeinProxy {
                 &our_base,
                 self.storage.clone(),
                 self.index.clone(),
+                &self.config.delay_policy,
             )
             .await;
             return finish_registry_result(ctx, result, "npm request failed", "npm upstream error");
@@ -58,6 +67,7 @@ impl VeinProxy {
                         &our_base,
                         self.storage.clone(),
                         self.index.clone(),
+                        &self.config.delay_policy,
                     )
                     .await;
                     return finish_registry_result(

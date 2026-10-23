@@ -18,6 +18,8 @@ use serde_json::Value as JsonValue;
 use vein_adapter::{AssetKind, CacheBackend, CacheBackendTrait, FilesystemStorage};
 
 use super::types::NpmPackageRequest;
+use crate::config::DelayPolicyConfig;
+use crate::delay::{self, BLOCKED};
 use crate::http_cache::{CacheOutcome, CachedTextOptions, MetaStoreMode, fetch_cached_text};
 use crate::proxy::{cache as proxy_cache, types::CacheableRequest};
 use crate::upstream::{UA, buffer_response, simple_get};
@@ -100,6 +102,7 @@ pub async fn handle_npm_request(
     our_base: &str,
     storage: Arc<FilesystemStorage>,
     index: Arc<CacheBackend>,
+    delay: &DelayPolicyConfig,
 ) -> Result<(Response<Body>, CacheOutcome)> {
     let registry_base = npm_registry_base();
     handle_npm_request_from(
@@ -108,6 +111,7 @@ pub async fn handle_npm_request(
         our_base,
         storage,
         index,
+        delay,
         registry_base.as_ref(),
     )
     .await
@@ -119,6 +123,7 @@ async fn handle_npm_request_from(
     our_base: &str,
     storage: Arc<FilesystemStorage>,
     index: Arc<CacheBackend>,
+    delay: &DelayPolicyConfig,
     registry_base: &str,
 ) -> Result<(Response<Body>, CacheOutcome)> {
     let method = req.method().clone();
@@ -138,9 +143,18 @@ async fn handle_npm_request_from(
     };
 
     if npm_req.is_tarball {
-        handle_tarball_download(client, &npm_req, storage, index, registry_base).await
+        handle_tarball_download(client, &npm_req, storage, index, delay, registry_base).await
     } else {
-        handle_package_metadata(client, &npm_req, our_base, storage, index, registry_base).await
+        handle_package_metadata(
+            client,
+            &npm_req,
+            our_base,
+            storage,
+            index,
+            delay,
+            registry_base,
+        )
+        .await
     }
 }
 
@@ -154,6 +168,7 @@ async fn handle_package_metadata(
     our_base: &str,
     storage: Arc<FilesystemStorage>,
     index: Arc<CacheBackend>,
+    delay: &DelayPolicyConfig,
     registry_base: &str,
 ) -> Result<(Response<Body>, CacheOutcome)> {
     let storage_path = npm_req.storage_path();
@@ -169,6 +184,11 @@ async fn handle_package_metadata(
     };
 
     let our_base = our_base.to_string();
+    // A packument lists every version; a per-version manifest passes through.
+    let screened = npm_req
+        .version
+        .is_none()
+        .then(|| (index.clone(), npm_req.name.clone()));
 
     let result = fetch_cached_text(
         storage.as_ref(),
@@ -186,8 +206,14 @@ async fn handle_package_metadata(
             simple_get(client, &upstream_url, &headers, Some("application/json")).await
         },
         move |body| async move {
+            let mut metadata: JsonValue =
+                serde_json::from_slice(&body).context("parsing npm metadata")?;
+            if let Some((index, name)) = screened {
+                delay::npm::filter_packument(delay, &index, &name, &mut metadata).await;
+            }
             // Transform tarball URLs to point to our proxy
-            transform_metadata(&body, &our_base)
+            transform_metadata(&mut metadata, &our_base);
+            serde_json::to_vec(&metadata).context("serializing transformed metadata")
         },
     )
     .await?;
@@ -203,6 +229,7 @@ async fn handle_tarball_download(
     npm_req: &NpmPackageRequest,
     storage: Arc<FilesystemStorage>,
     index: Arc<CacheBackend>,
+    delay: &DelayPolicyConfig,
     registry_base: &str,
 ) -> Result<(Response<Body>, CacheOutcome)> {
     let storage_path = npm_req.storage_path();
@@ -224,6 +251,10 @@ async fn handle_tarball_download(
         file_name: tarball_name.to_string(),
         relative_path: storage_path,
     };
+
+    if delay::is_blocked(delay, &index, &cacheable.asset_key()).await {
+        return respond_error(StatusCode::FORBIDDEN, BLOCKED);
+    }
 
     let mut had_cache = false;
     if let Some(entry) = index.get(&cacheable.asset_key()).await? {
@@ -332,9 +363,7 @@ fn rewrite_dist_tarball(dist: &mut serde_json::Map<String, JsonValue>, our_base:
 }
 
 /// Transform package metadata to point tarball URLs to our proxy
-fn transform_metadata(body: &[u8], our_base: &str) -> Result<Vec<u8>> {
-    let mut metadata: JsonValue = serde_json::from_slice(body).context("parsing npm metadata")?;
-
+fn transform_metadata(metadata: &mut JsonValue, our_base: &str) {
     // Transform top-level dist.tarball (version-specific metadata)
     if let Some(dist) = metadata.get_mut("dist").and_then(|d| d.as_object_mut()) {
         rewrite_dist_tarball(dist, our_base);
@@ -348,8 +377,6 @@ fn transform_metadata(body: &[u8], our_base: &str) -> Result<Vec<u8>> {
             }
         }
     }
-
-    serde_json::to_vec(&metadata).context("serializing transformed metadata")
 }
 
 fn copy_request_headers(source: &HeaderMap, target: &mut HeaderMap) {

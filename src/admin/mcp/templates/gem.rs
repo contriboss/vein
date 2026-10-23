@@ -1,6 +1,7 @@
 use mcp_host::prelude::*;
 use mcp_host::registry::router::McpResourceTemplateRouter;
 use serde::Serialize;
+use vein_adapter::AssetKind;
 
 use crate::admin::mcp::rubygems::is_prerelease;
 use crate::admin::mcp::untrusted::{GemText, SUMMARY_LIMIT, clean_list, clean_opt};
@@ -66,7 +67,7 @@ impl VeinMcp {
         }
         let quarantine = self
             .resources
-            .tracked_versions(name)
+            .tracked_versions(AssetKind::Gem, name)
             .await
             .map_err(read_error)?;
         let in_catalog = self

@@ -502,6 +502,7 @@ async fn homepage_shows_setup_for_the_url_the_client_used() {
         "bundle config set --global mirror.https://rubygems.org http://192.168.1.20:8080",
         "BUNDLE_MIRROR__HTTPS://RUBYGEMS__ORG/=http://192.168.1.20:8080",
         "registry = \"sparse+http://192.168.1.20:8080/index/\"",
+        "index = \"sparse+http://192.168.1.20:8080/index/\"",
         "npm config set registry http://192.168.1.20:8080/",
         "BUN_CONFIG_REGISTRY=http://192.168.1.20:8080/",
     ] {

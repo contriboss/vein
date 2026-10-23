@@ -67,9 +67,15 @@ pub async fn spawn_sequence_server(
     (format!("http://{addr}"), handle)
 }
 
-/// Answers `GET {path}` with `200` and its body, anything else with `404`,
-/// for as long as the test runs, on a random loopback port. Returns the port
-/// and the lower-cased request heads received so far.
+/// `200 OK` with `body` as plain text: the usual route answer.
+pub fn ok(body: impl Into<Vec<u8>>) -> Vec<u8> {
+    raw_response("200 OK", &[("Content-Type", "text/plain")], &body.into())
+}
+
+/// Answers `GET {path}` (request target, query included) with its raw
+/// response ([`ok`], or [`raw_response`] for headers), anything else with
+/// `404`, for as long as the test runs, on a random loopback port. Returns
+/// the port and the lower-cased request heads received so far.
 pub async fn spawn_route_server(routes: Vec<(String, Vec<u8>)>) -> (u16, Arc<Mutex<Vec<String>>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -86,7 +92,7 @@ pub async fn spawn_route_server(routes: Vec<(String, Vec<u8>)>) -> (u16, Arc<Mut
                 .find(|(route, _)| route.eq_ignore_ascii_case(path))
                 .map_or_else(
                     || raw_response("404 Not Found", &[], b"not found"),
-                    |(_, body)| raw_response("200 OK", &[("Content-Type", "text/plain")], body),
+                    |(_, response)| response.clone(),
                 );
             log.lock().unwrap().push(request);
             socket.write_all(&response).await.unwrap();

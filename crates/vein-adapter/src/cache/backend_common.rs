@@ -1,5 +1,5 @@
 use super::{
-    GemVersion, QuarantineStats,
+    QuarantineStats,
     types::{IndexStats, SbomCoverage},
 };
 use crate::version::sort_newest_first;
@@ -34,7 +34,7 @@ pub fn build_sbom_coverage(total: i64, with_sbom: i64) -> SbomCoverage {
 pub fn build_quarantine_stats(
     quarantined: i64,
     available: i64,
-    yanked: i64,
+    blocked: i64,
     pinned: i64,
     releasing_today: i64,
     releasing_week: i64,
@@ -42,27 +42,11 @@ pub fn build_quarantine_stats(
     QuarantineStats {
         total_quarantined: clamp_count(quarantined),
         total_available: clamp_count(available),
-        total_yanked: clamp_count(yanked),
+        total_blocked: clamp_count(blocked),
         total_pinned: clamp_count(pinned),
         versions_releasing_today: clamp_count(releasing_today),
         versions_releasing_this_week: clamp_count(releasing_week),
     }
-}
-
-pub fn into_gem_versions<T>(rows: Vec<T>) -> Vec<GemVersion>
-where
-    T: Into<GemVersion>,
-{
-    rows.into_iter().map(Into::into).collect()
-}
-
-pub fn latest_gem_version<T>(rows: Vec<T>) -> Option<GemVersion>
-where
-    T: Into<GemVersion>,
-{
-    newest_first(rows, |version: &GemVersion| &version.version)
-        .into_iter()
-        .next()
 }
 
 /// `rows` converted and sorted newest version first.
@@ -90,6 +74,3 @@ pub fn json_array_like_pattern(value: &str) -> String {
 fn clamp_count(value: i64) -> u64 {
     value.max(0).cast_unsigned()
 }
-
-#[cfg(test)]
-mod tests;

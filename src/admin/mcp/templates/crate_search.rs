@@ -5,16 +5,17 @@ use vein_adapter::AssetKind;
 use crate::admin::mcp::VeinMcp;
 
 impl VeinMcp {
-    /// Search the crates this proxy has cached by substring. There is no
-    /// crates.io-wide catalog here.
+    /// Search every crate crates.io publishes: its own search, or vein's
+    /// name catalog when crates.io is out of reach.
     #[mcp_resource_template(
-        uri_template = "vein://crates/search/{query}",
+        uri_template = "vein://search/crates/{query}",
         name = "crate_search",
         title = "Search crates",
         mime_type = "application/json"
     )]
     async fn crate_search(&self, ctx: Ctx<'_>) -> ResourceResult {
-        self.cached_search(&ctx, AssetKind::Crate, "crates").await
+        self.registry_search(&ctx, AssetKind::Crate, "crates", "crates.io")
+            .await
     }
 }
 

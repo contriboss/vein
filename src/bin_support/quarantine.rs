@@ -2,8 +2,8 @@ use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
 use tokio::runtime::Runtime;
-use vein::{config::Config, quarantine};
-use vein_adapter::{CacheBackend, CacheBackendTrait, VersionStatus};
+use vein::{config::Config, delay};
+use vein_adapter::{AssetKey, CacheBackend, CacheBackendTrait, VersionStatus};
 
 use super::setup::{build_current_thread_runtime, connect_cache_index, load_config};
 
@@ -30,7 +30,7 @@ pub fn run_quarantine_status(config_path: PathBuf) -> Result<()> {
     println!("Quarantined:     {}", stats.total_quarantined);
     println!("Available:       {}", stats.total_available);
     println!("Pinned:          {}", stats.total_pinned);
-    println!("Blocked/Yanked:  {}", stats.total_yanked);
+    println!("Blocked:         {}", stats.total_blocked);
     println!();
     println!("Releasing today:      {}", stats.versions_releasing_today);
     println!(
@@ -55,7 +55,7 @@ pub fn run_quarantine_list(config_path: PathBuf, limit: u32) -> Result<()> {
 
     let versions = ctx
         .rt
-        .block_on(ctx.index.get_all_quarantined(limit, 0))
+        .block_on(ctx.index.held_versions(limit, 0))
         .context("fetching quarantined versions")?;
 
     if versions.is_empty() {
@@ -64,19 +64,19 @@ pub fn run_quarantine_list(config_path: PathBuf, limit: u32) -> Result<()> {
     }
 
     println!(
-        "{:<30} {:<15} {:<15} {:<10} AVAILABLE AFTER",
-        "GEM", "VERSION", "PLATFORM", "STATUS"
+        "{:<8} {:<30} {:<15} {:<15} {:<10} AVAILABLE AFTER",
+        "REGISTRY", "NAME", "VERSION", "PLATFORM", "STATUS"
     );
-    println!("{}", "-".repeat(90));
+    println!("{}", "-".repeat(99));
 
     for version in versions {
-        let platform = version.platform.as_deref().unwrap_or("ruby");
         println!(
-            "{:<30} {:<15} {:<15} {:<10} {}",
+            "{:<8} {:<30} {:<15} {:<15} {:<10} {}",
+            version.kind.as_str(),
             version.name,
             version.version,
-            platform,
-            format!("{:?}", version.status),
+            version.platform.as_deref().unwrap_or("-"),
+            version.status,
             version.available_after.strftime("%Y-%m-%d %H:%M UTC")
         );
     }
@@ -92,7 +92,7 @@ pub fn run_quarantine_promote(config_path: PathBuf) -> Result<()> {
 
     let count = ctx
         .rt
-        .block_on(quarantine::promote_now(ctx.index.as_ref()))
+        .block_on(delay::promote_now(ctx.index.as_ref()))
         .context("promoting expired quarantines")?;
 
     if count > 0 {
@@ -106,79 +106,63 @@ pub fn run_quarantine_promote(config_path: PathBuf) -> Result<()> {
 
 pub fn run_quarantine_approve(
     config_path: PathBuf,
-    gem: &str,
-    version: &str,
-    platform: Option<&str>,
+    key: &AssetKey<'_>,
     reason: &str,
 ) -> Result<()> {
-    let Some(ctx) = load_quarantine_context(config_path)? else {
-        println!("Quarantine feature is disabled in configuration.");
-        return Ok(());
-    };
-
-    set_version_status(
-        &ctx,
-        gem,
-        version,
-        platform,
+    decide(
+        config_path,
+        key,
         VersionStatus::Pinned,
         format!("approved: {reason}"),
-        "approving version",
     )?;
-
-    let platform_str = platform.unwrap_or("ruby");
-    println!("Approved {gem}-{version} ({platform_str}) for immediate availability.");
+    println!("Approved {} for immediate availability.", describe(key));
     println!("Reason: {reason}");
-
     Ok(())
 }
 
-pub fn run_quarantine_block(
+pub fn run_quarantine_block(config_path: PathBuf, key: &AssetKey<'_>, reason: &str) -> Result<()> {
+    decide(
+        config_path,
+        key,
+        VersionStatus::Blocked,
+        format!("blocked: {reason}"),
+    )?;
+    println!(
+        "Blocked {}: hidden from the index, downloads refused.",
+        describe(key)
+    );
+    println!("Reason: {reason}");
+    Ok(())
+}
+
+/// Applies a quarantine decision (status + audit note) to one version.
+fn decide(
     config_path: PathBuf,
-    gem: &str,
-    version: &str,
-    platform: Option<&str>,
-    reason: &str,
+    key: &AssetKey<'_>,
+    status: VersionStatus,
+    note: String,
 ) -> Result<()> {
     let Some(ctx) = load_quarantine_context(config_path)? else {
         println!("Quarantine feature is disabled in configuration.");
         return Ok(());
     };
-
-    set_version_status(
-        &ctx,
-        gem,
-        version,
-        platform,
-        VersionStatus::Yanked,
-        format!("blocked: {reason}"),
-        "blocking version",
-    )?;
-
-    let platform_str = platform.unwrap_or("ruby");
-    println!("Blocked {gem}-{version} ({platform_str}).");
-    println!("Reason: {reason}");
-
-    Ok(())
+    ctx.rt
+        .block_on(ctx.index.set_version_status(key, status, Some(note)))
+        .with_context(|| format!("recording the decision on {}", describe(key)))
 }
 
-/// Applies a quarantine decision (status + audit note) to a gem version.
-fn set_version_status(
-    ctx: &QuarantineContext,
-    gem: &str,
-    version: &str,
-    platform: Option<&str>,
-    status: VersionStatus,
-    note: String,
-    context_msg: &'static str,
-) -> Result<()> {
-    ctx.rt
-        .block_on(
-            ctx.index
-                .update_version_status(gem, version, platform, status, Some(note)),
-        )
-        .context(context_msg)?;
-    Ok(())
+/// `gem rails 8.1.4 (x86_64-linux)`, `npm @types/node 26.6.5`.
+fn describe(key: &AssetKey<'_>) -> String {
+    let platform = key
+        .platform
+        .map(|platform| format!(" ({platform})"))
+        .unwrap_or_default();
+    format!(
+        "{} {} {}{platform}",
+        key.kind.as_str(),
+        key.name,
+        key.version
+    )
 }
 
 fn load_quarantine_context(config_path: PathBuf) -> Result<Option<QuarantineContext>> {

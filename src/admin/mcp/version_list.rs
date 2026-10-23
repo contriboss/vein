@@ -4,18 +4,10 @@
 use std::ops::Not;
 
 use serde::Serialize;
+pub use vein_adapter::is_semver_prerelease;
 
 /// Releases a package resource lists.
 pub const SUMMARY_RELEASES: usize = 5;
-
-/// A semver prerelease (`7.1.0-beta`, `1.0.0-rc.1`), as crates.io and npm
-/// spell them: a `-` before any `+build` metadata.
-pub fn is_semver_prerelease(version: &str) -> bool {
-    version
-        .split('+')
-        .next()
-        .is_some_and(|core| core.contains('-'))
-}
 
 /// The newest [`SUMMARY_RELEASES`] releases of `newest_first`.
 pub fn newest_releases<'a>(

@@ -56,3 +56,53 @@ enabled = true
 # initial_backoff_ms = 100
 # max_backoff_secs = 2
 # backoff_strategy = "exponential"
+
+# NAME CATALOGS
+# Search (vein://search/..., `cargo search --registry vein`, `npm search`)
+# asks the registry first; out of reach, it answers from these lists of
+# every published name. gem: under 3 MB. crate: ~360k names, an hour of
+# paging the first time. npm: ~4.5M names, ~450 MB the first time. Each is
+# refreshed every 6 hours.
+# [catalog]
+# registries = ["gem", "crate", "npm"]   # default: ["gem"]
+
+# RELEASE DELAY (Optional, off by default)
+# New gem, crate and npm versions stay out of the index Vein serves until
+# their delay is over, counted from when the registry published them. A
+# malicious release yanked within hours never reaches a client. Held
+# versions stay downloadable (a lockfile may name one); blocked ones do not.
+# Review and decide at /quarantine on the admin dashboard, or with
+# `vein quarantine list|approve|block`.
+
+# [delay_policy]
+# enabled = true
+# default_delay_days = 3
+# skip_weekends = true          # a release due on a weekend waits for Monday
+# business_hours_only = true    # released at release_hour_utc
+# release_hour_utc = 9          # 0-23
+#
+# # Per-package delays, first match wins. `registry` is gem, crate or npm;
+# # without it the entry covers that name in every registry.
+# [[delay_policy.packages]]
+# name = "rails"
+# delay_days = 7
+#
+# [[delay_policy.packages]]
+# registry = "npm"
+# name = "@my-org/*"
+# pattern = true
+# delay_days = 0                # your own packages: no delay
+#
+# # Several exact names in one entry: safer than a glob, which would also
+# # cover anyone else's package that happens to match.
+# [[delay_policy.packages]]
+# registry = "crate"
+# names = ["my-crate", "my-crate-macros"]
+# delay_days = 0
+#
+# # Release one version early (e.g. a security fix).
+# [[delay_policy.pinned]]
+# registry = "gem"
+# name = "nokogiri"
+# version = "1.18.10"
+# reason = "security fix"

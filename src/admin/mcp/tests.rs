@@ -113,9 +113,41 @@ const ANYHOW_INDEX: &str = concat!(
 /// packages it has not stored. Everything else answers 404, as the proxy
 /// does when the registry has no such package.
 async fn fake_proxy() -> (u16, Arc<Mutex<Vec<String>>>) {
+    use crate::test_support::{ok, raw_response};
+    // The proxy's search endpoints, one answer per source vein reports.
+    let searched = |source, body: Value| {
+        raw_response(
+            "200 OK",
+            &[
+                ("Content-Type", "application/json"),
+                (crate::search::SOURCE_HEADER, source),
+            ],
+            body.to_string().as_bytes(),
+        )
+    };
     crate::test_support::spawn_route_server(vec![
-        ("/info/rails".into(), RAILS_INFO.into()),
-        ("/index/an/yh/anyhow".into(), ANYHOW_INDEX.into()),
+        ("/info/rails".into(), ok(RAILS_INFO)),
+        ("/index/an/yh/anyhow".into(), ok(ANYHOW_INDEX)),
+        (
+            // rubygems.org's real top five for `rack`.
+            "/api/v1/search.json?query=rack".into(),
+            searched(
+                "registry",
+                json!(["rack", "rack-test", "rack-protection", "rack-cors", "rack-session"]
+                    .map(|name| json!({"name": name}))),
+            ),
+        ),
+        (
+            "/api/v1/crates?q=ser&per_page=50".into(),
+            searched(
+                "catalog",
+                json!({"crates": [{"name": "serde"}, {"name": "serde_json"}], "meta": {"total": 2}}),
+            ),
+        ),
+        (
+            "/-/v1/search?text=types&size=50".into(),
+            searched("cached", json!({"objects": [{"package": {"name": "@types/node"}}]})),
+        ),
     ])
     .await
 }
@@ -485,8 +517,18 @@ async fn gems_are_readable_as_resources() {
     let (service, _storage, seen) = open_logged().await;
     let session = Session::open(&service).await;
 
-    let (_, search) = session.read("vein://gems/search/rack").await;
-    assert_eq!(search["names"], json!(["rack", "Rack", "rack-test"]));
+    let (_, search) = session.read("vein://search/gems/rack").await;
+    assert_eq!(
+        search["names"],
+        json!([
+            "rack",
+            "rack-test",
+            "rack-protection",
+            "rack-cors",
+            "rack-session"
+        ]),
+        "rubygems.org's ranking"
+    );
     assert_eq!(search["scope"], "rubygems.org");
     assert_eq!(search.get("query"), None, "the request already said it");
 
@@ -514,8 +556,12 @@ async fn gems_are_readable_as_resources() {
         "the rest is per version"
     );
     assert!(
-        seen.lock().unwrap().is_empty(),
-        "rack's index is stored, so the proxy is not asked"
+        !seen
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|request| request.starts_with("get /info/rack ")),
+        "rack's index is stored, so the proxy is not asked for it"
     );
 
     let (mime, version) = session.read("vein://gems/rack/versions/3.2.7").await;
@@ -610,9 +656,9 @@ async fn crates_are_readable_as_resources() {
     let (service, _storage) = open().await;
     let session = Session::open(&service).await;
 
-    let (_, search) = session.read("vein://crates/search/ser").await;
-    assert_eq!(search["names"], json!(["serde"]));
-    assert_eq!(search["scope"], "cached");
+    let (_, search) = session.read("vein://search/crates/ser").await;
+    assert_eq!(search["names"], json!(["serde", "serde_json"]));
+    assert_eq!(search["scope"], "catalog", "crates.io was out of reach");
 
     let (_, serde) = session.read("vein://crates/serde").await;
     assert_eq!(serde["latest"], "1.0.228", "1.0.229 is yanked");
@@ -675,8 +721,9 @@ async fn npm_packages_are_readable_as_resources() {
     let (service, _storage) = open().await;
     let session = Session::open(&service).await;
 
-    let (_, search) = session.read("vein://npm/search/types").await;
+    let (_, search) = session.read("vein://search/npm/types").await;
     assert_eq!(search["names"], json!(["@types/node"]));
+    assert_eq!(search["scope"], "cached", "no npm catalog either");
 
     let (_, package) = session.read("vein://npm/@types/node").await;
     assert_eq!(package["author_supplied"]["license"], "MIT");

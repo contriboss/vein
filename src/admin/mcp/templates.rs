@@ -19,16 +19,16 @@ use mcp_host::registry::router::McpResourceTemplateRouter;
 
 use super::VeinMcp;
 
-pub const GEM_SEARCH: &str = "vein://gems/search/{query}";
+pub const GEM_SEARCH: &str = "vein://search/gems/{query}";
 pub const GEM: &str = "vein://gems/{name}";
 pub const GEM_VERSIONS: &str = "vein://gems/{name}/versions";
 pub const GEM_VERSION: &str = "vein://gems/{name}/versions/{version}";
 pub const GEM_SBOM: &str = "vein://gems/{name}/versions/{version}/sbom";
-pub const CRATE_SEARCH: &str = "vein://crates/search/{query}";
+pub const CRATE_SEARCH: &str = "vein://search/crates/{query}";
 pub const CRATE: &str = "vein://crates/{name}";
 pub const CRATE_VERSIONS: &str = "vein://crates/{name}/versions";
 pub const CRATE_VERSION: &str = "vein://crates/{name}/versions/{version}";
-pub const NPM_SEARCH: &str = "vein://npm/search/{query}";
+pub const NPM_SEARCH: &str = "vein://search/npm/{query}";
 pub const NPM_PACKAGE: &str = "vein://npm/{+name}";
 pub const NPM_VERSIONS: &str = "vein://npm/{+name}/versions";
 pub const NPM_VERSION: &str = "vein://npm/{+name}/versions/{version}";

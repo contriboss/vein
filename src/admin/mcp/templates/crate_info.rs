@@ -4,8 +4,8 @@ use serde::Serialize;
 use vein_adapter::AssetKind;
 
 use crate::admin::mcp::version_list::{is_semver_prerelease, newer_prerelease, newest_releases};
-use crate::admin::mcp::views::{cached_labels, total_if_truncated};
-use crate::admin::mcp::{VeinMcp, json_resource, unknown_package, uri_param};
+use crate::admin::mcp::views::{TrackedVersion, cached_labels, total_if_truncated};
+use crate::admin::mcp::{VeinMcp, json_resource, read_error, unknown_package, uri_param};
 
 #[derive(Serialize)]
 struct Crate {
@@ -31,6 +31,10 @@ struct Crate {
     /// Versions whose `.crate` is held here, newest first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     cached: Vec<String>,
+    /// Versions the release delay policy holds back or decided on, newest
+    /// first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    quarantine: Vec<TrackedVersion>,
 }
 
 impl VeinMcp {
@@ -46,6 +50,11 @@ impl VeinMcp {
         let name = uri_param(&ctx, "name")?;
         let index = self.crate_index(name).await?;
         let cached = self.artifacts(AssetKind::Crate, name).await?;
+        let quarantine = self
+            .resources
+            .tracked_versions(AssetKind::Crate, name)
+            .await
+            .map_err(read_error)?;
         if index.is_empty() && cached.is_empty() {
             return Err(unknown_package(format_args!("crate {name}")));
         }
@@ -75,6 +84,7 @@ impl VeinMcp {
                     .collect(),
                 versions,
                 cached: cached_labels(&cached),
+                quarantine: quarantine.into_iter().map(TrackedVersion::from).collect(),
                 name: name.to_owned(),
             },
         )
