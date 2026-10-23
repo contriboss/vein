@@ -83,6 +83,10 @@ pub enum GemCommand {
         /// Platform variant (e.g., ruby, java, x86_64-linux)
         #[arg(short, long)]
         platform: Option<String>,
+        /// Re-extract metadata (native code, binaries, SBOM) of versions
+        /// already cached instead of skipping them
+        #[arg(long)]
+        reanalyze: bool,
     },
 }
 

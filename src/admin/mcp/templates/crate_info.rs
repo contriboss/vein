@@ -3,33 +3,39 @@ use mcp_host::registry::router::McpResourceTemplateRouter;
 use serde::Serialize;
 use vein_adapter::AssetKind;
 
-use crate::admin::mcp::views::Artifact;
-use crate::admin::mcp::{VERSION_LIST_LIMIT, VeinMcp, json_resource, not_fetched, uri_param};
+use crate::admin::mcp::version_list::{is_semver_prerelease, newer_prerelease, newest_releases};
+use crate::admin::mcp::views::{cached_labels, total_if_truncated};
+use crate::admin::mcp::{VeinMcp, json_resource, unknown_package, uri_param};
 
 #[derive(Serialize)]
 struct Crate {
     name: String,
-    /// Newest version that is not yanked, per the cached sparse index.
+    /// Newest release that is not yanked, per the sparse index.
+    #[serde(skip_serializing_if = "Option::is_none")]
     latest: Option<String>,
-    /// Versions in the cached sparse index. Zero when cargo never resolved
-    /// this crate through the proxy.
-    total_versions: usize,
-    /// The newest 50 of them.
-    versions: Vec<IndexedVersion>,
-    /// `.crate` files held here, newest first.
-    cached: Vec<Artifact>,
-}
-
-#[derive(Serialize)]
-struct IndexedVersion {
-    version: String,
-    yanked: bool,
-    uri: String,
+    /// The newest version not yanked, when it is a prerelease
+    /// (`2.0.0-rc.1`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prerelease: Option<String>,
+    /// The newest 5 releases, from the sparse index; all of them are at
+    /// `.../versions`, each at `.../versions/{v}`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    versions: Vec<String>,
+    /// The listed versions that are yanked.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    yanked: Vec<String>,
+    /// How many are published, prereleases and yanked ones too, when that
+    /// is more than `versions` lists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total_versions: Option<usize>,
+    /// Versions whose `.crate` is held here, newest first.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    cached: Vec<String>,
 }
 
 impl VeinMcp {
-    /// A crate as seen by this proxy: its published versions (from the cached
-    /// sparse index) and the `.crate` files cached here.
+    /// A crate as seen by this proxy: its newest published versions (from
+    /// the sparse index) and the `.crate` files cached here.
     #[mcp_resource_template(
         uri_template = "vein://crates/{name}",
         name = "crate",
@@ -41,37 +47,46 @@ impl VeinMcp {
         let index = self.crate_index(name).await?;
         let cached = self.artifacts(AssetKind::Crate, name).await?;
         if index.is_empty() && cached.is_empty() {
-            return Err(not_fetched(format_args!("crate {name}")));
+            return Err(unknown_package(format_args!("crate {name}")));
         }
 
+        let not_yanked = || {
+            index
+                .iter()
+                .filter(|entry| !entry.yanked)
+                .map(|entry| entry.vers.as_str())
+        };
+        let versions = newest_releases(
+            index.iter().map(|entry| entry.vers.as_str()),
+            is_semver_prerelease,
+        );
         json_resource(
             format!("vein://crates/{name}"),
             &Crate {
-                latest: index
+                latest: not_yanked()
+                    .find(|version| !is_semver_prerelease(version))
+                    .map(str::to_owned),
+                prerelease: newer_prerelease(not_yanked(), is_semver_prerelease),
+                total_versions: total_if_truncated(index.len(), versions.len()),
+                yanked: index
                     .iter()
-                    .find(|entry| !entry.yanked)
-                    .map(|entry| entry.vers.clone()),
-                total_versions: index.len(),
-                versions: index
-                    .into_iter()
-                    .take(VERSION_LIST_LIMIT)
-                    .map(|entry| IndexedVersion {
-                        uri: format!("vein://crates/{name}/versions/{}", entry.vers),
-                        version: entry.vers,
-                        yanked: entry.yanked,
-                    })
+                    .filter(|entry| entry.yanked && versions.contains(&entry.vers))
+                    .map(|entry| entry.vers.clone())
                     .collect(),
-                cached,
+                versions,
+                cached: cached_labels(&cached),
                 name: name.to_owned(),
             },
         )
     }
 }
 
-pub fn mount(router: McpResourceTemplateRouter<VeinMcp>) -> McpResourceTemplateRouter<VeinMcp> {
-    router.with_template(
-        VeinMcp::crate_info_template_info(),
+pub fn mount(
+    router: McpResourceTemplateRouter<VeinMcp>,
+) -> Result<McpResourceTemplateRouter<VeinMcp>, AppsError> {
+    Ok(router.with_template(
+        VeinMcp::crate_info_template_info()?,
         VeinMcp::crate_info_handler,
         None,
-    )
+    ))
 }

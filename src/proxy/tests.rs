@@ -483,3 +483,32 @@ async fn body_bytes(response: rama::http::Response<Body>) -> Vec<u8> {
         .to_bytes()
         .to_vec()
 }
+
+#[tokio::test]
+async fn homepage_shows_setup_for_the_url_the_client_used() {
+    let mut config = Config::default();
+    config.server.host = "127.0.0.1".to_string();
+    config.storage.path = "/srv/vein <gems>".into();
+
+    let response = response::respond_homepage(&config, "http://192.168.1.20:8080").unwrap();
+    let cache = response
+        .headers()
+        .get(rama::http::header::CACHE_CONTROL)
+        .cloned();
+    let body = response.into_body().collect().await.unwrap().to_bytes();
+    let html = String::from_utf8(body.to_vec()).unwrap();
+
+    for snippet in [
+        "bundle config set --global mirror.https://rubygems.org http://192.168.1.20:8080",
+        "BUNDLE_MIRROR__HTTPS://RUBYGEMS__ORG/=http://192.168.1.20:8080",
+        "registry = \"sparse+http://192.168.1.20:8080/index/\"",
+        "npm config set registry http://192.168.1.20:8080/",
+        "BUN_CONFIG_REGISTRY=http://192.168.1.20:8080/",
+    ] {
+        assert!(html.contains(snippet), "missing {snippet:?}");
+    }
+    // The bind address is not what clients use; the path is escaped.
+    assert!(!html.contains("127.0.0.1"), "{html}");
+    assert!(html.contains("/srv/vein &lt;gems&gt;"));
+    assert_eq!(cache.unwrap(), "no-cache, no-store, must-revalidate");
+}

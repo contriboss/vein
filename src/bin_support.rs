@@ -27,7 +27,14 @@ pub fn run(cli: Cli) -> Result<()> {
                 name,
                 version,
                 platform,
-            } => gem::run_gem_sync(config, &name, version.as_deref(), platform.as_deref()),
+                reanalyze,
+            } => gem::run_gem_sync(
+                config,
+                &name,
+                version.as_deref(),
+                platform.as_deref(),
+                reanalyze,
+            ),
         },
         Command::Health { url, timeout } => health::run_health(&url, timeout),
         Command::Quarantine { action } => match action {

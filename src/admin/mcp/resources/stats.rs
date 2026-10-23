@@ -50,6 +50,10 @@ impl VeinMcp {
     }
 }
 
-pub fn mount(router: McpResourceRouter<VeinMcp>) -> McpResourceRouter<VeinMcp> {
-    router.with_resource(VeinMcp::stats_resource_info(), VeinMcp::stats_handler, None)
+pub fn mount(router: McpResourceRouter<VeinMcp>) -> Result<McpResourceRouter<VeinMcp>, AppsError> {
+    Ok(router.with_resource(
+        VeinMcp::stats_resource_info()?,
+        VeinMcp::stats_handler,
+        None,
+    ))
 }

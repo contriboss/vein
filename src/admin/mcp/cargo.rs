@@ -32,12 +32,19 @@ pub struct IndexEntry {
 pub struct IndexDependency {
     pub name: String,
     pub req: String,
-    /// `normal`, `dev`, or `build`.
-    #[serde(default = "IndexDependency::normal")]
+    /// `dev` or `build`; left out for `normal`.
+    #[serde(
+        default = "IndexDependency::normal",
+        skip_serializing_if = "IndexDependency::is_normal"
+    )]
     pub kind: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub optional: bool,
-    #[serde(default = "IndexDependency::yes")]
+    /// Left out when true, the default.
+    #[serde(
+        default = "IndexDependency::yes",
+        skip_serializing_if = "IndexDependency::is_yes"
+    )]
     pub default_features: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub features: Vec<String>,
@@ -55,6 +62,18 @@ impl IndexDependency {
 
     const fn yes() -> bool {
         true
+    }
+
+    fn is_normal(kind: &str) -> bool {
+        kind == "normal"
+    }
+
+    #[expect(
+        clippy::trivially_copy_pass_by_ref,
+        reason = "serde's skip_serializing_if signature"
+    )]
+    const fn is_yes(value: &bool) -> bool {
+        *value
     }
 }
 

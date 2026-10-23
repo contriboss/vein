@@ -1,7 +1,17 @@
-//! Shared fixtures for unit tests: a scripted fake upstream over raw TCP and
-//! the rustls provider install every HTTP client test needs.
+//! Shared fixtures for unit tests: a scripted fake upstream over raw TCP,
+//! the rustls provider install every HTTP client test needs, and `.gem`
+//! files built in memory.
 
-use std::sync::Once;
+use std::{
+    io::{Cursor, Write},
+    path::Path,
+    sync::{Arc, Mutex, Once},
+};
+
+use flate2::{Compression, write::GzEncoder};
+use sha2::{Digest, Sha256};
+use tar::{Builder, Header};
+use tempfile::NamedTempFile;
 
 use rama::tls::rustls::dep::rustls;
 use tokio::{
@@ -57,6 +67,35 @@ pub async fn spawn_sequence_server(
     (format!("http://{addr}"), handle)
 }
 
+/// Answers `GET {path}` with `200` and its body, anything else with `404`,
+/// for as long as the test runs, on a random loopback port. Returns the port
+/// and the lower-cased request heads received so far.
+pub async fn spawn_route_server(routes: Vec<(String, Vec<u8>)>) -> (u16, Arc<Mutex<Vec<String>>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+
+    let log = Arc::clone(&seen);
+    tokio::spawn(async move {
+        loop {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let request = read_http_request(&mut socket).await;
+            let path = request.split_whitespace().nth(1).unwrap_or_default();
+            let response = routes
+                .iter()
+                .find(|(route, _)| route.eq_ignore_ascii_case(path))
+                .map_or_else(
+                    || raw_response("404 Not Found", &[], b"not found"),
+                    |(_, body)| raw_response("200 OK", &[("Content-Type", "text/plain")], body),
+                );
+            log.lock().unwrap().push(request);
+            socket.write_all(&response).await.unwrap();
+        }
+    });
+
+    (port, seen)
+}
+
 /// Reads up to the end of the request head and lower-cases it for matching.
 async fn read_http_request(socket: &mut TcpStream) -> String {
     let mut buffer = vec![0_u8; 4096];
@@ -74,4 +113,79 @@ async fn read_http_request(socket: &mut TcpStream) -> String {
     }
 
     String::from_utf8_lossy(&request).to_ascii_lowercase()
+}
+
+/// A `.gem` file: `metadata.gz` with `metadata_yaml`, and a `data.tar.gz`
+/// holding `data_entries` (path, contents).
+pub fn build_test_gem(metadata_yaml: &str, data_entries: &[(&str, &[u8])]) -> NamedTempFile {
+    let mut metadata_encoder = GzEncoder::new(Vec::new(), Compression::default());
+    metadata_encoder
+        .write_all(metadata_yaml.as_bytes())
+        .expect("write metadata yaml");
+    let metadata_bytes = metadata_encoder
+        .finish()
+        .expect("finalize metadata gzip payload");
+
+    let mut data_tar_bytes = Vec::new();
+    {
+        let mut data_builder = Builder::new(&mut data_tar_bytes);
+        for (path, contents) in data_entries {
+            let mut header = Header::new_gnu();
+            header.set_size(contents.len() as u64);
+            header.set_mode(0o644);
+            data_builder
+                .append_data(&mut header, path, Cursor::new(*contents))
+                .expect("append data file");
+        }
+        data_builder.finish().expect("finish data tar");
+    }
+
+    let mut data_encoder = GzEncoder::new(Vec::new(), Compression::default());
+    data_encoder
+        .write_all(&data_tar_bytes)
+        .expect("compress data tar");
+    let data_bytes = data_encoder.finish().expect("finalize data gzip payload");
+
+    let file = NamedTempFile::new().expect("create temp gem");
+    {
+        let mut handle = file.reopen().expect("reopen temp gem");
+        {
+            let mut builder = Builder::new(&mut handle);
+
+            let mut header = Header::new_gnu();
+            header.set_size(metadata_bytes.len() as u64);
+            header.set_mode(0o644);
+            builder
+                .append_data(
+                    &mut header,
+                    "metadata.gz",
+                    Cursor::new(metadata_bytes.as_slice()),
+                )
+                .expect("write metadata entry");
+
+            let mut header = Header::new_gnu();
+            header.set_size(data_bytes.len() as u64);
+            header.set_mode(0o644);
+            builder
+                .append_data(
+                    &mut header,
+                    "data.tar.gz",
+                    Cursor::new(data_bytes.as_slice()),
+                )
+                .expect("write data entry");
+
+            builder.finish().expect("finish gem tar");
+        }
+        handle.flush().expect("flush gem file");
+    }
+
+    file
+}
+
+/// Size and hex SHA-256 of `path`, as the cache index records them.
+pub fn digest_file(path: &Path) -> (u64, String) {
+    let bytes = std::fs::read(path).expect("read gem bytes");
+    let size_bytes = bytes.len() as u64;
+    let sha256 = hex::encode(Sha256::digest(&bytes));
+    (size_bytes, sha256)
 }

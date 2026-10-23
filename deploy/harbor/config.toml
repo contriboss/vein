@@ -1,0 +1,37 @@
+# vein on harbor (FreeBSD), launched by launchbay under mothership
+# (deploy/harbor/ship-manifest.toml). No secrets: Postgres is reached over
+# its local socket as the `vein` role.
+
+[server]
+# Loopback only: mothership owns the public listener and proxies to it.
+host = "127.0.0.1"
+port = 8346
+
+[storage]
+# Outside the git checkout, so a fresh clone keeps the cache.
+path = "/home/seuros/.local/share/vein/storage"
+
+[database]
+url = "postgres://vein@localhost/vein?host=/tmp"
+max_connections = 10
+
+[logging]
+level = "info"
+
+[upstream]
+url = "https://rubygems.org"
+fallback_urls = ["https://gems.coop"]
+# Under mothership's 30s wait for response headers: a slow upstream fails
+# here, with vein's own error, instead of tripping mothership's breaker.
+timeout_secs = 20
+connection_pool_size = 128
+
+[admin]
+enabled = true
+# Dashboard and /mcp for private networks (RFC 1918): vein refuses every
+# other peer (403) and admits these without a token. Until the dashboard
+# gets its own auth, anyone admitted can also approve or block quarantined
+# gems.
+host = "0.0.0.0"
+port = 9401
+trusted_networks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]

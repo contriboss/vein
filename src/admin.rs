@@ -7,6 +7,7 @@ pub mod mcp;
 mod router;
 pub mod ruby;
 pub mod state;
+pub mod trust;
 mod utils;
 mod views;
 
@@ -29,7 +30,8 @@ pub async fn router(
 ) -> Result<Router<AdminState>> {
     let state = app::bootstrap(config.clone(), cache, storage).await?;
     let admin = &config.admin;
-    let mcp = mcp::endpoint(&admin.mcp, &admin.host, state.resources.clone())?;
+    let networks = trust::trusted_networks(admin)?;
+    let mcp = mcp::endpoint(&admin.mcp, &admin.host, networks, state.resources.clone())?;
     if mcp.is_some() {
         tracing::info!(url = %format!("http://{}/mcp", admin.bind_addr()), "MCP endpoint enabled");
     }

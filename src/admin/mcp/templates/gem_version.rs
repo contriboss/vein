@@ -16,18 +16,18 @@ impl VeinMcp {
     async fn gem_version(&self, ctx: Ctx<'_>) -> ResourceResult {
         let name = uri_param(&ctx, "name")?;
         let version = uri_param(&ctx, "version")?;
-        let details = VersionDetails::from(self.cached_metadata(name, version).await?);
-        json_resource(
-            gem_version_uri(&details.name, &details.version, &details.platform),
-            &details,
-        )
+        let meta = self.cached_metadata(name, version).await?;
+        let uri = gem_version_uri(&meta.name, &meta.version, &meta.platform);
+        json_resource(uri, &VersionDetails::from(meta))
     }
 }
 
-pub fn mount(router: McpResourceTemplateRouter<VeinMcp>) -> McpResourceTemplateRouter<VeinMcp> {
-    router.with_template(
-        VeinMcp::gem_version_template_info(),
+pub fn mount(
+    router: McpResourceTemplateRouter<VeinMcp>,
+) -> Result<McpResourceTemplateRouter<VeinMcp>, AppsError> {
+    Ok(router.with_template(
+        VeinMcp::gem_version_template_info()?,
         VeinMcp::gem_version_handler,
         None,
-    )
+    ))
 }

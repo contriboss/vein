@@ -3,6 +3,7 @@ mod compact;
 mod dispatch;
 mod fetch;
 mod handlers;
+mod public_base;
 mod quarantine;
 mod response;
 #[cfg(test)]

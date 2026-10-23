@@ -56,3 +56,76 @@ fn build_url_preserves_base_path() {
         "https://mirror.example.com/rubygems/info/rack"
     );
 }
+
+/// harbor's rake rows: analysed by an older analyzer, cached, and skipped by
+/// every later sync until `--reanalyze` re-extracts them.
+#[tokio::test]
+async fn reanalyze_refreshes_the_metadata_of_cached_versions() {
+    use crate::test_support::{build_test_gem, digest_file, install_rustls_provider};
+    use vein_adapter::{AssetKey, AssetKind, CacheBackendTrait};
+
+    install_rustls_provider();
+    let cache = vein_adapter::test_support::connect_test_backend()
+        .await
+        .unwrap();
+    let storage = tempfile::tempdir().unwrap();
+    // MOCKED: no upstream is contacted; the version is already cached.
+    let config: Config = toml::from_str(&format!(
+        "[storage]\npath = {:?}\n[upstream]\nurl = \"http://127.0.0.1:9\"\n",
+        storage.path()
+    ))
+    .unwrap();
+
+    let gem = build_test_gem(
+        "---\nname: rakeish\nversion: 1.0.0\nauthors: Dev\nlicenses: []\n",
+        &[("doc/example/a.c", b"int main;"), ("lib/rakeish.rb", b"")],
+    );
+    let relative = "gems/rakeish/rakeish-1.0.0.gem";
+    let path = storage.path().join(relative);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::copy(gem.path(), &path).unwrap();
+    let (size, sha) = digest_file(&path);
+    let key = AssetKey {
+        kind: AssetKind::Gem,
+        name: "rakeish",
+        version: "1.0.0",
+        platform: None,
+    };
+    cache
+        .insert_or_replace(&key, relative, &sha, size)
+        .await
+        .unwrap();
+    let mut stale = extract_gem_metadata(&path, "rakeish", "1.0.0", None, size, &sha, None)
+        .await
+        .unwrap()
+        .unwrap();
+    stale.native_languages = vec!["C".to_string()];
+    cache.upsert_metadata(&stale).await.unwrap();
+
+    let languages = async || {
+        cache
+            .gem_metadata("rakeish", "1.0.0", Some("ruby"))
+            .await
+            .unwrap()
+            .unwrap()
+            .native_languages
+    };
+
+    run(&config, &cache, "rakeish", Some("1.0.0"), None, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        languages().await,
+        ["C"],
+        "a plain sync skips cached versions"
+    );
+
+    run(&config, &cache, "rakeish", Some("1.0.0"), None, true)
+        .await
+        .unwrap();
+    assert_eq!(
+        languages().await,
+        Vec::<String>::new(),
+        "doc/example is not native"
+    );
+}

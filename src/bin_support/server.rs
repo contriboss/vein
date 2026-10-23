@@ -104,14 +104,19 @@ async fn spawn_admin(
         return Ok(());
     }
     let addr = config.admin.bind_addr();
+    let networks = vein::admin::trust::trusted_networks(&config.admin)?;
     let router = vein::admin::router(config, index, storage)
         .await
         .context("building admin dashboard")?;
-    tracing::info!(%addr, "starting admin server");
+    tracing::info!(%addr, trusted_networks = ?networks, "starting admin server");
 
     spawn_listener(graceful, addr, "admin", move |exec| {
-        // Router misses become 404/405 instead of an empty 200.
-        HttpServer::auto(exec).service(Arc::new(ErrorHandlerLayer::new().into_layer(router)))
+        // Router misses become 404/405 instead of an empty 200; peers outside
+        // the trusted networks never reach it.
+        HttpServer::auto(exec).service(Arc::new(vein::admin::trust::TrustedPeers::new(
+            ErrorHandlerLayer::new().into_layer(router),
+            networks,
+        )))
     });
     Ok(())
 }

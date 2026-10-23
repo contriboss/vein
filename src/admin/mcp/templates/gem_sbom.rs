@@ -1,6 +1,7 @@
 use mcp_host::prelude::*;
 use mcp_host::registry::router::McpResourceTemplateRouter;
 
+use crate::admin::mcp::untrusted::clean_json;
 use crate::admin::mcp::views::gem_sbom_uri;
 use crate::admin::mcp::{VeinMcp, json_resource_as, uri_param};
 
@@ -19,20 +20,24 @@ impl VeinMcp {
         let version = uri_param(&ctx, "version")?;
         let meta = self.cached_metadata(name, version).await?;
         let uri = gem_sbom_uri(&meta.name, &meta.version, &meta.platform);
-        let Some(sbom) = meta.sbom else {
+        let Some(mut sbom) = meta.sbom else {
             return Err(ResourceError::NotFound(format!(
                 "no SBOM recorded for {name} {}",
                 meta.version
             )));
         };
+        // Built from the gemspec: its names and descriptions are author text.
+        clean_json(&mut sbom);
         json_resource_as(uri, &sbom, CYCLONEDX_JSON)
     }
 }
 
-pub fn mount(router: McpResourceTemplateRouter<VeinMcp>) -> McpResourceTemplateRouter<VeinMcp> {
-    router.with_template(
-        VeinMcp::gem_sbom_template_info(),
+pub fn mount(
+    router: McpResourceTemplateRouter<VeinMcp>,
+) -> Result<McpResourceTemplateRouter<VeinMcp>, AppsError> {
+    Ok(router.with_template(
+        VeinMcp::gem_sbom_template_info()?,
         VeinMcp::gem_sbom_handler,
         None,
-    )
+    ))
 }

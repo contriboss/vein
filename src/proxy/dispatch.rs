@@ -8,7 +8,10 @@ use rama::{
 
 use crate::http_cache::CacheOutcome;
 
-use super::{CacheStatus, RequestContext, VeinProxy, compact::CompactRequest, handlers, response};
+use super::{
+    CacheStatus, RequestContext, VeinProxy, compact::CompactRequest, handlers,
+    public_base::public_base, response,
+};
 
 use crate::{crates as crates_registry, npm as npm_registry};
 
@@ -16,12 +19,10 @@ impl VeinProxy {
     async fn handle(&self, req: Request<Body>, ctx: &mut RequestContext) -> Result<Response<Body>> {
         let method = req.method().clone();
         let path = req.uri().path_or_root().into_owned();
+        // What every URL handed back must use: the bind is often loopback.
+        let our_base = public_base(req.headers(), &self.config.server);
 
         if npm_registry::is_npm_request(&req) {
-            let our_base = format!(
-                "http://{}:{}",
-                self.config.server.host, self.config.server.port
-            );
             let result = npm_registry::handle_npm_request(
                 &self.http,
                 req,
@@ -48,13 +49,9 @@ impl VeinProxy {
                 }
                 "/" => {
                     ctx.cache = CacheStatus::Pass;
-                    return response::respond_homepage(&self.config);
+                    return response::respond_homepage(&self.config, &our_base);
                 }
                 p if p.starts_with("/index/") => {
-                    let our_base = format!(
-                        "http://{}:{}",
-                        self.config.server.host, self.config.server.port
-                    );
                     let result = crates_registry::handle_sparse_index(
                         &self.http,
                         p,

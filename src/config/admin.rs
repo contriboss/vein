@@ -7,9 +7,15 @@ use serde::Deserialize;
 pub struct AdminConfig {
     /// Serve the dashboard. Builds without the `admin` feature warn and skip it.
     pub enabled: bool,
-    /// Bind host. Anything but loopback needs `VEIN_ADMIN_MCP_TOKEN` for MCP.
+    /// Bind host. Anything but loopback needs `trusted_networks` or
+    /// `VEIN_ADMIN_MCP_TOKEN` for MCP.
     pub host: String,
     pub port: u16,
+    /// Networks (CIDR blocks or addresses) admitted to the whole admin
+    /// listener, dashboard and `/mcp` alike; everyone else gets `403`.
+    /// Loopback is always added. They stand in for the MCP token on a
+    /// non-loopback bind; with both set, a request needs both.
+    pub trusted_networks: Vec<String>,
     pub mcp: McpSettings,
 }
 
@@ -19,6 +25,7 @@ impl Default for AdminConfig {
             enabled: true,
             host: "127.0.0.1".to_string(),
             port: 9400,
+            trusted_networks: Vec::new(),
             mcp: McpSettings::default(),
         }
     }

@@ -54,6 +54,24 @@ impl Packument {
     pub fn manifest(&self, version: &str) -> Option<&Map<String, Value>> {
         self.0.get("versions")?.get(version)?.as_object()
     }
+
+    /// Why the author deprecated `version`, if they did. An empty message is
+    /// how `npm deprecate <pkg> ""` lifts a deprecation, so it is none.
+    pub fn deprecation(&self, version: &str) -> Option<&str> {
+        self.manifest(version)?
+            .get("deprecated")?
+            .as_str()
+            .filter(|message| !message.is_empty())
+    }
+}
+
+/// `DefinitelyTyped`'s `ts4.6`-style dist-tags: the newest types that still
+/// support that TypeScript release, generated for every `@types` package.
+pub fn is_typescript_tag(tag: &str) -> bool {
+    let digits = |part: &str| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit());
+    tag.strip_prefix("ts")
+        .and_then(|release| release.split_once('.'))
+        .is_some_and(|(major, minor)| digits(major) && digits(minor))
 }
 
 pub fn text(value: &Value) -> Option<String> {
@@ -91,3 +109,6 @@ pub fn is_valid_name(name: &str) -> bool {
             .split('/')
             .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
 }
+
+#[cfg(test)]
+mod tests;

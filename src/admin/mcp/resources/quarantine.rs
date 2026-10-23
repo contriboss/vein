@@ -47,10 +47,10 @@ impl VeinMcp {
     }
 }
 
-pub fn mount(router: McpResourceRouter<VeinMcp>) -> McpResourceRouter<VeinMcp> {
-    router.with_resource(
-        VeinMcp::quarantine_resource_info(),
+pub fn mount(router: McpResourceRouter<VeinMcp>) -> Result<McpResourceRouter<VeinMcp>, AppsError> {
+    Ok(router.with_resource(
+        VeinMcp::quarantine_resource_info()?,
         VeinMcp::quarantine_handler,
         None,
-    )
+    ))
 }

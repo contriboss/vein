@@ -13,6 +13,7 @@ pub fn run_gem_sync(
     name: &str,
     version: Option<&str>,
     platform: Option<&str>,
+    reanalyze: bool,
 ) -> Result<()> {
     // The upstream client speaks TLS; a second install is not an error.
     let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
@@ -22,5 +23,7 @@ pub fn run_gem_sync(
 
     let rt = build_current_thread_runtime("gem sync")?;
     let (cache, _) = connect_cache_index(&rt, &config)?;
-    rt.block_on(gem_sync::run(&config, &cache, name, version, platform))
+    rt.block_on(gem_sync::run(
+        &config, &cache, name, version, platform, reanalyze,
+    ))
 }

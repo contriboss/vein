@@ -1,0 +1,47 @@
+project = "vein"
+
+# `harbor` is a host name, resolved by your SSH config and DNS: no address
+# or user lives here. harbor clones this itself from its own Forgejo, with
+# the deploy user's SSH key (registered there). Only commits pushed to the
+# `harbor` remote ship.
+[source]
+repository = "ssh://git@harbor:12222/seuros/vein.git"
+branch = "master"
+
+[[targets]]
+name = "harbor"
+hosts = ["harbor"]
+executor.type = "ssh"
+arch = "amd64"
+distro = "freebsd"
+kind = "web"
+
+[targets.sanity]
+enabled = ["disk", "memory", "processes"]
+# A release build plus the gem cache.
+min_disk_free_mb = 10240
+
+# Rust comes from mise (rust-toolchain.toml pins 1.99); llvm19 provides the
+# libclang rama-dns's bindgen needs on FreeBSD.
+[targets.sanity.host]
+os = "FreeBSD"
+min_release = "15.0"
+commands = ["git", "mise", "mothership"]
+packages = ["llvm19"]
+
+[targets.mothership]
+manifest = "deploy/harbor/ship-manifest.toml"
+# rc.d + daemon(8) here (passwordless sudo): restarted on crash, back after a reboot.
+service = "auto"
+# Runs in the checkout while the previous release keeps serving. A login
+# sh does not activate mise, so its shims go on PATH here. harbor is the
+# testing ground: thin LTO over 16 codegen units instead of the release
+# profile's fat LTO + 1 unit, which spent ~16 min in the final compile.
+build = "PATH=\"$HOME/.local/share/mise/shims:$PATH\" LIBCLANG_PATH=/usr/local/llvm19/lib CARGO_PROFILE_RELEASE_LTO=thin CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 cargo build --release --locked"
+boot_grace_secs = 5
+
+[targets.health]
+timeout_secs = 180
+
+[[targets.health.probes]]
+url = "http://harbor:8080/up"

@@ -1,0 +1,26 @@
+# Mothership fleet for vein on harbor. launchbay starts mothership from the
+# git checkout, so relative paths below resolve against the repository root.
+
+[mothership]
+# `mothership health`, which launchbay's health gate reads.
+metrics_port = 9090
+
+[mothership.bind]
+http = "0.0.0.0:8080"
+# vein's admin (dashboard and /mcp) listens on 0.0.0.0:9401 itself and
+# admits only [admin] trusted_networks (deploy/harbor/config.toml).
+
+[[fleet.web]]
+name = "vein"
+command = "target/release/vein"
+args = ["serve", "--config", "deploy/harbor/config.toml"]
+bind = "tcp://127.0.0.1:8346"
+# 503 while Postgres is unreachable.
+healthcheck = "/up"
+healthcheck_initial_delay = 10
+# A single ship: if it is critical, a Postgres outage long enough to back
+# vein off would stop mothership itself, and nothing restarts mothership.
+# Non-critical, mothership keeps restarting vein until it serves again.
+critical = false
+tags = ["web"]
+routes = [{ bind = "http", pattern = "/.*" }]

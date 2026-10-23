@@ -21,23 +21,22 @@ impl VeinMcp {
             .catalog_search(&query, SEARCH_LIMIT)
             .await
             .map_err(read_error)?;
-        let catalog_size = self.resources.catalog_total().await.map_err(read_error)?;
         json_resource(
             search_uri("gems", &query),
             &Search {
-                query,
                 scope: "rubygems.org",
                 names,
-                catalog_size: Some(catalog_size),
             },
         )
     }
 }
 
-pub fn mount(router: McpResourceTemplateRouter<VeinMcp>) -> McpResourceTemplateRouter<VeinMcp> {
-    router.with_template(
-        VeinMcp::gem_search_template_info(),
+pub fn mount(
+    router: McpResourceTemplateRouter<VeinMcp>,
+) -> Result<McpResourceTemplateRouter<VeinMcp>, AppsError> {
+    Ok(router.with_template(
+        VeinMcp::gem_search_template_info()?,
         VeinMcp::gem_search_handler,
         None,
-    )
+    ))
 }

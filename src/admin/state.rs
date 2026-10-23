@@ -1,10 +1,17 @@
 //! Shared state for the admin dashboard.
 
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use crate::config::Config as VeinConfig;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use chrono::{DateTime, Utc};
+use rama::{
+    Layer,
+    http::{
+        StatusCode, body::util::BodyExt, client::EasyHttpWebClient, layer::timeout::TimeoutLayer,
+        service::client::HttpClientExt,
+    },
+};
 use tera::Tera;
 use vein_adapter::{
     AssetKind, CacheBackend, CacheBackendTrait, CachedVersion, FilesystemStorage, GemMetadata,
@@ -12,6 +19,10 @@ use vein_adapter::{
 };
 
 use crate::admin::ruby::RubyStatus;
+
+/// How long a registry lookup through the proxy may take: its upstream
+/// timeout is 30s at most, plus the fallbacks.
+const PROXY_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Main application state, passed to all handlers.
 #[derive(Clone)]
@@ -133,6 +144,62 @@ impl AdminResources {
     }
 
     /// Contents of a file in the proxy's storage, or `None` if not cached.
+    /// `relative` as stored, else fetched through vein's own proxy at
+    /// `proxy_path`, which caches it exactly as any client's request would
+    /// (same upstreams, fallbacks and storage). `None` when the registry has
+    /// no such package. `npm` marks the request as npm's.
+    ///
+    /// # Errors
+    ///
+    /// When storage cannot be read or the proxy cannot be reached.
+    pub async fn stored_or_fetched(
+        &self,
+        relative: &str,
+        proxy_path: &str,
+        npm: bool,
+    ) -> Result<Option<Vec<u8>>> {
+        if let Some(bytes) = self.read_stored(relative).await? {
+            return Ok(Some(bytes));
+        }
+        self.fetch_through_proxy(proxy_path, npm).await
+    }
+
+    async fn fetch_through_proxy(&self, path: &str, npm: bool) -> Result<Option<Vec<u8>>> {
+        let url = format!("{}{path}", self.proxy_base());
+        let client = TimeoutLayer::new(PROXY_TIMEOUT).into_layer(EasyHttpWebClient::default());
+        let mut request = client.get(url.as_str());
+        if npm {
+            request = request.header("npm-command", "view");
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|err| anyhow::anyhow!("asking the proxy for {path}: {err}"))?;
+        match response.status() {
+            status if status.is_success() => {
+                let body = response
+                    .into_body()
+                    .collect()
+                    .await
+                    .with_context(|| format!("reading the proxy's answer for {path}"))?;
+                Ok(Some(body.to_bytes().to_vec()))
+            }
+            StatusCode::NOT_FOUND => Ok(None),
+            status => bail!("the proxy answered {status} for {path}"),
+        }
+    }
+
+    /// The proxy listener, as this process can reach it.
+    fn proxy_base(&self) -> String {
+        let server = &self.config.server;
+        let host = match server.host.as_str() {
+            "" | "0.0.0.0" => "127.0.0.1",
+            "::" | "[::]" => "[::1]",
+            host => host,
+        };
+        format!("http://{host}:{}", server.port)
+    }
+
     pub async fn read_stored(&self, relative: &str) -> Result<Option<Vec<u8>>> {
         match tokio::fs::read(self.storage.resolve(relative)).await {
             Ok(bytes) => Ok(Some(bytes)),

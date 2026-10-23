@@ -1,82 +1,6 @@
 use super::*;
-use flate2::{Compression, write::GzEncoder};
-use sha2::{Digest, Sha256};
-use std::io::{Cursor, Write};
-use tar::{Builder, Header};
-use tempfile::NamedTempFile;
+use crate::test_support::{build_test_gem, digest_file};
 use vein_adapter::DependencyKind;
-
-fn build_test_gem(metadata_yaml: &str, data_entries: &[(&str, &[u8])]) -> NamedTempFile {
-    let mut metadata_encoder = GzEncoder::new(Vec::new(), Compression::default());
-    metadata_encoder
-        .write_all(metadata_yaml.as_bytes())
-        .expect("write metadata yaml");
-    let metadata_bytes = metadata_encoder
-        .finish()
-        .expect("finalize metadata gzip payload");
-
-    let mut data_tar_bytes = Vec::new();
-    {
-        let mut data_builder = Builder::new(&mut data_tar_bytes);
-        for (path, contents) in data_entries {
-            let mut header = Header::new_gnu();
-            header.set_size(contents.len() as u64);
-            header.set_mode(0o644);
-            data_builder
-                .append_data(&mut header, path, Cursor::new(*contents))
-                .expect("append data file");
-        }
-        data_builder.finish().expect("finish data tar");
-    }
-
-    let mut data_encoder = GzEncoder::new(Vec::new(), Compression::default());
-    data_encoder
-        .write_all(&data_tar_bytes)
-        .expect("compress data tar");
-    let data_bytes = data_encoder.finish().expect("finalize data gzip payload");
-
-    let file = NamedTempFile::new().expect("create temp gem");
-    {
-        let mut handle = file.reopen().expect("reopen temp gem");
-        {
-            let mut builder = Builder::new(&mut handle);
-
-            let mut header = Header::new_gnu();
-            header.set_size(metadata_bytes.len() as u64);
-            header.set_mode(0o644);
-            builder
-                .append_data(
-                    &mut header,
-                    "metadata.gz",
-                    Cursor::new(metadata_bytes.as_slice()),
-                )
-                .expect("write metadata entry");
-
-            let mut header = Header::new_gnu();
-            header.set_size(data_bytes.len() as u64);
-            header.set_mode(0o644);
-            builder
-                .append_data(
-                    &mut header,
-                    "data.tar.gz",
-                    Cursor::new(data_bytes.as_slice()),
-                )
-                .expect("write data entry");
-
-            builder.finish().expect("finish gem tar");
-        }
-        handle.flush().expect("flush gem file");
-    }
-
-    file
-}
-
-fn digest_file(path: &Path) -> (u64, String) {
-    let bytes = std::fs::read(path).expect("read gem bytes");
-    let size_bytes = bytes.len() as u64;
-    let sha256 = hex::encode(Sha256::digest(&bytes));
-    (size_bytes, sha256)
-}
 
 #[tokio::test]
 async fn parses_complete_metadata_payload() {
@@ -315,4 +239,73 @@ licenses: ["MIT"]
         Some(existing_sbom),
         "should reuse precomputed SBOM"
     );
+}
+
+/// rake 13.4.2 ships `doc/example/*.c`, and gems commonly ship
+/// `bin/console` scripts: neither is native code.
+#[tokio::test]
+async fn sources_outside_ext_and_bin_scripts_are_not_native() {
+    let metadata_yaml = "---\nname: rakeish\nversion: 1.0.0\nauthors: Dev\nlicenses: []\n";
+    let gem_file = build_test_gem(
+        metadata_yaml,
+        &[
+            ("doc/example/a.c", b"int main(void) { return 0; }"),
+            ("test/fixtures/native.cc", b"int x;"),
+            ("lib/rakeish.rb", b"module Rakeish; end"),
+            ("exe/rakeish", b"#!/usr/bin/env ruby\nrequire 'rakeish'"),
+            ("bin/console", b"#!/usr/bin/env ruby\nrequire 'irb'"),
+        ],
+    );
+    let (size_bytes, sha256) = digest_file(gem_file.path());
+    let metadata = extract_gem_metadata(
+        gem_file.path(),
+        "rakeish",
+        "1.0.0",
+        None,
+        size_bytes,
+        &sha256,
+        None,
+    )
+    .await
+    .expect("metadata extraction succeeds")
+    .expect("metadata is present");
+
+    assert_eq!(metadata.native_languages, Vec::<String>::new());
+    assert!(!metadata.has_native_extensions);
+    assert!(!metadata.has_embedded_binaries, "bin/console is a script");
+}
+
+#[tokio::test]
+async fn languages_come_from_ext_and_bin_binaries_from_their_magic() {
+    let metadata_yaml = "---\nname: rusty\nversion: 2.0.0\nauthors: Dev\nlicenses: []\n";
+    let gem_file = build_test_gem(
+        metadata_yaml,
+        &[
+            ("ext/rusty/Cargo.toml", b"[package]\nname = \"rusty\""),
+            ("ext/rusty/src/lib.rs", b"pub fn f() {}"),
+            ("spec/fixtures/helper.c", b"int y;"),
+            ("bin/rusty-tool", b"\x7fELF\x02\x01\x01"),
+        ],
+    );
+    let (size_bytes, sha256) = digest_file(gem_file.path());
+    let metadata = extract_gem_metadata(
+        gem_file.path(),
+        "rusty",
+        "2.0.0",
+        None,
+        size_bytes,
+        &sha256,
+        None,
+    )
+    .await
+    .expect("metadata extraction succeeds")
+    .expect("metadata is present");
+
+    assert_eq!(
+        metadata.native_languages,
+        ["Rust"],
+        "spec/ C does not count"
+    );
+    assert!(metadata.has_native_extensions);
+    assert!(metadata.has_embedded_binaries, "an ELF in bin/ is a binary");
 }

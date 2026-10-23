@@ -64,31 +64,19 @@ pub fn respond_text(status: StatusCode, body: &str) -> Result<Response<Body>> {
         .map_err(Into::into)
 }
 
-/// Responds with the homepage HTML
-pub fn respond_homepage(config: &Config) -> Result<Response<Body>> {
-    let mut builder = Response::builder().status(StatusCode::OK);
-    {
-        let headers = builder
-            .headers_mut()
-            .expect("headers available while building response");
-        headers.insert(
-            header::CONTENT_TYPE,
-            header::HeaderValue::from_static("text/html; charset=utf-8"),
-        );
-        headers.insert(
-            header::CACHE_CONTROL,
-            header::HeaderValue::from_static("no-cache, no-store, must-revalidate"),
-        );
-        headers.insert(header::PRAGMA, header::HeaderValue::from_static("no-cache"));
-        headers.insert(header::EXPIRES, header::HeaderValue::from_static("0"));
-    }
-
+/// The homepage: what this node serves, and how to point each client at
+/// `base`, the URL this client reached it on (`public_base`), so every
+/// snippet is copy-paste ready. Each one was checked against a live vein:
+/// Cargo cannot replace a source through environment variables, and
+/// Bundler's mirror variable needs its trailing slash.
+pub fn respond_homepage(config: &Config, base: &str) -> Result<Response<Body>> {
+    let storage_root = escape_html(&config.storage.path.display().to_string());
     let body = format!(
         r#"<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Vein RubyGems Mirror</title>
+    <title>Vein package proxy</title>
     <style>
       :root {{
         color-scheme: light dark;
@@ -96,6 +84,7 @@ pub fn respond_homepage(config: &Config) -> Result<Response<Body>> {
         --fg: #f4f6ff;
         --accent: #3f8cff;
         --muted: #9aa2b2;
+        --code: #1a1e2b;
       }}
       @media (prefers-color-scheme: light) {{
         :root {{
@@ -103,70 +92,31 @@ pub fn respond_homepage(config: &Config) -> Result<Response<Body>> {
           --fg: #1b2130;
           --accent: #2563eb;
           --muted: #525f7a;
+          --code: #eef2fb;
         }}
       }}
       body {{
         margin: 0;
-        min-height: 100vh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
         background: var(--bg);
         color: var(--fg);
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        line-height: 1.5;
       }}
       main {{
-        max-width: 640px;
-        padding: 3rem;
-        border-radius: 20px;
-        background: color-mix(in srgb, var(--bg) 88%, var(--fg) 12%);
-        box-shadow: 0 30px 50px rgba(15, 17, 23, 0.20);
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 3rem 1.5rem;
       }}
-      h1 {{
-        font-size: 2.25rem;
-        margin: 0 0 1rem;
-      }}
-      p {{
-        margin: 0 0 1.25rem;
-        line-height: 1.6;
-      }}
-      code {{
-        display: inline-block;
-        padding: 0.2rem 0.45rem;
-        border-radius: 8px;
-        background: color-mix(in srgb, var(--bg) 70%, var(--fg) 30%);
+      h1 {{ margin-bottom: 0.25rem; }}
+      h2 {{ margin-top: 2rem; color: var(--accent); font-size: 1.15rem; }}
+      p {{ color: var(--muted); }}
+      code, pre {{ font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }}
+      pre {{
+        background: var(--code);
+        padding: 0.9rem 1rem;
+        border-radius: 10px;
+        overflow-x: auto;
         color: var(--fg);
-        font-size: 0.95rem;
-      }}
-      ul {{
-        margin: 1.5rem 0 0;
-        padding: 0;
-        list-style: none;
-      }}
-      li {{
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        margin-bottom: 0.5rem;
-      }}
-      li span {{
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        background: color-mix(in srgb, var(--accent) 35%, transparent);
-        color: var(--accent);
-        font-weight: 600;
-      }}
-      a {{
-        color: var(--accent);
-        text-decoration: none;
-        font-weight: 600;
-      }}
-      a:hover {{
-        text-decoration: underline;
       }}
     </style>
   </head>
@@ -174,33 +124,98 @@ pub fn respond_homepage(config: &Config) -> Result<Response<Body>> {
     <main>
       <h1>Vein is online</h1>
       <p>
-        This node is serving RubyGems, crates.io, and npm traffic from
-        <code>http://{host}:{port}</code>.
+        This node serves RubyGems, crates.io and npm from <code>{base}</code>.
+        Point a client at it once: after the first fetch, artifacts come from
+        local storage under <code>{storage_root}</code>.
       </p>
+
+      <h2>Bundler</h2>
+      <p>Mirror rubygems.org for every project, Gemfiles unchanged:</p>
+      <pre>bundle config set --global mirror.https://rubygems.org {base}</pre>
       <p>
-        Point <strong>Bundler</strong>, <strong>Cargo</strong>, <strong>npm</strong>, or your CI
-        runners at this base URL and cached artifacts will be served from local
-        storage on subsequent requests.
+        Or per project, in the Gemfile: <code>source "{base}"</code>. For one
+        command, the same mirror as an environment variable; its name ends in
+        a slash, so shells cannot <code>export</code> it:
       </p>
-      <ul>
-        <li><span>1</span>Point clients at this URL as their package source or registry</li>
-        <li><span>2</span>Watch the cache fill under <code>{storage_root}</code></li>
-      </ul>
+      <pre>env 'BUNDLE_MIRROR__HTTPS://RUBYGEMS__ORG/={base}' bundle install</pre>
+
+      <h2>RubyGems</h2>
+      <pre>gem install rake --clear-sources --source {base}</pre>
+
+      <h2>Cargo</h2>
+      <p>In <code>~/.cargo/config.toml</code>, or a project's <code>.cargo/config.toml</code>:</p>
+      <pre>[source.crates-io]
+replace-with = "vein"
+
+[source.vein]
+registry = "sparse+{base}/index/"</pre>
+      <p>
+        Cargo cannot replace a source through environment variables
+        (<code>CARGO_REGISTRIES_CRATES_IO_INDEX</code> is ignored for crates.io).
+        For one command:
+      </p>
+      <pre>cargo --config 'source.crates-io.replace-with="vein"' \
+      --config 'source.vein.registry="sparse+{base}/index/"' build</pre>
+
+      <h2>npm</h2>
+      <pre>npm config set registry {base}/</pre>
+      <p>Or for one command: <code>NPM_CONFIG_REGISTRY={base}/ npm install</code>.</p>
+
+      <h2>bun</h2>
+      <p>In <code>bunfig.toml</code> (a project's, or <code>~/.bunfig.toml</code>):</p>
+      <pre>[install]
+registry = "{base}/"</pre>
+      <p>Or for one command: <code>BUN_CONFIG_REGISTRY={base}/ bun install</code>.</p>
+
+      <h2>CI runners</h2>
+      <p>GitHub or Forgejo Actions, before the install steps:</p>
+      <pre>env:
+  NPM_CONFIG_REGISTRY: {base}/
+  BUN_CONFIG_REGISTRY: {base}/
+steps:
+  - run: bundle config set --global mirror.https://rubygems.org {base}
+  - run: |
+      mkdir -p ~/.cargo
+      cat >> ~/.cargo/config.toml &lt;&lt;'EOF'
+      [source.crates-io]
+      replace-with = "vein"
+      [source.vein]
+      registry = "sparse+{base}/index/"
+      EOF</pre>
     </main>
   </body>
 </html>
-"#,
-        host = config.server.host,
-        port = config.server.port,
-        storage_root = config.storage.path.display()
+"#
     );
 
+    // Rendered from the request's Host: never let a shared cache keep it.
     Response::builder()
         .status(StatusCode::OK)
         .header(
             header::CONTENT_TYPE,
             header::HeaderValue::from_static("text/html; charset=utf-8"),
         )
+        .header(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("no-cache, no-store, must-revalidate"),
+        )
+        .header(header::PRAGMA, header::HeaderValue::from_static("no-cache"))
+        .header(header::EXPIRES, header::HeaderValue::from_static("0"))
         .body(Body::from(body))
         .map_err(Into::into)
+}
+
+/// `&`, `<`, `>` and `"` for text placed in the homepage.
+fn escape_html(text: &str) -> String {
+    let mut escaped = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '"' => escaped.push_str("&quot;"),
+            other => escaped.push(other),
+        }
+    }
+    escaped
 }

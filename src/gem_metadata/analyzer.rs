@@ -5,6 +5,26 @@ use tar::Archive;
 
 const EMBEDDED_BINARY_DIR_PREFIXES: &[&str] = &["vendor/", "libexec/", "resources/"];
 
+/// Where the native code a gem compiles lives. Sources elsewhere are docs,
+/// examples, tests or fixtures (rake ships `doc/example/*.c`), not part of
+/// what gets built; the gemspec's `extensions` are added by the parser.
+const NATIVE_SOURCE_DIR: &str = "ext/";
+
+/// Executable formats a file in `bin/` may start with: ELF, Mach-O (32/64,
+/// both byte orders, fat), and PE (`MZ`).
+const BINARY_MAGIC: &[&[u8]] = &[
+    b"\x7fELF",
+    &[0xfe, 0xed, 0xfa, 0xce],
+    &[0xfe, 0xed, 0xfa, 0xcf],
+    &[0xce, 0xfa, 0xed, 0xfe],
+    &[0xcf, 0xfa, 0xed, 0xfe],
+    &[0xca, 0xfe, 0xba, 0xbe],
+    b"MZ",
+];
+
+/// Scans every file of a gem's `data.tar`: whether it builds native
+/// extensions, whether it ships prebuilt binaries, and the languages of the
+/// extensions it compiles.
 pub fn analyze_data_tar<R: Read>(reader: R) -> Result<(bool, bool, BTreeSet<String>)> {
     let mut archive = Archive::new(reader);
     let mut has_native_extensions = false;
@@ -12,16 +32,21 @@ pub fn analyze_data_tar<R: Read>(reader: R) -> Result<(bool, bool, BTreeSet<Stri
     let mut languages = BTreeSet::new();
 
     for entry in archive.entries().context("reading gem data archive")? {
-        let entry = entry.context("reading file in data archive")?;
+        let mut entry = entry.context("reading file in data archive")?;
         let header = entry.header();
         if !header.entry_type().is_file() {
             continue;
         }
-        let path = entry.path().context("reading data archive path")?;
+        let path = entry
+            .path()
+            .context("reading data archive path")?
+            .into_owned();
         let path_str = path.to_string_lossy();
         let path_lower = path_str.to_ascii_lowercase();
 
-        if let Some(language) = detect_language_from_path(&path_str) {
+        if path_lower.starts_with(NATIVE_SOURCE_DIR)
+            && let Some(language) = detect_language_from_path(&path_str)
+        {
             languages.insert(language.to_string());
         }
 
@@ -49,26 +74,33 @@ pub fn analyze_data_tar<R: Read>(reader: R) -> Result<(bool, bool, BTreeSet<Stri
             }
         }
 
-        if !has_embedded_binaries && path_lower.starts_with("bin/") {
-            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                let ext_lower = ext.to_ascii_lowercase();
-                if !matches!(
-                    ext_lower.as_str(),
-                    "rb" | "erb" | "rake" | "sh" | "bat" | "ps1"
-                ) {
-                    has_embedded_binaries = true;
-                }
-            } else {
-                has_embedded_binaries = true;
-            }
-        }
-
-        if has_native_extensions && has_embedded_binaries {
-            break;
+        // `bin/console`, `bin/setup`: scripts without an extension are the
+        // norm; only an executable format counts as a shipped binary.
+        if !has_embedded_binaries && path_lower.starts_with("bin/") && path.extension().is_none() {
+            let mut head = [0u8; 4];
+            let read = read_head(&mut entry, &mut head)?;
+            has_embedded_binaries = BINARY_MAGIC
+                .iter()
+                .any(|magic| head[..read].starts_with(magic));
         }
     }
 
     Ok((has_native_extensions, has_embedded_binaries, languages))
+}
+
+/// Up to `head.len()` leading bytes of `reader`; fewer for a shorter file.
+fn read_head<R: Read>(reader: &mut R, head: &mut [u8]) -> Result<usize> {
+    let mut filled = 0;
+    while filled < head.len() {
+        match reader
+            .read(&mut head[filled..])
+            .context("reading a bin/ file")?
+        {
+            0 => break,
+            n => filled += n,
+        }
+    }
+    Ok(filled)
 }
 
 pub fn detect_language_from_path(path: &str) -> Option<&'static str> {

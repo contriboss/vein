@@ -18,10 +18,12 @@ impl VeinMcp {
     }
 }
 
-pub fn mount(router: McpResourceTemplateRouter<VeinMcp>) -> McpResourceTemplateRouter<VeinMcp> {
-    router.with_template(
-        VeinMcp::npm_search_template_info(),
+pub fn mount(
+    router: McpResourceTemplateRouter<VeinMcp>,
+) -> Result<McpResourceTemplateRouter<VeinMcp>, AppsError> {
+    Ok(router.with_template(
+        VeinMcp::npm_search_template_info()?,
         VeinMcp::npm_search_handler,
         None,
-    )
+    ))
 }

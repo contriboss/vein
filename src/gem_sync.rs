@@ -20,6 +20,9 @@ struct SyncEnvironment<'a> {
     cache: &'a CacheBackend,
     storage: &'a FilesystemStorage,
     base_url: Uri,
+    /// Re-run metadata analysis on versions already cached instead of
+    /// skipping them: rows written by an older analyzer stay wrong otherwise.
+    reanalyze: bool,
 }
 
 impl GemSyncTarget {
@@ -57,12 +60,16 @@ impl GemSyncTarget {
 
 /// Sync gem `name` from the configured upstream into the local cache: one
 /// `version` (optionally one `platform` build), or every published version.
+///
+/// With `reanalyze`, versions already cached get their metadata extracted
+/// again from the stored file instead of being skipped.
 pub async fn run(
     config: &Config,
     cache: &CacheBackend,
     name: &str,
     version: Option<&str>,
     platform: Option<&str>,
+    reanalyze: bool,
 ) -> Result<()> {
     let upstream_config = config
         .upstream
@@ -80,6 +87,7 @@ pub async fn run(
         cache,
         storage: &storage,
         base_url: upstream_config.url.clone(),
+        reanalyze,
     };
 
     let targets = resolve_sync_targets(&env, name, version, platform).await?;
@@ -140,13 +148,26 @@ pub async fn run(
 async fn sync_gem(env: &SyncEnvironment<'_>, name: &str, target: &GemSyncTarget) -> Result<()> {
     let asset_key = target.asset_key(name);
 
-    if env.cache.get(&asset_key).await?.is_some() {
-        info!(
-            gem = %name,
-            version = %target.version,
-            platform = ?target.platform(),
-            "Already cached, skipping"
-        );
+    if let Some(cached) = env.cache.get(&asset_key).await? {
+        if env.reanalyze {
+            let path = env.storage.resolve(&cached.path);
+            store_gem_metadata(
+                env.cache,
+                &path,
+                name,
+                target,
+                cached.size_bytes,
+                &cached.sha256,
+            )
+            .await;
+        } else {
+            info!(
+                gem = %name,
+                version = %target.version,
+                platform = ?target.platform(),
+                "Already cached, skipping (--reanalyze re-extracts its metadata)"
+            );
+        }
         return Ok(());
     }
 

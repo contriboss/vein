@@ -11,12 +11,17 @@ use crate::admin::mcp::{VeinMcp, uri_param};
 /// A version's sparse-index entry.
 #[derive(Serialize)]
 struct IndexDetails {
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
     yanked: bool,
     /// SHA-256 of the `.crate` file, as published.
     checksum: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     rust_version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     links: Option<String>,
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     features: BTreeMap<String, Vec<String>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     dependencies: Vec<IndexDependency>,
 }
 
@@ -51,10 +56,12 @@ impl VeinMcp {
     }
 }
 
-pub fn mount(router: McpResourceTemplateRouter<VeinMcp>) -> McpResourceTemplateRouter<VeinMcp> {
-    router.with_template(
-        VeinMcp::crate_version_template_info(),
+pub fn mount(
+    router: McpResourceTemplateRouter<VeinMcp>,
+) -> Result<McpResourceTemplateRouter<VeinMcp>, AppsError> {
+    Ok(router.with_template(
+        VeinMcp::crate_version_template_info()?,
         VeinMcp::crate_version_handler,
         None,
-    )
+    ))
 }

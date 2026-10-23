@@ -8,7 +8,11 @@ use tempfile::tempdir;
 use vein_adapter::{CacheBackendTrait, FilesystemStorage};
 
 fn make_request(headers: &[(&str, &str)]) -> Request<Body> {
-    let mut builder = Request::builder().method(Method::GET).uri("/lodash");
+    make_request_at("/lodash", headers)
+}
+
+fn make_request_at(path: &str, headers: &[(&str, &str)]) -> Request<Body> {
+    let mut builder = Request::builder().method(Method::GET).uri(path);
 
     for (name, value) in headers {
         builder = builder.header(*name, *value);
@@ -33,6 +37,41 @@ fn test_is_npm_request_with_npm_user_agent() {
 fn test_is_npm_request_with_vnd_accept() {
     let req = make_request(&[("accept", "application/vnd.npm.install-v1+json")]);
     assert!(is_npm_request(&req));
+}
+
+#[test]
+fn bun_is_recognized_on_metadata_and_tarball_requests() {
+    // bun 1.4.3, verbatim: a download carries no npm header at all.
+    const BUN_TARBALL: &[(&str, &str)] = &[("user-agent", "Bun/1.4.3"), ("accept", "*/*")];
+    // (path, headers, recognized as npm)
+    type Case = (&'static str, &'static [(&'static str, &'static str)], bool);
+    const CASES: &[Case] = &[
+        ("/is-odd/-/is-odd-3.0.1.tgz", BUN_TARBALL, true),
+        ("/@babel/core/-/core-7.26.0.tgz", &[("accept", "*/*")], true),
+        ("/is-odd", &[("user-agent", "Bun/1.4.3")], true),
+        (
+            "/is-odd",
+            &[("user-agent", "pnpm/9.15.0 npm/? node/v22.0.0 darwin arm64")],
+            true,
+        ),
+        // RubyGems and crates.io paths stay theirs.
+        ("/gems/rake-13.4.2.gem", &[("accept", "*/*")], false),
+        (
+            "/api/v1/crates/itoa/1.0.18/download",
+            &[("accept", "*/*")],
+            false,
+        ),
+        ("/-/x.tgz", &[], false),
+        ("/@/name/-/x.tgz", &[], false),
+        ("/is-odd/-/is-odd-3.0.1.tgz.sha", &[], false),
+    ];
+    for (path, headers, expected) in CASES {
+        assert_eq!(
+            is_npm_request(&make_request_at(path, headers)),
+            *expected,
+            "{path} {headers:?}"
+        );
+    }
 }
 
 #[test]
