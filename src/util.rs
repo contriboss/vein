@@ -8,6 +8,16 @@ pub async fn sleep_ms(ms: u64) {
     tokio::time::sleep(Duration::from_millis(ms)).await;
 }
 
+/// `a`, `a and b`, `a, b and c`, with `joint` for `and`.
+#[must_use]
+pub fn listed(parts: &[String], joint: &str) -> String {
+    match parts {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} {joint} {last}", rest.join(", ")),
+    }
+}
+
 /// Formats a byte count as a human-readable size (e.g. `1.50 MB`).
 #[must_use]
 pub fn format_bytes(bytes: u64) -> String {

@@ -8,11 +8,7 @@ use mcp_host::prelude::{CompletionValue, Server};
 use mcp_host::protocol::types::CompletionContext;
 use vein_adapter::AssetKind;
 
-use super::templates::{
-    CRATE, CRATE_API, CRATE_API_ITEM, CRATE_README, CRATE_SEARCH, CRATE_VERSION, CRATE_VERSIONS,
-    GEM, GEM_API, GEM_API_ITEM, GEM_README, GEM_SBOM, GEM_SEARCH, GEM_VERSION, GEM_VERSIONS,
-    NPM_API, NPM_API_ITEM, NPM_PACKAGE, NPM_README, NPM_SEARCH, NPM_VERSION, NPM_VERSIONS,
-};
+use super::templates;
 use crate::admin::state::AdminResources;
 
 const LIMIT: i64 = 100;
@@ -23,51 +19,12 @@ struct PackageArguments {
 }
 
 pub fn register(server: &Server, resources: &AdminResources) {
-    let ecosystems = [
-        (
-            AssetKind::Gem,
-            &[
-                GEM_SEARCH,
-                GEM,
-                GEM_VERSIONS,
-                GEM_VERSION,
-                GEM_SBOM,
-                GEM_README,
-                GEM_API,
-                GEM_API_ITEM,
-            ][..],
-        ),
-        (
-            AssetKind::Crate,
-            &[
-                CRATE_SEARCH,
-                CRATE,
-                CRATE_VERSIONS,
-                CRATE_VERSION,
-                CRATE_README,
-                CRATE_API,
-                CRATE_API_ITEM,
-            ][..],
-        ),
-        (
-            AssetKind::NpmPackage,
-            &[
-                NPM_SEARCH,
-                NPM_PACKAGE,
-                NPM_VERSIONS,
-                NPM_VERSION,
-                NPM_README,
-                NPM_API,
-                NPM_API_ITEM,
-            ][..],
-        ),
-    ];
-    for (kind, templates) in ecosystems {
+    for kind in crate::registry::served() {
         let provider: Arc<dyn CompletionProvider> = Arc::new(PackageArguments {
             resources: resources.clone(),
             kind,
         });
-        for template in templates {
+        for template in templates::of(kind) {
             server
                 .completion_manager()
                 .register_resource_provider(*template, Arc::clone(&provider));

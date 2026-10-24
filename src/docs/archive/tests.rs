@@ -1,9 +1,14 @@
 use super::*;
-use crate::test_support::{build_test_gem, tar_gz};
+#[cfg(feature = "gems")]
+use crate::test_support::build_test_gem;
+#[cfg(any(feature = "crates", feature = "npm"))]
+use crate::test_support::tar_gz;
 
 /// The opening of `state_machines` 0.202.0's real README.
+#[cfg(feature = "gems")]
 const STATE_MACHINES_README: &[u8] = b"![Build Status](https://github.com/state-machines/state_machines/actions/workflows/ruby.yml/badge.svg)\n\n# State Machines\n\nState Machines adds support for creating state machines for attributes on any Ruby class.\n";
 
+#[cfg(feature = "gems")]
 #[test]
 fn a_gem_readme_sits_at_the_root_of_its_data() {
     let gem = build_test_gem(
@@ -22,8 +27,10 @@ fn a_gem_readme_sits_at_the_root_of_its_data() {
 }
 
 /// An archive's files: path, contents.
+#[cfg(feature = "crates")]
 type Files<'a> = &'a [(&'a str, &'a [u8])];
 
+#[cfg(feature = "crates")]
 #[test]
 fn a_crate_readme_is_the_one_its_manifest_names() {
     let manifest = |readme: &str| {
@@ -72,6 +79,7 @@ fn a_crate_readme_is_the_one_its_manifest_names() {
     }
 }
 
+#[cfg(feature = "npm")]
 #[test]
 fn an_npm_readme_sits_under_the_package_directory() {
     let tarball = tar_gz(&[

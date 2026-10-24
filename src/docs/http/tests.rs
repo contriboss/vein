@@ -5,8 +5,14 @@ use vein_adapter::FilesystemStorage;
 
 use super::*;
 use crate::config::Config;
+#[cfg(feature = "gems")]
 use crate::docs::test_support::state_machines_gem;
-use crate::test_support::{build_test_gem, ok, spawn_route_server, tar_gz};
+#[cfg(feature = "gems")]
+use crate::test_support::build_test_gem;
+#[cfg(feature = "crates")]
+use crate::test_support::tar_gz;
+#[cfg(any(feature = "gems", feature = "crates"))]
+use crate::test_support::{ok, spawn_route_server};
 
 #[test]
 fn docs_paths_name_registry_package_version_and_what() {
@@ -18,15 +24,15 @@ fn docs_paths_name_registry_package_version_and_what() {
             })
         })
     };
-    let readme =
-        |kind, name: &str, version: &str| Some(Some((kind, name.into(), version.into(), None)));
+    // A registry built out is a docs path, refused.
+    let readme = |kind, name: &str, version: &str| {
+        Some(crate::registry::built(kind).then(|| (kind, name.into(), version.into(), None)))
+    };
     let api = |kind, name: &str, version: &str, at: Option<&str>| {
-        Some(Some((
-            kind,
-            name.into(),
-            version.into(),
-            Some(at.map(Into::into)),
-        )))
+        Some(
+            crate::registry::built(kind)
+                .then(|| (kind, name.into(), version.into(), Some(at.map(Into::into)))),
+        )
     };
     assert_eq!(
         parsed("/docs/gems/state_machines/0.202.0"),
@@ -106,6 +112,7 @@ async fn docs_behind(port: u16, mut config: Config) -> (Docs, tempfile::TempDir)
 }
 
 /// Not cached: the archive comes through the proxy, the README out of it.
+#[cfg(feature = "crates")]
 #[tokio::test]
 async fn a_readme_comes_out_of_the_archive_through_the_proxy() {
     // The real opening of state-machines 0.32.1's README; its Cargo.toml
@@ -148,6 +155,7 @@ async fn a_readme_comes_out_of_the_archive_through_the_proxy() {
 
 /// The API from docs.rs, fetched once: the second read is from vein's
 /// storage, which the fake docs.rs, answering only once, proves.
+#[cfg(feature = "crates")]
 #[tokio::test]
 async fn crate_api_docs_come_from_docs_rs_once() {
     let zst = ruzstd::encoding::compress_to_vec(
@@ -210,6 +218,7 @@ async fn crate_api_docs_come_from_docs_rs_once() {
 
 /// A gem's API out of the Ruby in its `.gem`, through the proxy; a method's
 /// page at its percent-encoded `#`.
+#[cfg(feature = "gems")]
 #[tokio::test]
 async fn gem_api_docs_come_from_its_ruby_source() {
     let bare = build_test_gem(
@@ -275,4 +284,25 @@ async fn gem_api_docs_come_from_its_ruby_source() {
             "no API docs for state_machines 0.0.1\n"
         )
     );
+}
+
+/// Docs of a registry built out: 404, saying why.
+#[tokio::test]
+async fn docs_of_a_registry_built_out_are_not_found() {
+    let (docs, _storage) = docs_behind(1, Config::default()).await;
+    for (kind, path) in [
+        (AssetKind::Gem, "/docs/gems/state_machines/0.202.0"),
+        (AssetKind::Crate, "/docs/crates/state-machines/0.32.1/api"),
+        (AssetKind::NpmPackage, "/docs/npm/left-pad/1.3.0"),
+    ] {
+        if crate::registry::built(kind) {
+            continue;
+        }
+        let (status, _, body) = get(&docs, path).await;
+        assert_eq!(
+            (status, body),
+            (StatusCode::NOT_FOUND, format!("{}\n", NotBuilt(kind))),
+            "{path}"
+        );
+    }
 }

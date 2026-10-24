@@ -1,5 +1,6 @@
 use super::*;
 
+#[cfg(any(feature = "crates", feature = "npm"))]
 use crate::test_support::{install_rustls_provider, raw_response, spawn_sequence_server};
 
 use crate::config::Config;
@@ -104,6 +105,7 @@ fn from_spec_path_rejects_invalid_format() {
     assert!(CacheableRequest::from_spec_path("invalid.gemspec.rz").is_none());
 }
 
+#[cfg(feature = "gems")]
 #[test]
 fn from_request_gem_path() {
     let result = CacheableRequest::from_request(&req("/gems/rack-3.0.0.gem")).unwrap();
@@ -112,6 +114,7 @@ fn from_request_gem_path() {
     assert_eq!(result.version, "3.0.0");
 }
 
+#[cfg(feature = "gems")]
 #[test]
 fn from_request_spec_path() {
     let result =
@@ -337,6 +340,7 @@ fn cacheable_request_relative_path_structure_spec() {
     );
 }
 
+#[cfg(feature = "npm")]
 #[tokio::test]
 async fn proxy_routes_npm_requests_by_header() {
     install_rustls_provider();
@@ -411,6 +415,7 @@ async fn proxy_does_not_treat_plain_requests_as_npm() {
     assert_eq!(body_bytes(response).await, b"not found in cache");
 }
 
+#[cfg(feature = "crates")]
 #[tokio::test]
 async fn proxy_routes_crates_index_requests_by_path() {
     install_rustls_provider();
@@ -498,18 +503,75 @@ async fn homepage_shows_setup_for_the_url_the_client_used() {
     let body = response.into_body().collect().await.unwrap().to_bytes();
     let html = String::from_utf8(body.to_vec()).unwrap();
 
-    for snippet in [
-        "bundle config set --global mirror.https://rubygems.org http://192.168.1.20:8080",
-        "BUNDLE_MIRROR__HTTPS://RUBYGEMS__ORG/=http://192.168.1.20:8080",
-        "registry = \"sparse+http://192.168.1.20:8080/index/\"",
-        "index = \"sparse+http://192.168.1.20:8080/index/\"",
-        "npm config set registry http://192.168.1.20:8080/",
-        "BUN_CONFIG_REGISTRY=http://192.168.1.20:8080/",
-    ] {
-        assert!(html.contains(snippet), "missing {snippet:?}");
+    // Each registry's setup, only when this build serves it.
+    let setups: [(AssetKind, &[&str]); 3] = [
+        (
+            AssetKind::Gem,
+            &[
+                "bundle config set --global mirror.https://rubygems.org http://192.168.1.20:8080",
+                "BUNDLE_MIRROR__HTTPS://RUBYGEMS__ORG/=http://192.168.1.20:8080",
+            ],
+        ),
+        (
+            AssetKind::Crate,
+            &[
+                "registry = \"sparse+http://192.168.1.20:8080/index/\"",
+                "index = \"sparse+http://192.168.1.20:8080/index/\"",
+            ],
+        ),
+        (
+            AssetKind::NpmPackage,
+            &[
+                "npm config set registry http://192.168.1.20:8080/",
+                "BUN_CONFIG_REGISTRY=http://192.168.1.20:8080/",
+            ],
+        ),
+    ];
+    for (kind, snippets) in setups {
+        for snippet in snippets {
+            assert_eq!(
+                html.contains(snippet),
+                crate::registry::built(kind),
+                "{snippet:?} shown iff {} is built in",
+                kind.as_str()
+            );
+        }
     }
     // The bind address is not what clients use; the path is escaped.
     assert!(!html.contains("127.0.0.1"), "{html}");
     assert!(html.contains("/srv/vein &lt;gems&gt;"));
     assert_eq!(cache.unwrap(), "no-cache, no-store, must-revalidate");
+}
+
+type Headers = &'static [(&'static str, &'static str)];
+
+/// A registry built out answers 404 and says so, rather than handing its
+/// requests to another registry's upstream.
+#[tokio::test]
+async fn registries_built_out_answer_404() {
+    let temp_dir = tempdir().unwrap();
+    let proxy = build_test_proxy(temp_dir.path()).await;
+    let requests: [(AssetKind, &str, Headers); 5] = [
+        (AssetKind::Gem, "/info/rack", &[]),
+        (AssetKind::Gem, "/api/v1/search.json?query=rack", &[]),
+        (AssetKind::Crate, "/index/se/rd/serde", &[]),
+        (AssetKind::Crate, "/api/v1/crates/itoa/1.0.18/download", &[]),
+        (
+            AssetKind::NpmPackage,
+            "/left-pad",
+            &[("npm-command", "install")],
+        ),
+    ];
+    for (kind, path, headers) in requests {
+        if crate::registry::built(kind) {
+            continue;
+        }
+        let response = proxy.serve(req_with_headers(path, headers)).await.unwrap();
+        assert_eq!(response.status().as_u16(), 404, "{path}");
+        assert_eq!(
+            String::from_utf8(body_bytes(response).await).unwrap(),
+            format!("{}\n", crate::registry::NotBuilt(kind)),
+            "{path}"
+        );
+    }
 }

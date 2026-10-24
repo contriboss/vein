@@ -72,10 +72,12 @@ pub struct CacheableRequest {
 }
 
 impl CacheableRequest {
+    /// The gem, spec or crate file `req` asks for, in a registry this build
+    /// serves.
     pub fn from_request(req: &Request<rama::http::Body>) -> Option<Self> {
         let path = req.uri().path_or_root();
         let path = path.as_ref();
-        if path.starts_with("/gems/") {
+        let cacheable = if path.starts_with("/gems/") {
             Self::from_gem_path(path.strip_prefix("/gems/")?)
         } else if path.starts_with("/quick/Marshal.4.8/") {
             Self::from_spec_path(path.strip_prefix("/quick/Marshal.4.8/")?)
@@ -83,7 +85,8 @@ impl CacheableRequest {
             Self::from_crate_download_path(path)
         } else {
             None
-        }
+        }?;
+        crate::registry::built(cacheable.kind).then_some(cacheable)
     }
 
     /// Parse crate download path: /api/v1/crates/{name}/{version}/download

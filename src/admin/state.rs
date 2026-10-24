@@ -12,6 +12,7 @@ use vein_adapter::{
     GemMetadata, IndexStats, PackageVersion, QuarantineStats, SbomCoverage, VersionStatus,
 };
 
+#[cfg(feature = "gems")]
 use crate::admin::ruby::RubyStatus;
 
 /// Main application state, passed to all handlers.
@@ -33,7 +34,9 @@ pub struct AdminResources {
     config: Arc<VeinConfig>,
     cache: Arc<CacheBackend>,
     storage: Arc<FilesystemStorage>,
-    ruby_status: Arc<RubyStatus>,
+    /// Ruby's release lifecycle, for the dashboard.
+    #[cfg(feature = "gems")]
+    ruby_status: Option<Arc<RubyStatus>>,
 }
 
 impl AdminResources {
@@ -42,13 +45,23 @@ impl AdminResources {
         config: Arc<VeinConfig>,
         cache: Arc<CacheBackend>,
         storage: Arc<FilesystemStorage>,
-        ruby_status: Arc<RubyStatus>,
     ) -> Self {
         Self {
             config,
             cache,
             storage,
-            ruby_status,
+            #[cfg(feature = "gems")]
+            ruby_status: None,
+        }
+    }
+
+    /// The same, showing `status` on the dashboard.
+    #[cfg(feature = "gems")]
+    #[must_use]
+    pub fn with_ruby_status(self, status: Arc<RubyStatus>) -> Self {
+        Self {
+            ruby_status: Some(status),
+            ..self
         }
     }
 
@@ -68,6 +81,7 @@ impl AdminResources {
             server_port: self.config.server.port,
             worker_count: self.config.server.workers as u64,
             catalog_total,
+            #[cfg(feature = "gems")]
             ruby_status: self.ruby_status.clone(),
             sbom: self.cache.sbom_coverage().await?,
         })
@@ -277,6 +291,7 @@ pub struct DashboardSnapshot {
     pub server_port: u16,
     pub worker_count: u64,
     pub catalog_total: u64,
-    pub ruby_status: Arc<RubyStatus>,
+    #[cfg(feature = "gems")]
+    pub ruby_status: Option<Arc<RubyStatus>>,
     pub sbom: SbomCoverage,
 }

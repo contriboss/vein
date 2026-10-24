@@ -8,8 +8,11 @@
 
 pub mod archive;
 pub mod http;
+#[cfg(feature = "gems")]
 pub mod rdoc;
+#[cfg(feature = "crates")]
 pub mod rustdoc;
+#[cfg(feature = "npm")]
 pub mod typings;
 
 use std::sync::Arc;
@@ -18,6 +21,7 @@ use anyhow::{Context, Result, bail};
 use vein_adapter::{AssetKey, AssetKind, CacheBackend, CacheBackendTrait, FilesystemStorage};
 
 use crate::config::Config;
+use crate::registry::{self, NotBuilt};
 use crate::{loopback, untrusted};
 
 /// Longest README kept, in characters, before `…(truncated)`.
@@ -39,6 +43,9 @@ impl Package {
     /// `name` `version` in registry `kind`, if both could be one: they go
     /// into proxy paths, so nothing that could leave one.
     pub fn new(kind: AssetKind, name: &str, version: &str) -> Result<Self> {
+        if !registry::built(kind) {
+            return Err(NotBuilt(kind).into());
+        }
         let segment = |part: &str| {
             !part.is_empty()
                 && !part.starts_with('.')
@@ -59,7 +66,7 @@ impl Package {
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '+'));
         if !name_ok {
-            bail!("`{name}` is not a {} name", registry_noun(kind));
+            bail!("`{name}` is not a {} name", registry::noun(kind));
         }
         if !version_ok {
             bail!("`{version}` is not a version");
@@ -168,6 +175,7 @@ impl Docs {
     }
 
     /// `[docs] docs_rs`, without a trailing `/`.
+    #[cfg(feature = "crates")]
     fn docs_rs(&self) -> &str {
         self.config.docs.docs_rs.trim_end_matches('/')
     }
@@ -176,13 +184,19 @@ impl Docs {
     /// or its outline. `Ok(None)`: no such public path.
     pub async fn api(&self, package: &Package, path: Option<&str>) -> Result<Option<Api>> {
         match package.kind {
+            #[cfg(feature = "crates")]
             AssetKind::Crate => self.crate_api(package, path).await,
+            #[cfg(feature = "npm")]
             AssetKind::NpmPackage => self.npm_api(package, path).await,
+            #[cfg(feature = "gems")]
             AssetKind::Gem | AssetKind::Spec => self.gem_api(package, path).await,
+            #[allow(unreachable_patterns)]
+            kind => Err(NotBuilt(kind).into()),
         }
     }
 
     /// A gem's API from its Ruby source, with the `RDoc` comments in it.
+    #[cfg(feature = "gems")]
     async fn gem_api(&self, package: &Package, path: Option<&str>) -> Result<Option<Api>> {
         let Some(gem) = self.archive(package).await? else {
             return Err(NotPublished(package.label()).into());
@@ -201,6 +215,7 @@ impl Docs {
         Ok(page(rendered, "the gem's Ruby source"))
     }
 
+    #[cfg(feature = "crates")]
     async fn crate_api(&self, package: &Package, path: Option<&str>) -> Result<Option<Api>> {
         let zst = self.rustdoc_json(package).await?;
         let path = path.map(str::to_owned);
@@ -214,6 +229,7 @@ impl Docs {
 
     /// An npm package's TypeScript declarations: its own `.d.ts` files, else
     /// `DefinitelyTyped`'s `@types/` package (the newest of the same major).
+    #[cfg(feature = "npm")]
     async fn npm_api(&self, package: &Package, file: Option<&str>) -> Result<Option<Api>> {
         let own = self.typings(package).await?;
         if !own.files.is_empty() {
@@ -241,6 +257,7 @@ impl Docs {
         ))
     }
 
+    #[cfg(feature = "npm")]
     async fn typings(&self, package: &Package) -> Result<typings::Typings> {
         let Some(archive) = self.archive(package).await? else {
             return Err(NotPublished(package.label()).into());
@@ -252,6 +269,7 @@ impl Docs {
 
     /// The `@types/` version for `version` of the typed package: the newest
     /// release of the same major, else its latest. `None` without one.
+    #[cfg(feature = "npm")]
     async fn types_version(&self, types_name: &str, version: &str) -> Result<Option<String>> {
         let path = format!("/{}", types_name.replace('/', "%2f"));
         let Some((_, body)) = loopback::get(&self.config.server, &path, true).await? else {
@@ -282,6 +300,7 @@ impl Docs {
 
     /// docs.rs's rustdoc JSON for `package`, zstd-compressed: cached in
     /// vein's storage after the first fetch.
+    #[cfg(feature = "crates")]
     async fn rustdoc_json(&self, package: &Package) -> Result<Vec<u8>> {
         use rama::Layer as _;
         use rama::http::{
@@ -341,9 +360,14 @@ impl Docs {
         };
         let kind = package.kind;
         let found = tokio::task::spawn_blocking(move || match kind {
+            #[cfg(feature = "gems")]
             AssetKind::Gem | AssetKind::Spec => archive::gem_readme(&archive),
+            #[cfg(feature = "crates")]
             AssetKind::Crate => archive::crate_readme(&archive),
+            #[cfg(feature = "npm")]
             AssetKind::NpmPackage => archive::npm_readme(&archive),
+            #[allow(unreachable_patterns)]
+            kind => Err(NotBuilt(kind).into()),
         })
         .await
         .context("reading the archive")??;
@@ -401,14 +425,6 @@ fn cut(text: &str, limit: usize) -> String {
     let mut cut: String = text.chars().take(limit).collect();
     cut.push_str("…(truncated)");
     cut
-}
-
-const fn registry_noun(kind: AssetKind) -> &'static str {
-    match kind {
-        AssetKind::Gem | AssetKind::Spec => "gem",
-        AssetKind::Crate => "crate",
-        AssetKind::NpmPackage => "npm package",
-    }
 }
 
 #[cfg(test)]

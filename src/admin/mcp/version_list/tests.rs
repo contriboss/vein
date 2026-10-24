@@ -1,4 +1,5 @@
 use super::*;
+use vein_adapter::is_semver_prerelease;
 
 /// npm's `typescript`, abridged: nightlies newer than every release.
 const TYPESCRIPT: &[&str] = &[

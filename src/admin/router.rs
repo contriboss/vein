@@ -23,11 +23,6 @@ pub fn build(state: AdminState, mcp: Option<McpHttpService>) -> Router<AdminStat
         .with_get("/stats/stream", controllers::dashboard::stats_stream)
         // Datastar assets (direct from rama - no bridge!)
         .with_get("/assets/datastar.js", DatastarScript::default())
-        // Catalog
-        .with_get("/catalog", controllers::catalog::list)
-        .with_get("/catalog/search", controllers::catalog::search)
-        .with_get("/catalog/{name}", controllers::catalog::detail)
-        .with_get("/catalog/{name}/sbom", controllers::catalog::sbom)
         // Quarantine
         .with_get("/quarantine", controllers::quarantine::index)
         .with_get("/quarantine/api/stats", controllers::quarantine::api_stats)
@@ -40,6 +35,14 @@ pub fn build(state: AdminState, mcp: Option<McpHttpService>) -> Router<AdminStat
         // Health
         .with_get("/up", controllers::health::up)
         .with_get("/debug", controllers::health::debug);
+
+    // The gem catalogue: rubygems.org's names, and the gems cached here.
+    #[cfg(feature = "gems")]
+    let router = router
+        .with_get("/catalog", controllers::catalog::list)
+        .with_get("/catalog/search", controllers::catalog::search)
+        .with_get("/catalog/{name}", controllers::catalog::detail)
+        .with_get("/catalog/{name}/sbom", controllers::catalog::sbom);
 
     match mcp {
         Some(mcp) => router.with_endpoint_service("/mcp", mcp),

@@ -4,8 +4,11 @@
 //! endpoint. Which ones is `[catalog] registries`; [`crate::jobs`] runs the
 //! syncs every 6 hours.
 
+#[cfg(feature = "crates")]
 mod crates;
+#[cfg(feature = "gems")]
 mod gems;
+#[cfg(feature = "npm")]
 mod npm;
 
 use std::time::Duration;
@@ -23,8 +26,10 @@ use rama::{
 use vein_adapter::{AssetKind, CacheBackend};
 
 /// crates.io's crawler policy: one request a second.
+#[cfg(feature = "crates")]
 const CRATES_PACE: Duration = Duration::from_secs(1);
 /// npm's replica states no limit; vein keeps a polite gap anyway.
+#[cfg(feature = "npm")]
 const NPM_PACE: Duration = Duration::from_millis(250);
 
 /// crates.io asks crawlers to say who they are and where to read about them.
@@ -39,13 +44,18 @@ const USER_AGENT: &str = concat!(
 pub async fn sync_once(index: &CacheBackend, kind: AssetKind) -> Result<Option<usize>> {
     let client = build_client();
     match kind {
+        #[cfg(feature = "gems")]
         AssetKind::Gem | AssetKind::Spec => gems::sync(index, &client).await,
+        #[cfg(feature = "crates")]
         AssetKind::Crate => crates::sync(index, &client, crates::API, CRATES_PACE)
             .await
             .map(Some),
+        #[cfg(feature = "npm")]
         AssetKind::NpmPackage => npm::sync(index, &client, npm::REPLICATE, NPM_PACE)
             .await
             .map(Some),
+        #[allow(unreachable_patterns)]
+        kind => Err(crate::registry::NotBuilt(kind).into()),
     }
 }
 

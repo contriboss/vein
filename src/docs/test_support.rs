@@ -1,9 +1,11 @@
 //! Fixtures for the docs' tests.
 
+#[cfg(feature = "crates")]
 use serde_json::{Value, json};
 
 /// rustdoc JSON (format 61) shaped like docs.rs's for `state-machines`
 /// 0.32.1, cut down to one module, one type, one trait and one function.
+#[cfg(feature = "crates")]
 pub fn state_machines() -> Value {
     json!({
         "format_version": 61,
@@ -48,6 +50,7 @@ pub fn state_machines() -> Value {
 
 /// Ruby files of the `state_machines` 0.202.0 gem, cut down from its real
 /// `lib/`: path, source.
+#[cfg(feature = "gems")]
 pub const STATE_MACHINES_GEM_LIB: &[(&str, &str)] = &[
     (
         "lib/state_machines.rb",
@@ -225,6 +228,7 @@ end
 ];
 
 /// A `.gem` of `state_machines` 0.202.0 holding [`STATE_MACHINES_GEM_LIB`].
+#[cfg(feature = "gems")]
 pub fn state_machines_gem() -> Vec<u8> {
     let lib: Vec<(&str, &[u8])> = STATE_MACHINES_GEM_LIB
         .iter()

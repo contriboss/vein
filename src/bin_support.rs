@@ -1,5 +1,6 @@
 mod catalog;
 mod cli;
+#[cfg(feature = "gems")]
 mod gem;
 mod health;
 mod init;
@@ -11,7 +12,9 @@ mod stats;
 use anyhow::Result;
 use vein_adapter::AssetKey;
 
-use self::cli::{CatalogCommand, Command, GemCommand, QuarantineCommand};
+#[cfg(feature = "gems")]
+use self::cli::GemCommand;
+use self::cli::{CatalogCommand, Command, QuarantineCommand};
 
 pub use self::cli::Cli;
 
@@ -24,6 +27,7 @@ pub fn run(cli: Cli) -> Result<()> {
                 catalog::run_catalog_sync(config, registry)
             }
         },
+        #[cfg(feature = "gems")]
         Command::Gem { action } => match action {
             GemCommand::Sync {
                 config,
@@ -56,7 +60,7 @@ pub fn run(cli: Cli) -> Result<()> {
             } => quarantine::run_quarantine_approve(
                 config,
                 &AssetKey {
-                    kind: registry,
+                    kind: vein::registry::require(registry)?,
                     name: &name,
                     version: &version,
                     platform: platform.as_deref(),
@@ -73,7 +77,7 @@ pub fn run(cli: Cli) -> Result<()> {
             } => quarantine::run_quarantine_block(
                 config,
                 &AssetKey {
-                    kind: registry,
+                    kind: vein::registry::require(registry)?,
                     name: &name,
                     version: &version,
                     platform: platform.as_deref(),

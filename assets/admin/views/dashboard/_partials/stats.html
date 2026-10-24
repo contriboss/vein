@@ -2,26 +2,32 @@
   <article class="card">
     <h2>Total Assets</h2>
     <div class="metric">{{ total_assets }}</div>
-    <p class="detail">Tracked package artifacts across RubyGems, crates.io, and npm.</p>
+    <p class="detail">Tracked package artifacts{% if serves.gems %} · RubyGems{% endif %}{% if serves.crates %} · crates.io{% endif %}{% if serves.npm %} · npm{% endif %}.</p>
   </article>
 
+  {% if serves.gems %}
   <article class="card">
     <h2>RubyGems Assets</h2>
     <div class="metric">{{ rubygems_assets }}</div>
     <p class="detail">Gem files and gemspecs tracked in the cache index.</p>
   </article>
+  {% endif %}
 
+  {% if serves.crates %}
   <article class="card">
     <h2>crates.io Assets</h2>
     <div class="metric">{{ crate_assets }}</div>
     <p class="detail">Cached <code>.crate</code> archives tracked in the cache index.</p>
   </article>
+  {% endif %}
 
+  {% if serves.npm %}
   <article class="card">
     <h2>npm Assets</h2>
     <div class="metric">{{ npm_assets }}</div>
     <p class="detail">Cached npm tarballs tracked in the cache index.</p>
   </article>
+  {% endif %}
 
   <article class="card">
     <h2>Unique Packages</h2>
@@ -35,6 +41,7 @@
     <p class="detail">Approximate disk usage of cached assets.</p>
   </article>
 
+  {% if serves.gems %}
   <article class="card">
     <h2>Catalogue Size</h2>
     <div class="metric">{{ catalog_total }}</div>
@@ -46,12 +53,15 @@
     <div class="metric">{{ sbom_metric }}</div>
     <p class="detail">{{ sbom_detail }}</p>
   </article>
+  {% endif %}
 
+  {% if ruby %}
   <article class="card">
     <h2>Ruby Lifecycle</h2>
-    <p><strong>Latest:</strong> {{ ruby_latest }}</p>
-    <p><strong>Security maintenance:</strong> {{ ruby_security }}</p>
-    <p><strong>Recent EOL:</strong> {{ ruby_eol }}</p>
-    <p class="detail">Fetched {{ ruby_updated }}</p>
+    <p><strong>Latest:</strong> {{ ruby.latest }}</p>
+    <p><strong>Security maintenance:</strong> {{ ruby.security }}</p>
+    <p><strong>Recent EOL:</strong> {{ ruby.eol }}</p>
+    <p class="detail">Fetched {{ ruby.updated }}</p>
   </article>
+  {% endif %}
 </section>

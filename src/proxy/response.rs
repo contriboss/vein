@@ -1,5 +1,9 @@
+use std::fmt::Write as _;
+
 use anyhow::Result;
 use rama::http::{Body, HeaderMap, Response, StatusCode, header};
+
+use vein_adapter::AssetKind;
 
 use crate::config::Config;
 
@@ -42,6 +46,7 @@ pub fn respond_json(status: StatusCode, body: &str) -> Result<Response<Body>> {
 }
 
 /// Responds with JSON content as a downloadable attachment
+#[cfg(feature = "gems")]
 pub fn respond_json_download(body: &str, filename: &str) -> Result<Response<Body>> {
     json_response(StatusCode::OK, body, |headers| {
         headers.insert(
@@ -71,7 +76,12 @@ pub fn respond_text(status: StatusCode, body: &str) -> Result<Response<Body>> {
 /// Bundler's mirror variable needs its trailing slash.
 pub fn respond_homepage(config: &Config, base: &str) -> Result<Response<Body>> {
     let storage_root = escape_html(&config.storage.path.display().to_string());
-    let body = format!(
+    let served: Vec<String> = crate::registry::served()
+        .into_iter()
+        .map(|kind| crate::registry::name(kind).to_owned())
+        .collect();
+    let served = crate::util::listed(&served, "and");
+    let mut body = format!(
         r#"<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -124,12 +134,19 @@ pub fn respond_homepage(config: &Config, base: &str) -> Result<Response<Body>> {
     <main>
       <h1>Vein is online</h1>
       <p>
-        This node serves RubyGems, crates.io and npm from <code>{base}</code>.
+        This node serves {served} from <code>{base}</code>.
         Point a client at it once: after the first fetch, artifacts come from
         local storage under <code>{storage_root}</code>.
       </p>
 
-      <h2>Bundler</h2>
+"#
+    );
+    let mut ci_env = String::new();
+    let mut ci_steps = String::new();
+    if crate::registry::built(AssetKind::Gem) {
+        write!(
+            body,
+            r#"      <h2>Bundler</h2>
       <p>Mirror rubygems.org for every project, Gemfiles unchanged:</p>
       <pre>bundle config set --global mirror.https://rubygems.org {base}</pre>
       <p>
@@ -142,7 +159,19 @@ pub fn respond_homepage(config: &Config, base: &str) -> Result<Response<Body>> {
       <h2>RubyGems</h2>
       <pre>gem install rake --clear-sources --source {base}</pre>
 
-      <h2>Cargo</h2>
+"#
+        )
+        .expect("writing to a String never fails");
+        writeln!(
+            ci_steps,
+            "  - run: bundle config set --global mirror.https://rubygems.org {base}"
+        )
+        .expect("writing to a String never fails");
+    }
+    if crate::registry::built(AssetKind::Crate) {
+        write!(
+            body,
+            r#"      <h2>Cargo</h2>
       <p>In <code>~/.cargo/config.toml</code>, or a project's <code>.cargo/config.toml</code>:</p>
       <pre>[source.crates-io]
 replace-with = "vein"
@@ -161,7 +190,21 @@ index = "sparse+{base}/index/"</pre>
       <pre>cargo --config 'source.crates-io.replace-with="vein"' \
       --config 'source.vein.registry="sparse+{base}/index/"' build</pre>
 
-      <h2>npm</h2>
+"#
+        )
+        .expect("writing to a String never fails");
+        write!(
+            ci_steps,
+            "  - run: |\n      mkdir -p ~/.cargo\n      cat >> ~/.cargo/config.toml &lt;&lt;'EOF'\n      \
+             [source.crates-io]\n      replace-with = \"vein\"\n      [source.vein]\n      \
+             registry = \"sparse+{base}/index/\"\n      EOF\n"
+        )
+        .expect("writing to a String never fails");
+    }
+    if crate::registry::built(AssetKind::NpmPackage) {
+        write!(
+            body,
+            r#"      <h2>npm</h2>
       <pre>npm config set registry {base}/</pre>
       <p>Or for one command: <code>NPM_CONFIG_REGISTRY={base}/ npm install</code>.</p>
 
@@ -171,26 +214,31 @@ index = "sparse+{base}/index/"</pre>
 registry = "{base}/"</pre>
       <p>Or for one command: <code>BUN_CONFIG_REGISTRY={base}/ bun install</code>.</p>
 
-      <h2>CI runners</h2>
+"#
+        )
+        .expect("writing to a String never fails");
+        write!(
+            ci_env,
+            "env:\n  NPM_CONFIG_REGISTRY: {base}/\n  BUN_CONFIG_REGISTRY: {base}/\n"
+        )
+        .expect("writing to a String never fails");
+    }
+    let steps = if ci_steps.is_empty() {
+        String::new()
+    } else {
+        format!("steps:\n{ci_steps}")
+    };
+    write!(
+        body,
+        r"      <h2>CI runners</h2>
       <p>GitHub or Forgejo Actions, before the install steps:</p>
-      <pre>env:
-  NPM_CONFIG_REGISTRY: {base}/
-  BUN_CONFIG_REGISTRY: {base}/
-steps:
-  - run: bundle config set --global mirror.https://rubygems.org {base}
-  - run: |
-      mkdir -p ~/.cargo
-      cat >> ~/.cargo/config.toml &lt;&lt;'EOF'
-      [source.crates-io]
-      replace-with = "vein"
-      [source.vein]
-      registry = "sparse+{base}/index/"
-      EOF</pre>
+      <pre>{ci_env}{steps}</pre>
     </main>
   </body>
 </html>
-"#
-    );
+"
+    )
+    .expect("writing to a String never fails");
 
     // Rendered from the request's Host: never let a shared cache keep it.
     Response::builder()

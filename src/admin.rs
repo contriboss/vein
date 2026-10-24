@@ -5,6 +5,7 @@ pub mod app;
 mod controllers;
 pub mod mcp;
 mod router;
+#[cfg(feature = "gems")]
 pub mod ruby;
 pub mod state;
 pub mod trust;

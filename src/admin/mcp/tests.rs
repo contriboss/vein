@@ -7,10 +7,10 @@ use serde_json::{Value, json};
 use tempfile::TempDir;
 use vein_adapter::{
     AssetKey, AssetKind, CacheBackendTrait, DependencyKind, FilesystemStorage, GemDependency,
+    GemMetadata,
 };
 
 use super::*;
-use crate::admin::ruby::RubyStatus;
 
 #[test]
 fn loopback_binds_serve_without_a_token() {
@@ -136,7 +136,7 @@ async fn fake_proxy() -> (u16, Arc<Mutex<Vec<String>>>) {
             body.to_string().as_bytes(),
         )
     };
-    crate::test_support::spawn_route_server(vec![
+    let routes: Vec<(String, Vec<u8>)> = vec![
         ("/info/rails".into(), ok(RAILS_INFO)),
         ("/index/an/yh/anyhow".into(), ok(ANYHOW_INDEX)),
         (
@@ -180,18 +180,6 @@ async fn fake_proxy() -> (u16, Arc<Mutex<Vec<String>>>) {
             ])),
         ),
         (
-            "/gems/state_machines-0.202.0.gem".into(),
-            ok(crate::docs::test_support::state_machines_gem()),
-        ),
-        (
-            // MOCKED: docs.rs too, with state-machines 0.32.1's rustdoc JSON.
-            "/crate/state-machines/0.32.1/json".into(),
-            ok(ruzstd::encoding::compress_to_vec(
-                crate::docs::test_support::state_machines().to_string().as_bytes(),
-                ruzstd::encoding::CompressionLevel::Fastest,
-            )),
-        ),
-        (
             // rubygems.org's real top five for `rack`.
             "/api/v1/search.json?query=rack".into(),
             searched(
@@ -211,8 +199,30 @@ async fn fake_proxy() -> (u16, Arc<Mutex<Vec<String>>>) {
             "/-/v1/search?text=types&size=50".into(),
             searched("cached", json!({"objects": [{"package": {"name": "@types/node"}}]})),
         ),
-    ])
-    .await
+    ];
+    // Fixtures of what only a registry built in reads.
+    let gem = cfg_select! {
+        feature = "gems" => Some((
+            "/gems/state_machines-0.202.0.gem".to_owned(),
+            ok(crate::docs::test_support::state_machines_gem()),
+        )),
+        _ => None,
+    };
+    // MOCKED: docs.rs too, with state-machines 0.32.1's rustdoc JSON.
+    let rustdoc = cfg_select! {
+        feature = "crates" => Some((
+            "/crate/state-machines/0.32.1/json".to_owned(),
+            ok(ruzstd::encoding::compress_to_vec(
+                crate::docs::test_support::state_machines()
+                    .to_string()
+                    .as_bytes(),
+                ruzstd::encoding::CompressionLevel::Fastest,
+            )),
+        )),
+        _ => None,
+    };
+    crate::test_support::spawn_route_server(routes.into_iter().chain(gem).chain(rustdoc).collect())
+        .await
 }
 
 const TYPES_NODE_PACKUMENT: &str = r#"{
@@ -343,7 +353,6 @@ async fn seeded_resources(storage: &TempDir, proxy_port: u16) -> AdminResources 
         Arc::new(config),
         Arc::new(cache),
         Arc::new(FilesystemStorage::new(storage.path().to_path_buf())),
-        Arc::new(RubyStatus::default()),
     )
 }
 
@@ -556,35 +565,17 @@ async fn advertises_resources_and_no_tools() {
         .map(|template| template["uriTemplate"].as_str().unwrap())
         .collect();
     listed.sort_unstable();
-    // The completion registrations key on these constants; keep them in sync.
-    let mut expected = [
-        templates::GEM_SEARCH,
-        templates::GEM,
-        templates::GEM_VERSIONS,
-        templates::GEM_VERSION,
-        templates::GEM_SBOM,
-        templates::GEM_README,
-        templates::GEM_API,
-        templates::GEM_API_ITEM,
-        templates::CRATE_SEARCH,
-        templates::CRATE,
-        templates::CRATE_VERSIONS,
-        templates::CRATE_VERSION,
-        templates::CRATE_README,
-        templates::CRATE_API,
-        templates::CRATE_API_ITEM,
-        templates::NPM_SEARCH,
-        templates::NPM_PACKAGE,
-        templates::NPM_VERSIONS,
-        templates::NPM_VERSION,
-        templates::NPM_README,
-        templates::NPM_API,
-        templates::NPM_API_ITEM,
-    ];
+    // The completion registrations key on these lists; keep them in sync.
+    let mut expected: Vec<&str> = crate::registry::served()
+        .into_iter()
+        .flat_map(templates::of)
+        .copied()
+        .collect();
     expected.sort_unstable();
     assert_eq!(listed, expected);
 }
 
+#[cfg(feature = "gems")]
 #[tokio::test]
 async fn gems_are_readable_as_resources() {
     let (service, _storage, seen) = open_logged().await;
@@ -661,6 +652,7 @@ async fn gems_are_readable_as_resources() {
     assert_eq!(quarantine["enabled"], false);
 }
 
+#[cfg(feature = "gems")]
 #[tokio::test]
 async fn missing_versions_and_platforms_are_not_found() {
     let (service, _storage) = open().await;
@@ -688,6 +680,7 @@ async fn missing_versions_and_platforms_are_not_found() {
 
 /// Claude Code before 2.93 hides JSON-RPC errors from the model, so read
 /// failures (other than "not found") are answered as text for it alone.
+#[cfg(feature = "crates")]
 #[tokio::test]
 async fn read_errors_carry_the_reason() {
     // 65 characters: well-formed URI, but over the crates.io name limit.
@@ -699,6 +692,7 @@ async fn read_errors_carry_the_reason() {
     assert!(message.contains("not a crate name"), "{frame}");
 }
 
+#[cfg(feature = "gems")]
 #[tokio::test]
 async fn completes_gem_names_and_cached_versions() {
     let (service, _storage) = open().await;
@@ -724,6 +718,7 @@ async fn completes_gem_names_and_cached_versions() {
     );
 }
 
+#[cfg(feature = "crates")]
 #[tokio::test]
 async fn crates_are_readable_as_resources() {
     let (service, _storage) = open().await;
@@ -789,6 +784,7 @@ async fn crates_are_readable_as_resources() {
     );
 }
 
+#[cfg(feature = "npm")]
 #[tokio::test]
 async fn npm_packages_are_readable_as_resources() {
     let (service, _storage) = open().await;
@@ -854,28 +850,7 @@ async fn npm_packages_are_readable_as_resources() {
 async fn packages_nobody_fetched_are_looked_up_through_the_proxy() {
     let (service, _storage, seen) = open_logged().await;
     let session = Session::open(&service).await;
-
-    let (_, rails) = session.read("vein://gems/rails").await;
-    assert_eq!(rails["latest"], "8.1.4");
-    assert_eq!(rails["versions"], json!(["8.1.4", "8.0.5.1", "7.2.4"]));
-    assert_eq!(rails["total_versions"], 4, "and 8.1.0.rc1");
-    for absent in ["prerelease", "cached", "author_supplied", "not_in_catalog"] {
-        assert_eq!(rails.get(absent), None, "{absent}");
-    }
-
-    let (_, anyhow) = session.read("vein://crates/anyhow").await;
-    assert_eq!(anyhow["latest"], "1.0.104", "not the prerelease");
-    assert_eq!(anyhow["prerelease"], "2.0.0-rc.1");
-    assert_eq!(anyhow["versions"], json!(["1.0.104", "1.0.103"]));
-    assert_eq!(anyhow.get("cached"), None);
-    let (_, all) = session.read("vein://gems/rails/versions").await;
-    assert_eq!(all["prereleases"], json!(["8.1.0.rc1"]));
-
-    for uri in [
-        "vein://gems/no-such-gem",
-        "vein://npm/left-pad",
-        "vein://crates/tokio/versions",
-    ] {
+    let not_published = async |uri: &str| {
         let frame = session.rpc("resources/read", json!({"uri": uri})).await;
         assert!(
             frame["error"]["message"]
@@ -883,33 +858,73 @@ async fn packages_nobody_fetched_are_looked_up_through_the_proxy() {
                 .contains("is not published"),
             "{frame}"
         );
-    }
-    let frame = session
-        .rpc("resources/read", json!({"uri": "vein://gems/..%2fsecrets"}))
-        .await;
-    assert!(frame.get("error").is_some(), "{frame}");
+    };
+    #[cfg(any(feature = "gems", feature = "crates"))]
+    let asked = |line: &str| {
+        let seen = seen.lock().unwrap();
+        assert!(
+            seen.iter().any(|request| request.starts_with(line)),
+            "{line} in {seen:?}"
+        );
+    };
 
-    let seen = seen.lock().unwrap();
-    let asked = |line: &str| seen.iter().any(|request| request.starts_with(line));
-    assert!(asked("get /info/rails "), "{seen:?}");
-    assert!(asked("get /index/an/yh/anyhow "), "{seen:?}");
-    assert!(asked("get /info/no-such-gem "), "{seen:?}");
-    let npm = seen
-        .iter()
-        .find(|request| request.starts_with("get /left-pad "))
-        .expect("asked for left-pad");
-    assert!(
-        npm.contains("npm-command: view"),
-        "asked as npm, not as a gem: {npm}"
-    );
-    assert!(
-        !seen.iter().any(|request| request.contains("secrets")),
-        "{seen:?}"
-    );
+    #[cfg(feature = "gems")]
+    {
+        let (_, rails) = session.read("vein://gems/rails").await;
+        assert_eq!(rails["latest"], "8.1.4");
+        assert_eq!(rails["versions"], json!(["8.1.4", "8.0.5.1", "7.2.4"]));
+        assert_eq!(rails["total_versions"], 4, "and 8.1.0.rc1");
+        for absent in ["prerelease", "cached", "author_supplied", "not_in_catalog"] {
+            assert_eq!(rails.get(absent), None, "{absent}");
+        }
+        let (_, all) = session.read("vein://gems/rails/versions").await;
+        assert_eq!(all["prereleases"], json!(["8.1.0.rc1"]));
+        not_published("vein://gems/no-such-gem").await;
+        let frame = session
+            .rpc("resources/read", json!({"uri": "vein://gems/..%2fsecrets"}))
+            .await;
+        assert!(frame.get("error").is_some(), "{frame}");
+        asked("get /info/rails ");
+        asked("get /info/no-such-gem ");
+        assert!(
+            !seen
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|request| request.contains("secrets")),
+            "{seen:?}"
+        );
+    }
+
+    #[cfg(feature = "crates")]
+    {
+        let (_, anyhow) = session.read("vein://crates/anyhow").await;
+        assert_eq!(anyhow["latest"], "1.0.104", "not the prerelease");
+        assert_eq!(anyhow["prerelease"], "2.0.0-rc.1");
+        assert_eq!(anyhow["versions"], json!(["1.0.104", "1.0.103"]));
+        assert_eq!(anyhow.get("cached"), None);
+        not_published("vein://crates/tokio/versions").await;
+        asked("get /index/an/yh/anyhow ");
+    }
+
+    #[cfg(feature = "npm")]
+    {
+        not_published("vein://npm/left-pad").await;
+        let seen = seen.lock().unwrap();
+        let npm = seen
+            .iter()
+            .find(|request| request.starts_with("get /left-pad "))
+            .expect("asked for left-pad");
+        assert!(
+            npm.contains("npm-command: view"),
+            "asked as npm, not as a gem: {npm}"
+        );
+    }
 }
 
 /// A version's README, out of its own archive (here fetched through the
 /// proxy), under `author_supplied` and cleaned like the rest.
+#[cfg(feature = "crates")]
 #[tokio::test]
 async fn readmes_come_from_the_version_archive() {
     let (service, _storage) = open().await;
@@ -940,6 +955,7 @@ async fn readmes_come_from_the_version_archive() {
 }
 
 /// A crate's API from docs.rs: the outline, then one item by path.
+#[cfg(feature = "crates")]
 #[tokio::test]
 async fn crate_apis_come_from_docs_rs() {
     let (service, _storage) = open().await;
@@ -976,6 +992,7 @@ async fn crate_apis_come_from_docs_rs() {
 
 /// A gem's API from the Ruby in its `.gem`: the outline, a class, and a
 /// method by its `RDoc` name, `#` and `?` as they are.
+#[cfg(feature = "gems")]
 #[tokio::test]
 async fn gem_apis_come_from_their_ruby_source() {
     let (service, _storage) = open().await;
@@ -1015,6 +1032,7 @@ async fn gem_apis_come_from_their_ruby_source() {
 
 /// An npm package's API: its own declarations, else `DefinitelyTyped`'s of
 /// the same major version.
+#[cfg(feature = "npm")]
 #[tokio::test]
 async fn npm_apis_are_typescript_declarations() {
     let (service, _storage) = open().await;
@@ -1052,30 +1070,37 @@ async fn npm_apis_are_typescript_declarations() {
     );
 }
 
+#[cfg(any(feature = "crates", feature = "npm"))]
 #[tokio::test]
 async fn completes_crate_and_npm_arguments_from_the_cache() {
     let (service, _storage) = open().await;
     let session = Session::open(&service).await;
 
-    let names = session
-        .complete(templates::CRATE, "name", "se", json!({}))
-        .await;
-    assert_eq!(names, json!(["serde"]));
+    #[cfg(feature = "crates")]
+    {
+        let names = session
+            .complete(templates::CRATE, "name", "se", json!({}))
+            .await;
+        assert_eq!(names, json!(["serde"]));
 
-    let versions = session
-        .complete(
-            templates::CRATE_VERSION,
-            "version",
-            "",
-            json!({"name": "serde"}),
-        )
-        .await;
-    assert_eq!(versions, json!(["1.0.228", "1.0.99"]));
+        let versions = session
+            .complete(
+                templates::CRATE_VERSION,
+                "version",
+                "",
+                json!({"name": "serde"}),
+            )
+            .await;
+        assert_eq!(versions, json!(["1.0.228", "1.0.99"]));
+    }
 
-    let names = session
-        .complete(templates::NPM_PACKAGE, "name", "@types", json!({}))
-        .await;
-    assert_eq!(names, json!(["@types/node"]));
+    #[cfg(feature = "npm")]
+    {
+        let names = session
+            .complete(templates::NPM_PACKAGE, "name", "@types", json!({}))
+            .await;
+        assert_eq!(names, json!(["@types/node"]));
+    }
 }
 
 /// What a publisher writes reaches the agent only under `author_supplied`,
@@ -1084,46 +1109,53 @@ async fn completes_crate_and_npm_arguments_from_the_cache() {
 async fn author_text_cannot_hide_or_pose_as_instructions() {
     let (service, _storage) = open().await;
     let session = Session::open(&service).await;
+    #[cfg(feature = "gems")]
     let invisible = |text: &str| {
         text.chars().any(|c| {
             matches!(c, '\u{E0000}'..='\u{E007F}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}')
         })
     };
 
-    let (_, gem) = session.read("vein://gems/evil-gem/versions/6.6.6").await;
-    let text = &gem["author_supplied"];
-    assert_eq!(text["summary"], "Fast JSON", "smuggled tags are gone");
-    let description = text["description"].as_str().unwrap();
-    assert!(description.ends_with("…(truncated)"), "{description}");
-    assert!(description.chars().count() <= 2_000 + "…(truncated)".chars().count());
-    assert_eq!(
-        text["authors"],
-        json!(["Mallory nimda"]),
-        "no bidi override"
-    );
-    assert_eq!(text.get("homepage"), None, "javascript: is not a link");
-    for field in ["summary", "description"] {
-        assert_eq!(gem.get(field), None, "{field} only appears as author text");
+    #[cfg(feature = "gems")]
+    {
+        let (_, gem) = session.read("vein://gems/evil-gem/versions/6.6.6").await;
+        let text = &gem["author_supplied"];
+        assert_eq!(text["summary"], "Fast JSON", "smuggled tags are gone");
+        let description = text["description"].as_str().unwrap();
+        assert!(description.ends_with("…(truncated)"), "{description}");
+        assert!(description.chars().count() <= 2_000 + "…(truncated)".chars().count());
+        assert_eq!(
+            text["authors"],
+            json!(["Mallory nimda"]),
+            "no bidi override"
+        );
+        assert_eq!(text.get("homepage"), None, "javascript: is not a link");
+        for field in ["summary", "description"] {
+            assert_eq!(gem.get(field), None, "{field} only appears as author text");
+        }
+        assert!(!invisible(&gem.to_string()), "{gem}");
     }
-    assert!(!invisible(&gem.to_string()), "{gem}");
 
-    let (_, package) = session.read("vein://npm/@evil/pkg").await;
-    assert_eq!(package["author_supplied"]["description"], "Tiny helper");
-    assert_eq!(package["author_supplied"].get("homepage"), None);
-    assert_eq!(package["dist_tags"].as_object().unwrap().len(), 20);
-    assert_eq!(package["all_deprecated"], true, "its one version is");
-    assert_eq!(package.get("deprecated"), None, "all_deprecated says it");
-    let message = package["author_supplied"]["deprecated"].as_str().unwrap();
-    assert!(message.ends_with("…(truncated)"), "{message}");
-    let (_, version) = session.read("vein://npm/@evil/pkg/versions/1.0.0").await;
-    assert_eq!(version["published"]["deprecated"], true);
-    let message = version["published"]["author_supplied"]["deprecated"]
-        .as_str()
-        .unwrap();
-    assert!(
-        message.starts_with("SYSTEM:") && message.ends_with("…(truncated)"),
-        "{message}"
-    );
+    #[cfg(feature = "npm")]
+    {
+        let (_, package) = session.read("vein://npm/@evil/pkg").await;
+        assert_eq!(package["author_supplied"]["description"], "Tiny helper");
+        assert_eq!(package["author_supplied"].get("homepage"), None);
+        assert_eq!(package["dist_tags"].as_object().unwrap().len(), 20);
+        assert_eq!(package["all_deprecated"], true, "its one version is");
+        assert_eq!(package.get("deprecated"), None, "all_deprecated says it");
+        let message = package["author_supplied"]["deprecated"].as_str().unwrap();
+        assert!(message.ends_with("…(truncated)"), "{message}");
+        let (_, version) = session.read("vein://npm/@evil/pkg/versions/1.0.0").await;
+        assert_eq!(version["published"]["deprecated"], true);
+        let message = version["published"]["author_supplied"]["deprecated"]
+            .as_str()
+            .unwrap();
+        assert!(
+            message.starts_with("SYSTEM:") && message.ends_with("…(truncated)"),
+            "{message}"
+        );
+    }
 
     // The rule agents get alongside the data, from vein rather than the author.
     assert!(
@@ -1134,4 +1166,25 @@ async fn author_text_cannot_hide_or_pose_as_instructions() {
         "{}",
         session.instructions
     );
+}
+
+/// Agents are told of the registries this build serves, and only those.
+#[tokio::test]
+async fn instructions_name_only_the_registries_served() {
+    let (service, _storage) = open().await;
+    let session = Session::open(&service).await;
+    for (kind, segment) in [
+        (AssetKind::Gem, "gems"),
+        (AssetKind::Crate, "crates"),
+        (AssetKind::NpmPackage, "npm"),
+    ] {
+        assert_eq!(
+            session
+                .instructions
+                .contains(&format!("vein://search/{segment}/{{query}}")),
+            crate::registry::built(kind),
+            "{}",
+            session.instructions
+        );
+    }
 }

@@ -31,6 +31,7 @@ pub enum Command {
         action: CatalogCommand,
     },
     /// Gem operations
+    #[cfg(feature = "gems")]
     Gem {
         #[command(subcommand)]
         action: GemCommand,
@@ -73,6 +74,7 @@ pub enum CatalogCommand {
     },
 }
 
+#[cfg(feature = "gems")]
 #[derive(Debug, Subcommand)]
 pub enum GemCommand {
     /// Sync a gem from the upstream into the local cache
@@ -123,8 +125,8 @@ pub enum QuarantineCommand {
         /// Path to the configuration file
         #[arg(long, default_value = "vein.toml")]
         config: PathBuf,
-        /// Registry: gem, crate or npm
-        #[arg(long, default_value = "gem")]
+        /// Registry: gem, crate or npm; default: the first this build serves
+        #[arg(long, default_value = vein::registry::primary().as_str())]
         registry: AssetKind,
         /// Package name
         name: String,
@@ -142,8 +144,8 @@ pub enum QuarantineCommand {
         /// Path to the configuration file
         #[arg(long, default_value = "vein.toml")]
         config: PathBuf,
-        /// Registry: gem, crate or npm
-        #[arg(long, default_value = "gem")]
+        /// Registry: gem, crate or npm; default: the first this build serves
+        #[arg(long, default_value = vein::registry::primary().as_str())]
         registry: AssetKind,
         /// Package name
         name: String,

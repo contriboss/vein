@@ -83,8 +83,13 @@ name = "vein"
 path = "src/main.rs"
 
 [features]
-default = ["tls", "admin"]
+default = ["tls", "admin", "gems", "crates", "npm"]
 tls = ["rama/rustls", "vein-adapter/tls"]
+# The registries vein serves, at least one: each brings its proxy routes,
+# search, docs, catalog, release delay and MCP resources.
+gems = ["dep:ruby-prism", "dep:cyclonedx-bom", "dep:serde_yaml"]
+crates = ["dep:ruzstd"]
+npm = []
 # Admin dashboard and MCP endpoint, served next to the proxy (`[admin]` in vein.toml).
 admin = ["dep:tera", "dep:mcp-host"]
 inspect = []
@@ -104,7 +109,7 @@ tokio = { workspace = true, features = ["full"] }
 # Serialization
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml.workspace = true
+serde_yaml = { workspace = true, optional = true }
 toml.workspace = true
 
 # File handling and hashing
@@ -114,7 +119,7 @@ sha2.workspace = true
 hex.workspace = true
 flate2 = "1.1.10"
 tar = "0.4.46"
-cyclonedx-bom = "0.8.1"
+cyclonedx-bom = { version = "0.8.1", optional = true }
 
 # Error handling
 anyhow.workspace = true
@@ -146,8 +151,10 @@ vein-adapter.workspace = true
 # Without default features it brings no TLS: sqlx keeps vein-adapter's.
 stampeded = { version = "0.4.0", default-features = false }
 sqlx = { workspace = true, features = ["postgres"] }
-ruzstd = "0.9.1"
-ruby-prism = "2.0.0"
+# docs.rs serves rustdoc JSON zstd-compressed.
+ruzstd = { version = "0.9.1", optional = true }
+# Gem API docs: the gem's Ruby, parsed without a Ruby on the host.
+ruby-prism = { version = "2.0.0", optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

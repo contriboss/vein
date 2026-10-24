@@ -6,33 +6,50 @@ use anyhow::{Context, Result, anyhow};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use rama::utils::include_dir::{Dir, include_dir};
 use tera::Tera;
+#[cfg(feature = "gems")]
 use tracing::warn;
 use vein_adapter::{CacheBackend, FilesystemStorage};
 
-use super::{
-    ruby,
-    state::{AdminResources, AdminState},
-};
+#[cfg(feature = "gems")]
+use super::ruby;
+use super::state::{AdminResources, AdminState};
 use crate::config::Config;
 
 /// Tera templates, embedded at build time; names are paths under `views/`.
 const TEMPLATES: Dir<'static> = include_dir!("$CARGO_MANIFEST_DIR/assets/admin/views");
 
 /// The admin state over the proxy's own config, cache, and storage.
+#[cfg_attr(
+    not(feature = "gems"),
+    expect(
+        clippy::unused_async,
+        reason = "only gem builds fetch Ruby's release status"
+    )
+)]
 pub async fn bootstrap(
     config: Arc<Config>,
     cache: Arc<CacheBackend>,
     storage: Arc<FilesystemStorage>,
 ) -> Result<AdminState> {
     let tera = load_templates()?;
-    let ruby_status = load_ruby_status().await;
-    let resources = AdminResources::new(config, cache, storage, ruby_status);
+    let resources = AdminResources::new(config, cache, storage);
+    #[cfg(feature = "gems")]
+    let resources = resources.with_ruby_status(load_ruby_status().await);
     Ok(AdminState::new(resources, tera))
 }
 
 pub(super) fn load_templates() -> Result<Arc<Tera>> {
     let mut tera = Tera::new();
     register_extensions(&mut tera);
+    // Which registries the pages show: `{% if serves.npm %}`.
+    tera.global_context().insert(
+        "serves",
+        &serde_json::json!({
+            "gems": crate::registry::built(vein_adapter::AssetKind::Gem),
+            "crates": crate::registry::built(vein_adapter::AssetKind::Crate),
+            "npm": crate::registry::built(vein_adapter::AssetKind::NpmPackage),
+        }),
+    );
     let mut templates = Vec::new();
     collect_templates(&TEMPLATES, &mut templates)?;
     tera.add_raw_templates(templates)
@@ -76,6 +93,7 @@ fn register_extensions(tera: &mut Tera) {
     });
 }
 
+#[cfg(feature = "gems")]
 async fn load_ruby_status() -> Arc<ruby::RubyStatus> {
     match ruby::fetch_ruby_status().await {
         Ok(status) => Arc::new(status),

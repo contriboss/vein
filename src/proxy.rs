@@ -1,10 +1,14 @@
 pub(crate) mod cache;
+#[cfg(feature = "gems")]
 mod compact;
 mod dispatch;
 mod fetch;
 mod handlers;
 mod public_base;
 mod response;
+pub mod route;
+#[cfg(feature = "gems")]
+mod sbom;
 #[cfg(test)]
 mod tests;
 pub(crate) mod types;

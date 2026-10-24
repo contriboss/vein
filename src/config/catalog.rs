@@ -15,9 +15,14 @@ pub struct CatalogConfig {
 }
 
 impl Default for CatalogConfig {
+    /// The gem catalogue (under 3 MB) when this build serves gems; nothing
+    /// otherwise, the others being long first syncs to opt into.
     fn default() -> Self {
         Self {
-            registries: vec![AssetKind::Gem],
+            registries: crate::registry::built(AssetKind::Gem)
+                .then_some(AssetKind::Gem)
+                .into_iter()
+                .collect(),
         }
     }
 }

@@ -21,7 +21,14 @@ COPY src ./src
 COPY crates ./crates
 COPY assets ./assets
 
-RUN cargo build --release
+# The registries the image serves: `gems`, `crates`, `npm` (Cargo features).
+# One registry alone: --build-arg VEIN_FEATURES=tls,admin,crates
+ARG VEIN_FEATURES=default
+RUN if [ "$VEIN_FEATURES" = default ]; then \
+      cargo build --release; \
+    else \
+      cargo build --release --no-default-features --features "$VEIN_FEATURES"; \
+    fi
 
 # Stage 2: Runtime
 FROM debian:bookworm-slim

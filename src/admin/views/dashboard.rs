@@ -19,10 +19,8 @@ pub struct DashboardData {
     pub catalog_total: u64,
     pub sbom_metric: String,
     pub sbom_detail: String,
-    pub ruby_latest: String,
-    pub ruby_security: String,
-    pub ruby_eol: String,
-    pub ruby_updated: String,
+    /// Ruby's release lifecycle; gem builds only.
+    pub ruby: Option<RubyLifecycle>,
     pub storage: String,
     pub database: String,
     pub upstream_detail: String,
@@ -46,10 +44,10 @@ impl DashboardData {
             catalog_total: snapshot.catalog_total,
             sbom_metric: sbom.metric,
             sbom_detail: sbom.detail,
-            ruby_latest: ruby_latest_label(snapshot),
-            ruby_security: ruby_security_label(snapshot),
-            ruby_eol: ruby_eol_label(snapshot),
-            ruby_updated: ruby_updated_label(snapshot),
+            #[cfg(feature = "gems")]
+            ruby: snapshot.ruby_status.as_deref().map(RubyLifecycle::of),
+            #[cfg(not(feature = "gems"))]
+            ruby: None,
             storage: snapshot.storage_path.display().to_string(),
             database: snapshot.database.clone(),
             upstream_detail: upstream_detail(snapshot, show_upstream),
@@ -128,10 +126,7 @@ fn stats_context(data: &DashboardData) -> Context {
     context.insert("catalog_total", &data.catalog_total);
     context.insert("sbom_metric", &data.sbom_metric);
     context.insert("sbom_detail", &data.sbom_detail);
-    context.insert("ruby_latest", &data.ruby_latest);
-    context.insert("ruby_security", &data.ruby_security);
-    context.insert("ruby_eol", &data.ruby_eol);
-    context.insert("ruby_updated", &data.ruby_updated);
+    context.insert("ruby", &data.ruby);
     context
 }
 
@@ -143,58 +138,63 @@ fn formatted_generated_at(snapshot: &DashboardSnapshot) -> String {
         .to_string()
 }
 
-fn ruby_latest_label(snapshot: &DashboardSnapshot) -> String {
-    snapshot.ruby_status.latest_release.as_ref().map_or_else(
-        || "Unknown".to_string(),
-        |release| format!("{} ({})", release.version, release.date),
-    )
+/// Ruby's release lifecycle, as the dashboard shows it.
+#[derive(Debug, Serialize)]
+pub struct RubyLifecycle {
+    pub latest: String,
+    pub security: String,
+    pub eol: String,
+    pub updated: String,
 }
 
-fn ruby_security_label(snapshot: &DashboardSnapshot) -> String {
-    if snapshot.ruby_status.security_maintenance.is_empty() {
-        return "None".to_string();
+#[cfg(feature = "gems")]
+impl RubyLifecycle {
+    fn of(status: &crate::admin::ruby::RubyStatus) -> Self {
+        Self {
+            latest: status.latest_release.as_ref().map_or_else(
+                || "Unknown".to_string(),
+                |release| format!("{} ({})", release.version, release.date),
+            ),
+            security: Self::security(status),
+            eol: Self::eol(status),
+            updated: status.fetched_at.strftime("%Y-%m-%d %H:%M UTC").to_string(),
+        }
     }
 
-    snapshot
-        .ruby_status
-        .security_maintenance
-        .iter()
-        .map(|branch| {
-            let deadline = branch
-                .expected_eol_date
-                .or(branch.security_maintenance_date)
-                .map_or_else(|| "TBD".to_string(), |date| date.to_string());
-            format!("{} (until {})", branch.name, deadline)
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn ruby_eol_label(snapshot: &DashboardSnapshot) -> String {
-    if snapshot.ruby_status.recent_eol.is_empty() {
-        return "None".to_string();
+    fn security(status: &crate::admin::ruby::RubyStatus) -> String {
+        if status.security_maintenance.is_empty() {
+            return "None".to_string();
+        }
+        status
+            .security_maintenance
+            .iter()
+            .map(|branch| {
+                let deadline = branch
+                    .expected_eol_date
+                    .or(branch.security_maintenance_date)
+                    .map_or_else(|| "TBD".to_string(), |date| date.to_string());
+                format!("{} (until {})", branch.name, deadline)
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
     }
 
-    snapshot
-        .ruby_status
-        .recent_eol
-        .iter()
-        .map(|branch| {
-            let date = branch
-                .eol_date
-                .map_or_else(|| "Unknown".to_string(), |value| value.to_string());
-            format!("{} ({})", branch.name, date)
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-fn ruby_updated_label(snapshot: &DashboardSnapshot) -> String {
-    snapshot
-        .ruby_status
-        .fetched_at
-        .strftime("%Y-%m-%d %H:%M UTC")
-        .to_string()
+    fn eol(status: &crate::admin::ruby::RubyStatus) -> String {
+        if status.recent_eol.is_empty() {
+            return "None".to_string();
+        }
+        status
+            .recent_eol
+            .iter()
+            .map(|branch| {
+                let date = branch
+                    .eol_date
+                    .map_or_else(|| "Unknown".to_string(), |value| value.to_string());
+                format!("{} ({})", branch.name, date)
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
 fn upstream_detail(snapshot: &DashboardSnapshot, show_upstream: bool) -> String {

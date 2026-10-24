@@ -2,15 +2,18 @@
 //! the rustls provider install every HTTP client test needs, and `.gem`
 //! files built in memory.
 
+#[cfg(feature = "gems")]
+use std::path::Path;
 use std::{
     io::{Cursor, Write},
-    path::Path,
     sync::{Arc, Mutex, Once},
 };
 
 use flate2::{Compression, write::GzEncoder};
+#[cfg(feature = "gems")]
 use sha2::{Digest, Sha256};
 use tar::{Builder, Header};
+#[cfg(feature = "gems")]
 use tempfile::NamedTempFile;
 
 use rama::tls::rustls::dep::rustls;
@@ -48,6 +51,7 @@ pub fn raw_response(status: &str, headers: &[(&str, &str)], body: &[u8]) -> Vec<
 
 /// Serves `responses` in order, one per connection, on a random loopback port.
 /// Returns the base URL and a handle resolving to the lower-cased request heads.
+#[cfg(any(feature = "crates", feature = "npm"))]
 pub async fn spawn_sequence_server(
     responses: Vec<Vec<u8>>,
 ) -> (String, tokio::task::JoinHandle<Vec<String>>) {
@@ -123,6 +127,7 @@ async fn read_http_request(socket: &mut TcpStream) -> String {
 
 /// A `.gem` file: `metadata.gz` with `metadata_yaml`, and a `data.tar.gz`
 /// holding `data_entries` (path, contents).
+#[cfg(feature = "gems")]
 pub fn build_test_gem(metadata_yaml: &str, data_entries: &[(&str, &[u8])]) -> NamedTempFile {
     let mut metadata_encoder = GzEncoder::new(Vec::new(), Compression::default());
     metadata_encoder
@@ -190,6 +195,7 @@ pub fn build_test_gem(metadata_yaml: &str, data_entries: &[(&str, &[u8])]) -> Na
 
 /// A gzipped tarball of `entries` (path, contents), as a `.crate` or an
 /// npm package is shipped.
+#[cfg(any(feature = "crates", feature = "npm", feature = "admin"))]
 pub fn tar_gz(entries: &[(&str, &[u8])]) -> Vec<u8> {
     let mut tar_bytes = Vec::new();
     {
@@ -210,6 +216,7 @@ pub fn tar_gz(entries: &[(&str, &[u8])]) -> Vec<u8> {
 }
 
 /// Size and hex SHA-256 of `path`, as the cache index records them.
+#[cfg(feature = "gems")]
 pub fn digest_file(path: &Path) -> (u64, String) {
     let bytes = std::fs::read(path).expect("read gem bytes");
     let size_bytes = bytes.len() as u64;

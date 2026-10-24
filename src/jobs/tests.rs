@@ -12,24 +12,19 @@ fn the_config_decides_the_schedules() {
             .map(|job| (job.key, job.task))
             .collect()
     };
+    let catalog = |kind: AssetKind| (format!("vein:catalog:{}", kind.as_str()), sync_task(kind));
+    // The gem catalogue by default, when this build serves gems.
     let default = Config::default();
-    assert_eq!(
-        tasks(&default),
-        [("vein:catalog:gem".to_owned(), "catalog.sync.gem")]
-    );
+    let gem = crate::registry::built(AssetKind::Gem).then(|| catalog(AssetKind::Gem));
+    assert_eq!(tasks(&default), Vec::from_iter(gem));
 
+    // Like harbor: every registry built in, and the delay.
     let mut harbor = Config::default();
-    harbor.catalog.registries = vec![AssetKind::Gem, AssetKind::Crate, AssetKind::NpmPackage];
+    harbor.catalog.registries = crate::registry::served();
     harbor.delay_policy.enabled = true;
-    assert_eq!(
-        tasks(&harbor),
-        [
-            ("vein:catalog:gem".to_owned(), "catalog.sync.gem"),
-            ("vein:catalog:crate".to_owned(), "catalog.sync.crate"),
-            ("vein:catalog:npm".to_owned(), "catalog.sync.npm"),
-            ("vein:delay:promote".to_owned(), "delay.promote"),
-        ]
-    );
+    let mut expected: Vec<_> = crate::registry::served().into_iter().map(catalog).collect();
+    expected.push(("vein:delay:promote".to_owned(), "delay.promote"));
+    assert_eq!(tasks(&harbor), expected);
 }
 
 /// A stampeded queue on a schema of its own in the test database, and the

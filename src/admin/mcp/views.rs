@@ -5,8 +5,13 @@
 //! and no URI is listed that the instructions' templates already give.
 
 use serde::Serialize;
-use vein_adapter::{CachedVersion, GemMetadata, PackageVersion as TrackedRow, QuarantineStats};
+#[cfg(any(feature = "crates", feature = "npm"))]
+use vein_adapter::CachedVersion;
+#[cfg(feature = "gems")]
+use vein_adapter::GemMetadata;
+use vein_adapter::{PackageVersion as TrackedRow, QuarantineStats};
 
+#[cfg(feature = "gems")]
 use crate::untrusted::{
     DESCRIPTION_LIMIT, GemText, SUMMARY_LIMIT, clean_list, clean_opt, clean_url,
 };
@@ -25,6 +30,7 @@ pub struct Search {
 }
 
 /// One crate or npm version.
+#[cfg(any(feature = "crates", feature = "npm"))]
 #[derive(Serialize)]
 pub struct PackageVersion<D> {
     /// The package file held here, if downloaded through the proxy.
@@ -37,6 +43,7 @@ pub struct PackageVersion<D> {
 }
 
 /// A package file held in the proxy's storage.
+#[cfg(any(feature = "crates", feature = "npm"))]
 #[derive(Serialize)]
 pub struct Artifact {
     /// Which file this is; the resource it appears in already names it.
@@ -48,6 +55,7 @@ pub struct Artifact {
     pub size_bytes: u64,
 }
 
+#[cfg(any(feature = "crates", feature = "npm"))]
 impl Artifact {
     /// `version`, plus `-platform` for a native gem build.
     pub fn label(&self) -> String {
@@ -59,6 +67,7 @@ impl Artifact {
 }
 
 /// The versions of `artifacts`, as package resources list them.
+#[cfg(any(feature = "crates", feature = "npm"))]
 pub fn cached_labels(artifacts: &[Artifact]) -> Vec<String> {
     artifacts.iter().map(Artifact::label).collect()
 }
@@ -70,6 +79,7 @@ pub fn total_if_truncated(total: usize, listed: usize) -> Option<usize> {
 
 /// `a` and `b` name the same repository: `git+https://x/y.git`,
 /// `https://x/y#readme` and `https://x/y/` are all `x/y`.
+#[cfg(any(feature = "gems", feature = "npm"))]
 pub fn same_repository(a: &str, b: &str) -> bool {
     fn key(url: &str) -> String {
         let url = url.trim().trim_start_matches("git+");
@@ -81,6 +91,7 @@ pub fn same_repository(a: &str, b: &str) -> bool {
     key(a) == key(b)
 }
 
+#[cfg(feature = "gems")]
 #[derive(Serialize)]
 pub struct VersionDetails {
     /// Only for native builds; `ruby` is the default.
@@ -108,6 +119,7 @@ pub struct VersionDetails {
     pub sbom: bool,
 }
 
+#[cfg(feature = "gems")]
 #[derive(Serialize)]
 pub struct Dependency {
     pub name: String,
@@ -142,6 +154,7 @@ pub struct QuarantineCounts {
 }
 
 /// URI of a gem version resource: `version`, plus `-platform` unless `ruby`.
+#[cfg(feature = "gems")]
 pub fn gem_version_uri(name: &str, version: &str, platform: &str) -> String {
     match platform {
         super::DEFAULT_PLATFORM => format!("vein://gems/{name}/versions/{version}"),
@@ -150,10 +163,12 @@ pub fn gem_version_uri(name: &str, version: &str, platform: &str) -> String {
 }
 
 /// URI of a gem version's `CycloneDX` SBOM resource.
+#[cfg(feature = "gems")]
 pub fn gem_sbom_uri(name: &str, version: &str, platform: &str) -> String {
     format!("{}/sbom", gem_version_uri(name, version, platform))
 }
 
+#[cfg(any(feature = "crates", feature = "npm"))]
 impl From<CachedVersion> for Artifact {
     fn from(cached: CachedVersion) -> Self {
         Self {
@@ -165,6 +180,7 @@ impl From<CachedVersion> for Artifact {
     }
 }
 
+#[cfg(feature = "gems")]
 impl From<GemMetadata> for VersionDetails {
     fn from(meta: GemMetadata) -> Self {
         let homepage = clean_url(meta.homepage);

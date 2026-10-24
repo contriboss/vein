@@ -12,6 +12,7 @@ use rama::http::{Body, Response, StatusCode, header};
 use vein_adapter::AssetKind;
 
 use super::{Docs, NoApiDocs, NotPublished, Package};
+use crate::registry::NotBuilt;
 
 /// What a docs path asks for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -67,6 +68,10 @@ pub fn parse(path: &str) -> Option<Result<Request>> {
 pub async fn respond(docs: &Docs, path: &str) -> Option<Result<Response<Body>>> {
     let request = match parse(path)? {
         Ok(request) => request,
+        // A registry built out is not here, rather than asked wrong.
+        Err(err) if err.downcast_ref::<NotBuilt>().is_some() => {
+            return Some(text(StatusCode::NOT_FOUND, &format!("{err}\n")));
+        }
         Err(err) => return Some(text(StatusCode::BAD_REQUEST, &format!("{err}\n"))),
     };
     Some(match request {

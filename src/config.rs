@@ -91,7 +91,49 @@ impl Config {
         }
     }
 
+    /// Refuses settings for a registry this build left out: `[upstream]`
+    /// is the gem source; catalogs, delays and pins name theirs.
+    fn registries_built(&self) -> Result<()> {
+        let upstream = self
+            .upstream
+            .is_some()
+            .then_some((AssetKind::Gem, "upstream"));
+        let named = upstream
+            .into_iter()
+            .chain(
+                self.catalog
+                    .registries
+                    .iter()
+                    .map(|&kind| (kind, "catalog.registries")),
+            )
+            .chain(
+                self.delay_policy
+                    .packages
+                    .iter()
+                    .filter_map(|entry| entry.registry)
+                    .map(|kind| (kind, "delay_policy.packages")),
+            )
+            .chain(
+                self.delay_policy
+                    .pinned
+                    .iter()
+                    .filter_map(|pin| pin.registry)
+                    .map(|kind| (kind, "delay_policy.pinned")),
+            );
+        for (kind, setting) in named {
+            if !crate::registry::built(kind) {
+                bail!(
+                    "{setting} names {}, but {}",
+                    kind.as_str(),
+                    crate::registry::NotBuilt(kind)
+                );
+            }
+        }
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<()> {
+        self.registries_built()?;
         if let Some(upstream) = self.upstream.as_ref().filter(|upstream| {
             upstream.url.scheme() != Some(&Protocol::HTTPS)
                 && upstream.url.scheme() != Some(&Protocol::HTTP)

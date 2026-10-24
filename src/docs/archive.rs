@@ -28,6 +28,7 @@ pub struct Found {
 }
 
 /// The README of a `.gem`: at the root of its `data.tar.gz`.
+#[cfg(feature = "gems")]
 pub fn gem_readme(gem: &[u8]) -> Result<Option<Found>> {
     let mut outer = tar::Archive::new(gem);
     for entry in outer.entries().context("reading the .gem")? {
@@ -41,6 +42,7 @@ pub fn gem_readme(gem: &[u8]) -> Result<Option<Found>> {
 
 /// The README of a `.crate`: the file its `Cargo.toml` names (published
 /// crates always say), else the best `README*` at the root.
+#[cfg(feature = "crates")]
 pub fn crate_readme(krate: &[u8]) -> Result<Option<Found>> {
     match cargo_readme(krate)? {
         Declared::Path(path) => root_readme(GzDecoder::new(krate), "*", Some(&path)),
@@ -50,6 +52,7 @@ pub fn crate_readme(krate: &[u8]) -> Result<Option<Found>> {
 }
 
 /// What a crate's `Cargo.toml` says of its README.
+#[cfg(feature = "crates")]
 enum Declared {
     /// `readme = "docs/OVERVIEW.md"`.
     Path(String),
@@ -60,11 +63,13 @@ enum Declared {
 }
 
 /// The README of an npm tarball, at its root (`package/`, usually).
+#[cfg(feature = "npm")]
 pub fn npm_readme(tarball: &[u8]) -> Result<Option<Found>> {
     root_readme(GzDecoder::new(tarball), "*", None)
 }
 
 /// `Cargo.toml`'s `package.readme`.
+#[cfg(feature = "crates")]
 fn cargo_readme(krate: &[u8]) -> Result<Declared> {
     let mut archive = tar::Archive::new(GzDecoder::new(krate));
     for entry in archive.entries().context("reading the .crate")? {

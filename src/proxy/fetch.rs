@@ -1,11 +1,12 @@
 use anyhow::{Context, Result, anyhow};
-use rama::{
-    Service,
-    http::{Body, HeaderMap, HeaderValue, Method, Request, Response, header},
-};
+#[cfg(feature = "crates")]
+use rama::Service;
+use rama::http::{Body, HeaderMap, HeaderValue, Method, Request, Response, header};
 use vein_adapter::CacheBackendTrait;
 
-use crate::upstream::{UA, buffer_response};
+#[cfg(feature = "crates")]
+use crate::upstream::UA;
+use crate::upstream::buffer_response;
 
 use super::{CacheStatus, RequestContext, VeinProxy, cache, types};
 use crate::delay;
@@ -70,13 +71,16 @@ impl VeinProxy {
         cacheable: &types::CacheableRequest,
         treating_as_revalidation: bool,
     ) -> Result<Response<Body>> {
-        let response = if cacheable.kind == vein_adapter::AssetKind::Crate {
-            self.fetch_crate(&cacheable.name, &cacheable.version)
-                .await?
-        } else {
-            self.fetch_with_fallback(req, None)
+        let response = match cacheable.kind {
+            #[cfg(feature = "crates")]
+            vein_adapter::AssetKind::Crate => {
+                self.fetch_crate(&cacheable.name, &cacheable.version)
+                    .await?
+            }
+            _ => self
+                .fetch_with_fallback(req, None)
                 .await
-                .context("requesting upstream")?
+                .context("requesting upstream")?,
         };
 
         if !response.status().is_success() {
@@ -106,6 +110,7 @@ impl VeinProxy {
     }
 
     /// Fetch a crate from crates.io CDN.
+    #[cfg(feature = "crates")]
     async fn fetch_crate(&self, name: &str, version: &str) -> Result<Response<Body>> {
         let url = format!("https://static.crates.io/crates/{name}/{name}-{version}.crate");
 

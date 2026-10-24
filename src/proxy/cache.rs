@@ -2,12 +2,9 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
 use rama::http::{Body, Response, StatusCode, body::util::BodyExt, header};
-use rama::telemetry::tracing::{debug, warn};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
-use vein_adapter::{
-    AssetKind, CacheBackend, CacheBackendTrait, CachedAsset, FilesystemStorage, TempFile,
-};
+use vein_adapter::{CacheBackend, CacheBackendTrait, CachedAsset, FilesystemStorage, TempFile};
 
 use super::types::CacheableRequest;
 
@@ -67,7 +64,7 @@ fn build_cached_response(
 pub async fn run_cache_miss_flow(
     cacheable: &CacheableRequest,
     index: Arc<CacheBackend>,
-    storage: Arc<FilesystemStorage>,
+    #[cfg_attr(not(feature = "gems"), allow(unused_variables))] storage: Arc<FilesystemStorage>,
     response: rama::http::Response<rama::http::Body>,
     mut temp_file: TempFile,
     _treating_as_revalidation: bool,
@@ -107,57 +104,16 @@ pub async fn run_cache_miss_flow(
         .await
         .context("failed to store metadata for cached asset")?;
 
-    if cacheable.kind == AssetKind::Gem {
-        let absolute_path = storage.resolve(&cacheable.relative_path);
-        let existing_sbom = match index
-            .gem_metadata(
-                &cacheable.name,
-                &cacheable.version,
-                cacheable.platform.as_deref(),
-            )
-            .await
-        {
-            Ok(Some(meta)) => meta.sbom,
-            Ok(None) => None,
-            Err(err) => {
-                warn!(
-                    error = %err,
-                    "failed to look up existing metadata while preparing SBOM"
-                );
-                None
-            }
-        };
-        match crate::gem_metadata::extract_gem_metadata(
-            &absolute_path,
-            &cacheable.name,
-            &cacheable.version,
-            cacheable.platform.as_deref(),
+    #[cfg(feature = "gems")]
+    if cacheable.kind == vein_adapter::AssetKind::Gem {
+        crate::gem_metadata::record_cached(
+            &index,
+            &storage.resolve(&cacheable.relative_path),
+            &cacheable.asset_key(),
             body_bytes.len() as u64,
             &sha_hex,
-            existing_sbom,
         )
-        .await
-        {
-            Ok(Some(metadata)) => {
-                if let Err(err) = index.upsert_metadata(&metadata).await {
-                    warn!(
-                        error = %err,
-                        path = %absolute_path.display(),
-                        "failed to persist gem metadata"
-                    );
-                }
-            }
-            Ok(None) => {
-                debug!(path = %absolute_path.display(), "gem metadata unavailable");
-            }
-            Err(err) => {
-                warn!(
-                    error = %err,
-                    path = %absolute_path.display(),
-                    "failed to analyze gem metadata"
-                );
-            }
-        }
+        .await;
     }
 
     // Build client response using upstream headers with our cache headers

@@ -1,5 +1,5 @@
 <nav class="links">
   <a href="/"{% if current_page == "dashboard" %} class="active"{% endif %}>Dashboard</a>
-  <a href="/catalog"{% if current_page == "catalog" %} class="active"{% endif %}>Ruby Catalogue</a>
-  <a href="/quarantine"{% if current_page == "quarantine" %} class="active"{% endif %}>Gem Quarantine</a>
+  {% if serves.gems %}<a href="/catalog"{% if current_page == "catalog" %} class="active"{% endif %}>Ruby Catalogue</a>{% endif %}
+  <a href="/quarantine"{% if current_page == "quarantine" %} class="active"{% endif %}>Quarantine</a>
 </nav>

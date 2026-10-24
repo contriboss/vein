@@ -27,6 +27,7 @@ pub fn split_name_version_platform(stem: &str) -> Option<(String, String, Option
     None
 }
 
+#[cfg(feature = "gems")]
 pub use crate::util::sanitize_filename;
 
 #[cfg(test)]

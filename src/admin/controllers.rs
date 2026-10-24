@@ -3,6 +3,7 @@
 use rama::http::service::web::response::Html;
 use tera::{Context, Tera};
 
+#[cfg(feature = "gems")]
 pub mod catalog;
 pub mod dashboard;
 pub mod health;

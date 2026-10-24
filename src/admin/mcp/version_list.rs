@@ -4,6 +4,7 @@
 use std::ops::Not;
 
 use serde::Serialize;
+#[cfg(any(feature = "crates", feature = "npm"))]
 pub use vein_adapter::is_semver_prerelease;
 
 /// Releases a package resource lists.

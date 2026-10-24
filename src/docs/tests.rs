@@ -17,14 +17,27 @@ fn packages_are_checked_before_they_reach_a_path() {
         (AssetKind::Crate, "serde", "1.0/../..", false),
         (AssetKind::Crate, "serde", "", false),
     ] {
+        // A registry built out has no packages at all.
         assert_eq!(
             ok(kind, name, version),
-            expected,
+            expected && registry::built(kind),
             "{kind:?} {name} {version}"
         );
     }
 }
 
+#[test]
+fn a_registry_built_out_says_so() {
+    for kind in [AssetKind::Gem, AssetKind::Crate, AssetKind::NpmPackage] {
+        if registry::built(kind) {
+            continue;
+        }
+        let err = Package::new(kind, "state_machines", "1.0.0").unwrap_err();
+        assert_eq!(err.downcast_ref::<NotBuilt>(), Some(&NotBuilt(kind)));
+    }
+}
+
+#[cfg(feature = "gems")]
 #[test]
 fn a_gem_version_names_its_native_build() {
     let native = Package::new(AssetKind::Gem, "nokogiri", "1.18.10-x86_64-linux-gnu").unwrap();
@@ -36,13 +49,29 @@ fn a_gem_version_names_its_native_build() {
         native.download_path(),
         "/gems/nokogiri-1.18.10-x86_64-linux-gnu.gem"
     );
-    let rc = Package::new(AssetKind::NpmPackage, "@types/node", "27.0.0-rc.1").unwrap();
-    assert_eq!(rc.platform, None, "a semver prerelease is no platform");
-    assert_eq!(rc.download_path(), "/@types/node/-/node-27.0.0-rc.1.tgz");
-    assert_eq!(
-        Package::new(AssetKind::Crate, "state-machines", "0.32.1")
-            .unwrap()
-            .download_path(),
-        "/api/v1/crates/state-machines/0.32.1/download"
-    );
+}
+
+#[test]
+fn archives_are_where_clients_download_them() {
+    for (kind, name, version, path) in [
+        (
+            AssetKind::NpmPackage,
+            "@types/node",
+            "27.0.0-rc.1",
+            "/@types/node/-/node-27.0.0-rc.1.tgz",
+        ),
+        (
+            AssetKind::Crate,
+            "state-machines",
+            "0.32.1",
+            "/api/v1/crates/state-machines/0.32.1/download",
+        ),
+    ] {
+        if !registry::built(kind) {
+            continue;
+        }
+        let package = Package::new(kind, name, version).unwrap();
+        assert_eq!(package.platform, None, "only gems have platforms: {name}");
+        assert_eq!(package.download_path(), path);
+    }
 }

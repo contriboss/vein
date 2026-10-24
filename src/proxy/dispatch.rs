@@ -6,14 +6,21 @@ use rama::{
     telemetry::tracing::{error, info},
 };
 
+#[cfg(any(feature = "crates", feature = "npm"))]
 use crate::http_cache::CacheOutcome;
 
+#[cfg(feature = "gems")]
+use super::compact::CompactRequest;
 use super::{
-    CacheStatus, RequestContext, VeinProxy, compact::CompactRequest, handlers,
-    public_base::public_base, response,
+    CacheStatus, RequestContext, VeinProxy, handlers, public_base::public_base, response, route,
 };
 
-use crate::{crates as crates_registry, npm as npm_registry, search};
+#[cfg(feature = "crates")]
+use crate::crates as crates_registry;
+#[cfg(feature = "npm")]
+use crate::npm as npm_registry;
+use crate::registry::{self, NotBuilt};
+use crate::search;
 
 impl VeinProxy {
     async fn handle(&self, req: Request<Body>, ctx: &mut RequestContext) -> Result<Response<Body>> {
@@ -21,6 +28,12 @@ impl VeinProxy {
         let path = req.uri().path_or_root().into_owned();
         // What every URL handed back must use: the bind is often loopback.
         let our_base = public_base(req.headers(), &self.config.server);
+
+        let registry = route::registry_of(&req);
+        if let Some(kind) = registry.filter(|&kind| !registry::built(kind)) {
+            ctx.cache = CacheStatus::Pass;
+            return response::respond_text(StatusCode::NOT_FOUND, &format!("{}\n", NotBuilt(kind)));
+        }
 
         if method == Method::GET
             && let Some(query) = search::Query::parse(req.uri())
@@ -42,7 +55,8 @@ impl VeinProxy {
             }
         }
 
-        if npm_registry::is_npm_request(&req) {
+        #[cfg(feature = "npm")]
+        if registry == Some(vein_adapter::AssetKind::NpmPackage) {
             let result = npm_registry::handle_npm_request(
                 &self.http,
                 req,
@@ -62,9 +76,10 @@ impl VeinProxy {
                     ctx.cache = status;
                     return Ok(resp);
                 }
+                #[cfg(feature = "gems")]
                 "/.well-known/vein/sbom" => {
                     let (resp, status) =
-                        handlers::handle_sbom_request(&req, self.index.as_ref()).await?;
+                        super::sbom::handle_sbom_request(&req, self.index.as_ref()).await?;
                     ctx.cache = status;
                     return Ok(resp);
                 }
@@ -72,6 +87,7 @@ impl VeinProxy {
                     ctx.cache = CacheStatus::Pass;
                     return response::respond_homepage(&self.config, &our_base);
                 }
+                #[cfg(feature = "crates")]
                 p if p.starts_with("/index/") => {
                     let result = crates_registry::handle_sparse_index(
                         &self.http,
@@ -103,6 +119,7 @@ impl VeinProxy {
             }
 
             if method == Method::GET {
+                #[cfg(feature = "gems")]
                 if let Some(compact) = CompactRequest::from_path(path.as_str()) {
                     match self.handle_compact_request(&req, compact, ctx).await {
                         Ok(Some((resp, status))) => {
@@ -190,6 +207,7 @@ impl Service<Request<Body>> for VeinProxy {
 
 /// Finalizes a registry handler result: records cache status on success, or
 /// logs the error and returns a `502 Bad Gateway` body on failure.
+#[cfg(any(feature = "crates", feature = "npm"))]
 fn finish_registry_result(
     ctx: &mut RequestContext,
     result: Result<(Response<Body>, CacheOutcome)>,
@@ -209,6 +227,7 @@ fn finish_registry_result(
     }
 }
 
+#[cfg(any(feature = "crates", feature = "npm"))]
 const fn cache_status_from_outcome(outcome: CacheOutcome) -> CacheStatus {
     match outcome {
         CacheOutcome::Hit => CacheStatus::Hit,

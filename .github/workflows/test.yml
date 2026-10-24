@@ -12,6 +12,11 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Every registry is a feature: the full build, then each one alone.
+        features: [default, "tls,admin,gems", "tls,admin,crates", "tls,admin,npm"]
     services:
       postgres:
         image: postgres:18
@@ -31,6 +36,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.features }}
       - name: Run tests
-        run: cargo test --workspace
+        run: |
+          if [ "${{ matrix.features }}" = default ]; then
+            cargo test --workspace
+          else
+            cargo clippy -p vein --all-targets --no-default-features --features "${{ matrix.features }}" -- -D warnings
+            cargo test -p vein --no-default-features --features "${{ matrix.features }}"
+          fi

@@ -63,8 +63,10 @@ enabled = true
 # every published name. gem: under 3 MB. crate: ~360k names, an hour of
 # paging the first time. npm: ~4.5M names, ~450 MB the first time. Each is
 # refreshed every 6 hours.
+# Only registries this vein was built with (the `gems`, `crates` and `npm`
+# Cargo features); naming another is a config error.
 # [catalog]
-# registries = ["gem", "crate", "npm"]   # default: ["gem"]
+# registries = ["gem", "crate", "npm"]   # default: ["gem"] when gems are built in
 
 # RELEASE DELAY (Optional, off by default)
 # New gem, crate and npm versions stay out of the index Vein serves until

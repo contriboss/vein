@@ -8,8 +8,11 @@
 //! parses its index format and drops what the policy holds; this module
 //! decides.
 
+#[cfg(feature = "crates")]
 pub mod crates;
+#[cfg(feature = "gems")]
 pub mod gems;
+#[cfg(feature = "npm")]
 pub mod npm;
 
 use jiff::Timestamp;
@@ -145,6 +148,7 @@ pub async fn screen(
 /// `body` without the lines the policy holds or blocks, for line-based
 /// indexes (compact `info`, sparse index): every other line, header and
 /// line endings included, comes back as it was.
+#[cfg(any(feature = "gems", feature = "crates"))]
 async fn filter_lines(
     config: &DelayPolicyConfig,
     index: &CacheBackend,

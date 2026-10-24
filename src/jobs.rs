@@ -101,7 +101,7 @@ pub async fn run(
             ..WorkerConfig::default()
         },
     );
-    for kind in [AssetKind::Gem, AssetKind::Crate, AssetKind::NpmPackage] {
+    for kind in crate::registry::served() {
         let index = Arc::clone(&index);
         let url = url.clone();
         worker = worker.register(sync_task(kind), move |_job| {

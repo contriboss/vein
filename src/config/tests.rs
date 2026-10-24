@@ -1,4 +1,5 @@
 use super::*;
+#[cfg(feature = "gems")]
 use rama::net::uri::Uri;
 use std::fs;
 use std::io::Write;
@@ -294,6 +295,7 @@ fn configured() -> Config {
     }
 }
 
+#[cfg(feature = "gems")]
 #[test]
 fn test_validate_accepts_http_and_https_upstreams() {
     for url in ["https://rubygems.org/", "http://localhost:8346/"] {
@@ -317,6 +319,7 @@ fn test_validate_requires_database_url() {
     );
 }
 
+#[cfg(feature = "gems")]
 #[test]
 fn test_validate_invalid_scheme() {
     let config = Config {
@@ -507,6 +510,7 @@ fn test_high_port_number() {
 
 // === INTEGRATION TESTS ===
 
+#[cfg(feature = "gems")]
 #[test]
 fn test_full_workflow_load_validate() {
     let temp_dir = tempdir().unwrap();
@@ -620,4 +624,35 @@ fn a_delay_override_names_a_package() {
         err.contains("delay_policy.packages[0] names no package"),
         "{err}"
     );
+}
+
+/// A config naming a registry this build left out is refused, saying which
+/// feature it lacks.
+#[test]
+fn settings_for_a_registry_built_out_are_refused() {
+    for kind in [AssetKind::Gem, AssetKind::Crate, AssetKind::NpmPackage] {
+        if crate::registry::built(kind) {
+            continue;
+        }
+        let config = Config {
+            catalog: CatalogConfig {
+                registries: vec![kind],
+            },
+            ..configured()
+        };
+        let err = config.validate().unwrap_err().to_string();
+        assert!(
+            err.starts_with(&format!("catalog.registries names {}", kind.as_str()))
+                && err.contains(&format!("`{}` feature", crate::registry::feature(kind))),
+            "{err}"
+        );
+    }
+    if !crate::registry::built(AssetKind::Gem) {
+        let config = Config {
+            upstream: Some(UpstreamConfig::default()),
+            ..configured()
+        };
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.starts_with("upstream names gem"), "{err}");
+    }
 }

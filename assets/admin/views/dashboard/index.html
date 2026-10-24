@@ -19,14 +19,14 @@
 <section class="panel mb-lg">
   <h2>Features Enabled</h2>
   <ul class="feature-list">
-    <li><span class="icon text-success">&#10003;</span> RubyGems protocol</li>
-    <li><span class="icon text-success">&#10003;</span> crates.io sparse registry</li>
-    <li><span class="icon text-success">&#10003;</span> npm registry proxying</li>
+    {% if serves.gems %}<li><span class="icon text-success">&#10003;</span> RubyGems protocol</li>{% endif %}
+    {% if serves.crates %}<li><span class="icon text-success">&#10003;</span> crates.io sparse registry</li>{% endif %}
+    {% if serves.npm %}<li><span class="icon text-success">&#10003;</span> npm registry proxying</li>{% endif %}
     <li><span class="icon text-success">&#10003;</span> Stream-through package caching</li>
-    <li><span class="icon text-success">&#10003;</span> SBOM export stream</li>
-    <li><span class="icon text-success">&#10003;</span> Release delay for gems, crates and npm</li>
-    <li><span class="icon text-success">&#10003;</span> Ruby catalogue sync</li>
-    <li><span class="icon text-success">&#10003;</span> Ruby lifecycle insights</li>
+    {% if serves.gems %}<li><span class="icon text-success">&#10003;</span> SBOM export stream</li>{% endif %}
+    <li><span class="icon text-success">&#10003;</span> Release delay for every registry served</li>
+    {% if serves.gems %}<li><span class="icon text-success">&#10003;</span> Ruby catalogue sync</li>
+    <li><span class="icon text-success">&#10003;</span> Ruby lifecycle insights</li>{% endif %}
   </ul>
 </section>
 
