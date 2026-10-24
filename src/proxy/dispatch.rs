@@ -30,6 +30,18 @@ impl VeinProxy {
             return search::respond(&self.http, &self.index, &self.search, &query, &target).await;
         }
 
+        if method == Method::GET && path.starts_with("/docs/") {
+            let docs = crate::docs::Docs::new(
+                self.config.clone(),
+                self.index.clone(),
+                self.storage.clone(),
+            );
+            if let Some(answer) = crate::docs::http::respond(&docs, &path).await {
+                ctx.cache = CacheStatus::Pass;
+                return answer;
+            }
+        }
+
         if npm_registry::is_npm_request(&req) {
             let result = npm_registry::handle_npm_request(
                 &self.http,

@@ -55,6 +55,7 @@ const fn is_invisible(c: char) -> bool {
 /// Drops invisible and control characters (ANSI escapes lose their `ESC`)
 /// but keeps line breaks and tabs, then caps the result at `limit`
 /// characters. `None` when nothing visible is left.
+#[must_use]
 pub fn clean(text: &str, limit: usize) -> Option<String> {
     let kept: String = text
         .chars()
@@ -73,11 +74,13 @@ pub fn clean(text: &str, limit: usize) -> Option<String> {
 }
 
 /// [`clean`] for an optional field.
+#[must_use]
 pub fn clean_opt(text: Option<String>, limit: usize) -> Option<String> {
     text.and_then(|text| clean(&text, limit))
 }
 
 /// Up to [`LIST_LIMIT`] cleaned entries, each at most [`SHORT_LIMIT`].
+#[must_use]
 pub fn clean_list(items: Vec<String>) -> Vec<String> {
     items
         .into_iter()
@@ -88,6 +91,7 @@ pub fn clean_list(items: Vec<String>) -> Vec<String> {
 
 /// An `http(s)` URL with nothing hidden in it; anything else (`javascript:`,
 /// `data:`, `file:`, a bare string) is dropped.
+#[must_use]
 pub fn clean_url(url: Option<String>) -> Option<String> {
     let url = clean(&url?, URL_LIMIT)?;
     let scheme = url.split_once("://")?.0;
@@ -129,6 +133,7 @@ pub struct GemText {
 }
 
 impl GemText {
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.summary.is_none()
             && self.description.is_none()
@@ -159,6 +164,7 @@ pub struct NpmText {
 }
 
 impl NpmText {
+    #[must_use]
     pub const fn is_empty(&self) -> bool {
         self.description.is_none()
             && self.license.is_none()

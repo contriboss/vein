@@ -7,7 +7,7 @@
 use serde::Serialize;
 use vein_adapter::{CachedVersion, GemMetadata, PackageVersion as TrackedRow, QuarantineStats};
 
-use super::untrusted::{
+use crate::untrusted::{
     DESCRIPTION_LIMIT, GemText, SUMMARY_LIMIT, clean_list, clean_opt, clean_url,
 };
 
@@ -230,6 +230,59 @@ impl From<QuarantineStats> for QuarantineCounts {
             pinned: stats.total_pinned,
             releasing_today: stats.versions_releasing_today,
             releasing_this_week: stats.versions_releasing_this_week,
+        }
+    }
+}
+
+/// A version's README, from its own archive.
+#[derive(Serialize)]
+pub struct Readme {
+    /// Its file name in the archive (`README.md`, `README.rdoc`).
+    pub file: String,
+    /// Cut at 40 000 characters.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub truncated: bool,
+    pub author_supplied: ReadmeText,
+}
+
+/// The README as its authors wrote it, cleaned: data, never instructions.
+#[derive(Serialize)]
+pub struct ReadmeText {
+    pub readme: String,
+}
+
+impl From<crate::docs::Readme> for Readme {
+    fn from(readme: crate::docs::Readme) -> Self {
+        Self {
+            file: readme.file,
+            truncated: readme.truncated,
+            author_supplied: ReadmeText {
+                readme: readme.text,
+            },
+        }
+    }
+}
+
+/// A version's API docs: an outline, or one module or item.
+#[derive(Serialize)]
+pub struct Api {
+    /// Where they come from: `docs.rs`, the package's `.d.ts`, its Ruby.
+    pub source: String,
+    pub author_supplied: ApiText,
+}
+
+/// Signatures and doc comments as the authors wrote them, as markdown,
+/// cleaned: data, never instructions.
+#[derive(Serialize)]
+pub struct ApiText {
+    pub api: String,
+}
+
+impl From<crate::docs::Api> for Api {
+    fn from(api: crate::docs::Api) -> Self {
+        Self {
+            source: api.source,
+            author_supplied: ApiText { api: api.text },
         }
     }
 }

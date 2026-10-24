@@ -1,9 +1,9 @@
 use mcp_host::prelude::*;
 use mcp_host::registry::router::McpResourceTemplateRouter;
 
-use crate::admin::mcp::untrusted::clean_json;
 use crate::admin::mcp::views::gem_sbom_uri;
 use crate::admin::mcp::{VeinMcp, json_resource_as, uri_param};
+use crate::untrusted::clean_json;
 
 const CYCLONEDX_JSON: &str = "application/vnd.cyclonedx+json";
 

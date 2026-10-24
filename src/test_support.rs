@@ -188,6 +188,27 @@ pub fn build_test_gem(metadata_yaml: &str, data_entries: &[(&str, &[u8])]) -> Na
     file
 }
 
+/// A gzipped tarball of `entries` (path, contents), as a `.crate` or an
+/// npm package is shipped.
+pub fn tar_gz(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut tar_bytes = Vec::new();
+    {
+        let mut builder = Builder::new(&mut tar_bytes);
+        for (path, contents) in entries {
+            let mut header = Header::new_gnu();
+            header.set_size(contents.len() as u64);
+            header.set_mode(0o644);
+            builder
+                .append_data(&mut header, path, Cursor::new(*contents))
+                .expect("append tarball entry");
+        }
+        builder.finish().expect("finish tarball");
+    }
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(&tar_bytes).expect("compress tarball");
+    encoder.finish().expect("finalize tarball")
+}
+
 /// Size and hex SHA-256 of `path`, as the cache index records them.
 pub fn digest_file(path: &Path) -> (u64, String) {
     let bytes = std::fs::read(path).expect("read gem bytes");

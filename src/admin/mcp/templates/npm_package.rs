@@ -6,15 +6,15 @@ use serde::Serialize;
 use vein_adapter::AssetKind;
 
 use crate::admin::mcp::npm::{Packument, is_typescript_tag};
-use crate::admin::mcp::untrusted::{
-    DEPRECATION_LIMIT, DESCRIPTION_LIMIT, LIST_LIMIT, NpmText, SHORT_LIMIT, clean, clean_opt,
-    clean_url,
-};
 use crate::admin::mcp::version_list::{is_semver_prerelease, newer_prerelease, newest_releases};
 use crate::admin::mcp::views::{
     TrackedVersion, cached_labels, same_repository, total_if_truncated,
 };
 use crate::admin::mcp::{VeinMcp, json_resource, read_error, unknown_package, uri_param};
+use crate::untrusted::{
+    DEPRECATION_LIMIT, DESCRIPTION_LIMIT, LIST_LIMIT, NpmText, SHORT_LIMIT, clean, clean_opt,
+    clean_url,
+};
 
 #[derive(Serialize)]
 struct Package {

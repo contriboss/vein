@@ -8,13 +8,16 @@ pub mod config;
 pub mod crates;
 pub mod db;
 pub mod delay;
+pub mod docs;
 pub mod gem_metadata;
 pub mod gem_sync;
 pub mod http_cache;
 pub mod jobs;
+pub mod loopback;
 pub mod npm;
 pub mod proxy;
 pub mod search;
+pub mod untrusted;
 pub mod upstream;
 pub mod util;
 

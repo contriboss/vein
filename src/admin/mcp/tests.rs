@@ -109,6 +109,17 @@ const ANYHOW_INDEX: &str = concat!(
     "\n",
 );
 
+/// left-pad 1.3.0's real `index.d.ts`.
+const LEFT_PAD_D_TS: &str = "// Type definitions for left-pad 1.2.0
+// Project: https://github.com/stevemao/left-pad
+
+declare function leftPad(str: string|number, len: number, ch?: string|number): string;
+
+declare namespace leftPad { }
+
+export = leftPad;
+";
+
 /// MOCKED: stands in for vein's own proxy, which the MCP side asks for
 /// packages it has not stored. Everything else answers 404, as the proxy
 /// does when the registry has no such package.
@@ -128,6 +139,58 @@ async fn fake_proxy() -> (u16, Arc<Mutex<Vec<String>>>) {
     crate::test_support::spawn_route_server(vec![
         ("/info/rails".into(), ok(RAILS_INFO)),
         ("/index/an/yh/anyhow".into(), ok(ANYHOW_INDEX)),
+        (
+            "/api/v1/crates/state-machines/0.32.1/download".into(),
+            ok(crate::test_support::tar_gz(&[
+                (
+                    "state-machines-0.32.1/Cargo.toml",
+                    b"[package]\nname = \"state-machines\"\nversion = \"0.32.1\"\nreadme = \"README.md\"\n",
+                ),
+                // Its real opening, plus an author writing to the agent invisibly.
+                (
+                    "state-machines-0.32.1/README.md",
+                    "# state-machines\u{E0049}\u{E0047}\u{E004E}\n\n> **A learning-focused Rust port of Ruby's state_machines gem**\n"
+                        .as_bytes(),
+                ),
+            ])),
+        ),
+        // left-pad 1.3.0 ships its own declarations (real ones).
+        (
+            "/left-pad/-/left-pad-1.3.0.tgz".into(),
+            ok(crate::test_support::tar_gz(&[
+                ("package/package.json", br#"{"name":"left-pad","version":"1.3.0","types":"index.d.ts"}"#),
+                ("package/index.d.ts", LEFT_PAD_D_TS.as_bytes()),
+            ])),
+        ),
+        // lodash 4.17.21 ships none; DefinitelyTyped's @types/lodash has them.
+        (
+            "/lodash/-/lodash-4.17.21.tgz".into(),
+            ok(crate::test_support::tar_gz(&[("package/package.json", br#"{"name":"lodash","version":"4.17.21"}"#)])),
+        ),
+        (
+            "/@types%2flodash".into(),
+            ok(json!({"name": "@types/lodash", "dist-tags": {"latest": "4.17.27"},
+                      "versions": {"4.17.26": {}, "4.17.27": {}}}).to_string()),
+        ),
+        (
+            "/@types/lodash/-/lodash-4.17.27.tgz".into(),
+            ok(crate::test_support::tar_gz(&[
+                ("package/package.json", br#"{"name":"@types/lodash","version":"4.17.27","types":"index.d.ts"}"#),
+                ("package/index.d.ts", b"export = _;\nexport as namespace _;\n\ndeclare const _: _.LoDashStatic;\n"),
+            ])),
+        ),
+        (
+            "/gems/state_machines-0.202.0.gem".into(),
+            ok(crate::docs::test_support::state_machines_gem()),
+        ),
+        (
+            // MOCKED: docs.rs too, with state-machines 0.32.1's rustdoc JSON.
+            "/crate/state-machines/0.32.1/json".into(),
+            ok(ruzstd::encoding::compress_to_vec(
+                crate::docs::test_support::state_machines().to_string().as_bytes(),
+                ruzstd::encoding::CompressionLevel::Fastest,
+            )),
+        ),
         (
             // rubygems.org's real top five for `rack`.
             "/api/v1/search.json?query=rack".into(),
@@ -275,6 +338,7 @@ async fn seeded_resources(storage: &TempDir, proxy_port: u16) -> AdminResources 
     let mut config = VeinConfig::default();
     config.server.host = "127.0.0.1".into();
     config.server.port = proxy_port;
+    config.docs.docs_rs = format!("http://127.0.0.1:{proxy_port}");
     AdminResources::new(
         Arc::new(config),
         Arc::new(cache),
@@ -499,14 +563,23 @@ async fn advertises_resources_and_no_tools() {
         templates::GEM_VERSIONS,
         templates::GEM_VERSION,
         templates::GEM_SBOM,
+        templates::GEM_README,
+        templates::GEM_API,
+        templates::GEM_API_ITEM,
         templates::CRATE_SEARCH,
         templates::CRATE,
         templates::CRATE_VERSIONS,
         templates::CRATE_VERSION,
+        templates::CRATE_README,
+        templates::CRATE_API,
+        templates::CRATE_API_ITEM,
         templates::NPM_SEARCH,
         templates::NPM_PACKAGE,
         templates::NPM_VERSIONS,
         templates::NPM_VERSION,
+        templates::NPM_README,
+        templates::NPM_API,
+        templates::NPM_API_ITEM,
     ];
     expected.sort_unstable();
     assert_eq!(listed, expected);
@@ -832,6 +905,150 @@ async fn packages_nobody_fetched_are_looked_up_through_the_proxy() {
     assert!(
         !seen.iter().any(|request| request.contains("secrets")),
         "{seen:?}"
+    );
+}
+
+/// A version's README, out of its own archive (here fetched through the
+/// proxy), under `author_supplied` and cleaned like the rest.
+#[tokio::test]
+async fn readmes_come_from_the_version_archive() {
+    let (service, _storage) = open().await;
+    let session = Session::open(&service).await;
+    let (_, readme) = session
+        .read("vein://crates/state-machines/versions/0.32.1/readme")
+        .await;
+    assert_eq!(readme["file"], "README.md");
+    assert_eq!(
+        readme["author_supplied"]["readme"],
+        "# state-machines\n\n> **A learning-focused Rust port of Ruby's state_machines gem**",
+        "the smuggled tag characters are gone"
+    );
+    assert_eq!(readme.get("truncated"), None);
+
+    let frame = session
+        .rpc(
+            "resources/read",
+            json!({"uri": "vein://crates/state-machines/versions/9.9.9/readme"}),
+        )
+        .await;
+    assert!(
+        frame["error"]["message"]
+            .to_string()
+            .contains("not published"),
+        "{frame}"
+    );
+}
+
+/// A crate's API from docs.rs: the outline, then one item by path.
+#[tokio::test]
+async fn crate_apis_come_from_docs_rs() {
+    let (service, _storage) = open().await;
+    let session = Session::open(&service).await;
+    let (_, outline) = session
+        .read("vein://crates/state-machines/versions/0.32.1/api")
+        .await;
+    assert_eq!(outline["source"], "docs.rs");
+    let text = outline["author_supplied"]["api"].as_str().unwrap();
+    assert!(text.starts_with("# state_machines 0.32.1"), "{text}");
+
+    let (_, runner) = session
+        .read("vein://crates/state-machines/versions/0.32.1/api/runtime::Runner")
+        .await;
+    let text = runner["author_supplied"]["api"].as_str().unwrap();
+    assert!(
+        text.contains("# Struct `state_machines::runtime::Runner`"),
+        "{text}"
+    );
+
+    let frame = session
+        .rpc(
+            "resources/read",
+            json!({"uri": "vein://crates/state-machines/versions/0.32.1/api/runtime::Nope"}),
+        )
+        .await;
+    assert!(
+        frame["error"]["message"]
+            .to_string()
+            .contains("no public `runtime::Nope`"),
+        "{frame}"
+    );
+}
+
+/// A gem's API from the Ruby in its `.gem`: the outline, a class, and a
+/// method by its `RDoc` name, `#` and `?` as they are.
+#[tokio::test]
+async fn gem_apis_come_from_their_ruby_source() {
+    let (service, _storage) = open().await;
+    let session = Session::open(&service).await;
+    let (_, outline) = session
+        .read("vein://gems/state_machines/versions/0.202.0/api")
+        .await;
+    assert_eq!(outline["source"], "the gem's Ruby source");
+    let text = outline["author_supplied"]["api"].as_str().unwrap();
+    assert!(
+        text.starts_with("# state_machines 0.202.0: Ruby API"),
+        "{text}"
+    );
+    assert!(
+        text.contains("- class `StateMachines::Machine`: Represents a state machine"),
+        "{text}"
+    );
+
+    let (_, integrations) = session
+        .read("vein://gems/state_machines/versions/0.202.0/api/StateMachines::Integrations")
+        .await;
+    let text = integrations["author_supplied"]["api"].as_str().unwrap();
+    assert!(
+        text.contains("### `Integrations.register(name_or_module)`"),
+        "{text}"
+    );
+
+    let (_, method) = session
+        .read("vein://gems/state_machines/versions/0.202.0/api/StateMachines::Machine#action_hook?")
+        .await;
+    let text = method["author_supplied"]["api"].as_str().unwrap();
+    assert!(
+        text.starts_with("# `Machine#action_hook?(self_only = false)`"),
+        "{text}"
+    );
+}
+
+/// An npm package's API: its own declarations, else `DefinitelyTyped`'s of
+/// the same major version.
+#[tokio::test]
+async fn npm_apis_are_typescript_declarations() {
+    let (service, _storage) = open().await;
+    let session = Session::open(&service).await;
+
+    let (_, own) = session.read("vein://npm/left-pad/versions/1.3.0/api").await;
+    assert_eq!(own["source"], "the package");
+    let text = own["author_supplied"]["api"].as_str().unwrap();
+    assert!(
+        text.contains("`index.d.ts`, as `package.json` declares"),
+        "{text}"
+    );
+    assert!(
+        text.contains("declare function leftPad(str: string|number"),
+        "{text}"
+    );
+    let (_, file) = session
+        .read("vein://npm/left-pad/versions/1.3.0/api/index.d.ts")
+        .await;
+    assert!(
+        file["author_supplied"]["api"]
+            .as_str()
+            .unwrap()
+            .contains("export = leftPad;")
+    );
+
+    let (_, typed) = session.read("vein://npm/lodash/versions/4.17.21/api").await;
+    assert_eq!(typed["source"], "@types/lodash 4.17.27 (DefinitelyTyped)");
+    assert!(
+        typed["author_supplied"]["api"]
+            .as_str()
+            .unwrap()
+            .contains("declare const _: _.LoDashStatic;"),
+        "{typed}"
     );
 }
 

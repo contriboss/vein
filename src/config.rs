@@ -13,6 +13,7 @@ pub mod admin;
 pub mod catalog;
 pub mod database;
 pub mod delay_policy;
+pub mod docs;
 pub mod logging;
 pub mod reliability;
 pub mod server;
@@ -34,6 +35,7 @@ pub use admin::{AdminConfig, McpSettings};
 pub use catalog::CatalogConfig;
 pub use database::{DatabaseBackend, DatabaseConfig};
 pub use delay_policy::DelayPolicyConfig;
+pub use docs::DocsConfig;
 pub use logging::LoggingConfig;
 pub use reliability::{BackoffStrategy, RetryConfig};
 pub use server::ServerConfig;
@@ -58,6 +60,8 @@ pub struct Config {
     pub admin: AdminConfig,
     #[serde(default)]
     pub catalog: CatalogConfig,
+    #[serde(default)]
+    pub docs: DocsConfig,
 }
 
 impl Config {

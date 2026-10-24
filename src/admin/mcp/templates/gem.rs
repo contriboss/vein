@@ -4,12 +4,12 @@ use serde::Serialize;
 use vein_adapter::AssetKind;
 
 use crate::admin::mcp::rubygems::is_prerelease;
-use crate::admin::mcp::untrusted::{GemText, SUMMARY_LIMIT, clean_list, clean_opt};
 use crate::admin::mcp::version_list::{newer_prerelease, newest_releases};
 use crate::admin::mcp::views::{TrackedVersion, total_if_truncated};
 use crate::admin::mcp::{
     DEFAULT_PLATFORM, VeinMcp, json_resource, read_error, unknown_package, uri_param,
 };
+use crate::untrusted::{GemText, SUMMARY_LIMIT, clean_list, clean_opt};
 
 #[derive(Serialize)]
 struct Gem {

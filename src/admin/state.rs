@@ -1,17 +1,11 @@
 //! Shared state for the admin dashboard.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc};
 
 use crate::config::Config as VeinConfig;
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use jiff::Timestamp;
-use rama::{
-    Layer,
-    http::{
-        HeaderMap, StatusCode, body::util::BodyExt, client::EasyHttpWebClient,
-        layer::timeout::TimeoutLayer, service::client::HttpClientExt,
-    },
-};
+use rama::http::HeaderMap;
 use tera::Tera;
 use vein_adapter::{
     AssetKey, AssetKind, CacheBackend, CacheBackendTrait, CachedVersion, FilesystemStorage,
@@ -19,10 +13,6 @@ use vein_adapter::{
 };
 
 use crate::admin::ruby::RubyStatus;
-
-/// How long a registry lookup through the proxy may take: its upstream
-/// timeout is 30s at most, plus the fallbacks.
-const PROXY_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Main application state, passed to all handlers.
 #[derive(Clone)]
@@ -197,41 +187,18 @@ impl AdminResources {
         Ok((source, crate::search::names(kind, &answer)))
     }
 
-    async fn proxy_get(&self, path: &str, npm: bool) -> Result<Option<(HeaderMap, Vec<u8>)>> {
-        let url = format!("{}{path}", self.proxy_base());
-        let client = TimeoutLayer::new(PROXY_TIMEOUT).into_layer(EasyHttpWebClient::default());
-        let mut request = client.get(url.as_str());
-        if npm {
-            request = request.header("npm-command", "view");
-        }
-        let response = request
-            .send()
-            .await
-            .map_err(|err| anyhow::anyhow!("asking the proxy for {path}: {err}"))?;
-        match response.status() {
-            status if status.is_success() => {
-                let headers = response.headers().clone();
-                let body = response
-                    .into_body()
-                    .collect()
-                    .await
-                    .with_context(|| format!("reading the proxy's answer for {path}"))?;
-                Ok(Some((headers, body.to_bytes().to_vec())))
-            }
-            StatusCode::NOT_FOUND => Ok(None),
-            status => bail!("the proxy answered {status} for {path}"),
-        }
+    /// Package documentation over this cache and proxy.
+    #[must_use]
+    pub fn docs(&self) -> crate::docs::Docs {
+        crate::docs::Docs::new(
+            Arc::clone(&self.config),
+            Arc::clone(&self.cache),
+            Arc::clone(&self.storage),
+        )
     }
 
-    /// The proxy listener, as this process can reach it.
-    fn proxy_base(&self) -> String {
-        let server = &self.config.server;
-        let host = match server.host.as_str() {
-            "" | "0.0.0.0" => "127.0.0.1",
-            "::" | "[::]" => "[::1]",
-            host => host,
-        };
-        format!("http://{host}:{}", server.port)
+    async fn proxy_get(&self, path: &str, npm: bool) -> Result<Option<(HeaderMap, Vec<u8>)>> {
+        crate::loopback::get(&self.config.server, path, npm).await
     }
 
     pub async fn read_stored(&self, relative: &str) -> Result<Option<Vec<u8>>> {

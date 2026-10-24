@@ -6,10 +6,10 @@ use serde::Serialize;
 use vein_adapter::AssetKind;
 
 use crate::admin::mcp::npm::{license, string_map, text};
-use crate::admin::mcp::untrusted::{
+use crate::admin::mcp::{VeinMcp, uri_param};
+use crate::untrusted::{
     DEPRECATION_LIMIT, DESCRIPTION_LIMIT, NpmText, SHORT_LIMIT, clean, clean_opt,
 };
-use crate::admin::mcp::{VeinMcp, uri_param};
 
 /// A version's manifest from the cached registry metadata.
 #[derive(Serialize)]

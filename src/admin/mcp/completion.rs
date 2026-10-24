@@ -9,8 +9,9 @@ use mcp_host::protocol::types::CompletionContext;
 use vein_adapter::AssetKind;
 
 use super::templates::{
-    CRATE, CRATE_SEARCH, CRATE_VERSION, CRATE_VERSIONS, GEM, GEM_SBOM, GEM_SEARCH, GEM_VERSION,
-    GEM_VERSIONS, NPM_PACKAGE, NPM_SEARCH, NPM_VERSION, NPM_VERSIONS,
+    CRATE, CRATE_API, CRATE_API_ITEM, CRATE_README, CRATE_SEARCH, CRATE_VERSION, CRATE_VERSIONS,
+    GEM, GEM_API, GEM_API_ITEM, GEM_README, GEM_SBOM, GEM_SEARCH, GEM_VERSION, GEM_VERSIONS,
+    NPM_API, NPM_API_ITEM, NPM_PACKAGE, NPM_README, NPM_SEARCH, NPM_VERSION, NPM_VERSIONS,
 };
 use crate::admin::state::AdminResources;
 
@@ -25,15 +26,40 @@ pub fn register(server: &Server, resources: &AdminResources) {
     let ecosystems = [
         (
             AssetKind::Gem,
-            &[GEM_SEARCH, GEM, GEM_VERSIONS, GEM_VERSION, GEM_SBOM][..],
+            &[
+                GEM_SEARCH,
+                GEM,
+                GEM_VERSIONS,
+                GEM_VERSION,
+                GEM_SBOM,
+                GEM_README,
+                GEM_API,
+                GEM_API_ITEM,
+            ][..],
         ),
         (
             AssetKind::Crate,
-            &[CRATE_SEARCH, CRATE, CRATE_VERSIONS, CRATE_VERSION][..],
+            &[
+                CRATE_SEARCH,
+                CRATE,
+                CRATE_VERSIONS,
+                CRATE_VERSION,
+                CRATE_README,
+                CRATE_API,
+                CRATE_API_ITEM,
+            ][..],
         ),
         (
             AssetKind::NpmPackage,
-            &[NPM_SEARCH, NPM_PACKAGE, NPM_VERSIONS, NPM_VERSION][..],
+            &[
+                NPM_SEARCH,
+                NPM_PACKAGE,
+                NPM_VERSIONS,
+                NPM_VERSION,
+                NPM_README,
+                NPM_API,
+                NPM_API_ITEM,
+            ][..],
         ),
     ];
     for (kind, templates) in ecosystems {
