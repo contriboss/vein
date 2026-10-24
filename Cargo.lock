@@ -2056,6 +2056,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "mcp-guest"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ccc5589f2fa355956cc579b611bbe45c1e2f0643ccfd9b82c6e8473c0c6a8ba"
+dependencies = [
+ "base64 0.23.1",
+ "chrono-machines 0.8.1",
+ "mcp-host",
+ "rama",
+ "rand 0.10.3",
+ "serde",
+ "serde_json",
+ "state-machines 0.32.1",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "url",
+]
+
+[[package]]
 name = "mcp-host"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4837,6 +4857,7 @@ dependencies = [
  "flate2",
  "hex",
  "jiff",
+ "mcp-guest",
  "mcp-host",
  "opentelemetry-otlp",
  "percent-encoding",

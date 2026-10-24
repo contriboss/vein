@@ -37,6 +37,8 @@ pub struct AdminResources {
     /// Ruby's release lifecycle, for the dashboard.
     #[cfg(feature = "gems")]
     ruby_status: Option<Arc<RubyStatus>>,
+    /// Where the MCP's code tools come from, when `[code_context]` names one.
+    code_context: Option<Arc<dyn crate::code_context::Provider>>,
 }
 
 impl AdminResources {
@@ -52,7 +54,29 @@ impl AdminResources {
             storage,
             #[cfg(feature = "gems")]
             ruby_status: None,
+            code_context: None,
         }
+    }
+
+    /// The same, with the MCP's code tools from `provider`.
+    #[must_use]
+    pub fn with_code_context(self, provider: Arc<dyn crate::code_context::Provider>) -> Self {
+        Self {
+            code_context: Some(provider),
+            ..self
+        }
+    }
+
+    /// The provider of the MCP's code tools, if any.
+    #[must_use]
+    pub fn code_context(&self) -> Option<Arc<dyn crate::code_context::Provider>> {
+        self.code_context.clone()
+    }
+
+    /// Whether the code tool `name` is offered.
+    #[must_use]
+    pub fn offers_tool(&self, name: &str) -> bool {
+        self.config.code_context.offers(name)
     }
 
     /// The same, showing `status` on the dashboard.

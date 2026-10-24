@@ -108,3 +108,15 @@ enabled = true
 # name = "nokogiri"
 # version = "1.18.10"
 # reason = "security fix"
+
+# CODE CONTEXT (Optional, off by default)
+# MCP tools from a provider indexing public open-source code and docs:
+# search, read, list and grep inside a package or repository, examples and
+# research from other projects. Queries leave this network. GitHits needs an
+# API token (ghi-...) from its account settings: VEIN_GITHITS_TOKEN, or a
+# file only vein can read. Built with the `githits` Cargo feature (default).
+# [code_context]
+# provider = "githits"
+# tools = ["search", "search_status", "list", "read", "grep"]   # default: all
+# [code_context.githits]
+# token_file = "/usr/local/etc/vein/githits.token"

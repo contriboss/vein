@@ -32,7 +32,12 @@ pub async fn bootstrap(
     storage: Arc<FilesystemStorage>,
 ) -> Result<AdminState> {
     let tera = load_templates()?;
+    let code_context = crate::code_context::from_config(&config.code_context)?;
     let resources = AdminResources::new(config, cache, storage);
+    let resources = match code_context {
+        Some(provider) => resources.with_code_context(provider),
+        None => resources,
+    };
     #[cfg(feature = "gems")]
     let resources = resources.with_ruby_status(load_ruby_status().await);
     Ok(AdminState::new(resources, tera))

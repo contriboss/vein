@@ -656,3 +656,25 @@ fn settings_for_a_registry_built_out_are_refused() {
         assert!(err.starts_with("upstream names gem"), "{err}");
     }
 }
+
+/// A code context provider without its token stops vein at startup, rather
+/// than offering tools that cannot answer.
+#[test]
+fn a_code_context_provider_needs_its_token() {
+    if std::env::var(code_context::GITHITS_TOKEN_ENV).is_ok() {
+        return;
+    }
+    let config = Config {
+        code_context: CodeContextConfig {
+            provider: Some(code_context::Provider::GitHits),
+            ..CodeContextConfig::default()
+        },
+        ..configured()
+    };
+    let err = config.validate().unwrap_err().to_string();
+    if cfg!(feature = "githits") {
+        assert!(err.contains("API token"), "{err}");
+    } else {
+        assert!(err.contains("`githits` feature"), "{err}");
+    }
+}

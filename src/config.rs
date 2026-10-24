@@ -11,6 +11,7 @@ use vein_adapter::AssetKind;
 // Re-export all submodules
 pub mod admin;
 pub mod catalog;
+pub mod code_context;
 pub mod database;
 pub mod delay_policy;
 pub mod docs;
@@ -33,6 +34,7 @@ pub(crate) fn resolve_relative(path: &mut PathBuf, base_dir: &Path) {
 // Re-export types from submodules for convenience
 pub use admin::{AdminConfig, McpSettings};
 pub use catalog::CatalogConfig;
+pub use code_context::CodeContextConfig;
 pub use database::{DatabaseBackend, DatabaseConfig};
 pub use delay_policy::DelayPolicyConfig;
 pub use docs::DocsConfig;
@@ -62,6 +64,8 @@ pub struct Config {
     pub catalog: CatalogConfig,
     #[serde(default)]
     pub docs: DocsConfig,
+    #[serde(default)]
+    pub code_context: CodeContextConfig,
 }
 
 impl Config {
@@ -159,6 +163,16 @@ impl Config {
             .position(|entry| entry.name.is_empty() && entry.names.is_empty())
         {
             bail!("delay_policy.packages[{index}] names no package: give `name` or `names`");
+        }
+        if let Some(provider) = self.code_context.provider {
+            if !provider.built() {
+                bail!(
+                    "code_context.provider is {}, but this vein was built without the `{}` feature",
+                    provider.feature(),
+                    provider.feature()
+                );
+            }
+            self.code_context.githits.token()?;
         }
         if self.delay_policy.release_hour_utc > 23 {
             bail!(

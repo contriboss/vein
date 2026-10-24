@@ -28,13 +28,14 @@ export VEIN_TEST_DATABASE_URL := env("VEIN_TEST_DATABASE_URL", "postgres://vein:
 test *ARGS:
     cargo test --workspace {{ARGS}}
 
-# Each registry alone (with and without the admin), then each pair: every
-# build lints and passes its tests.
+# Each registry alone (with and without the admin), then each pair, then a
+# code context provider without the others: every build lints and passes
+# its tests.
 features:
     #!/usr/bin/env sh
     set -e
     for f in tls,gems tls,crates tls,npm tls,admin,gems tls,admin,crates tls,admin,npm \
-             tls,admin,gems,crates tls,admin,gems,npm tls,admin,crates,npm; do
+             tls,admin,gems,crates tls,admin,gems,npm tls,admin,crates,npm tls,crates,githits; do
         echo "== $f"
         cargo clippy -p vein --all-targets --no-default-features --features "$f"
         cargo test -p vein --no-default-features --features "$f"

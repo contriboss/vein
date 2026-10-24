@@ -4,6 +4,7 @@
 #[cfg(feature = "admin")]
 pub mod admin;
 pub mod catalog;
+pub mod code_context;
 pub mod config;
 #[cfg(feature = "crates")]
 pub mod crates;

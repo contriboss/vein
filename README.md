@@ -18,6 +18,9 @@ resources: its requests get a 404 saying which feature is missing, and a config
 naming it (`[upstream]` for gems, `[catalog] registries`, delay entries) is refused.
 Without `gems`, no Ruby parser, SBOM or YAML code is built; without `crates`, no zstd.
 
+`githits` (default) builds the [GitHits](https://githits.com) code context provider: MCP
+tools over public open-source code and docs, off until `[code_context] provider = "githits"`.
+
 ## License
 
 Vein is dual-licensed:

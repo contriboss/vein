@@ -103,3 +103,12 @@ names = [
     "trailblazer-developer", "trailblazer-finder", "trailblazer-macro",
     "trailblazer-rails", "vial", "warpdrive-proxy", "with_advisory_lock",
 ]
+
+[code_context]
+# The MCP's code tools (search, read, grep, examples, research...) from
+# GitHits; its queries leave this network. The token lives outside the
+# repo: ~/.config/vein/githits.token on harbor, mode 600.
+provider = "githits"
+
+[code_context.githits]
+token_file = "~/.config/vein/githits.token"

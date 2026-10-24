@@ -83,13 +83,16 @@ name = "vein"
 path = "src/main.rs"
 
 [features]
-default = ["tls", "admin", "gems", "crates", "npm"]
+default = ["tls", "admin", "gems", "crates", "npm", "githits"]
 tls = ["rama/rustls", "vein-adapter/tls"]
 # The registries vein serves, at least one: each brings its proxy routes,
 # search, docs, catalog, release delay and MCP resources.
 gems = ["dep:ruby-prism", "dep:cyclonedx-bom", "dep:serde_yaml"]
 crates = ["dep:ruzstd"]
 npm = []
+# Code context providers for the MCP's tools; inert until `[code_context]`
+# names one. GitHits: https://githits.com, over its hosted MCP.
+githits = ["admin", "tls", "dep:mcp-guest"]
 # Admin dashboard and MCP endpoint, served next to the proxy (`[admin]` in vein.toml).
 admin = ["dep:tera", "dep:mcp-host"]
 inspect = []
@@ -145,6 +148,10 @@ tracing.workspace = true
 # Admin dashboard (feature `admin`)
 tera = { version = "2.4.0", optional = true }
 mcp-host = { version = "0.14.0", default-features = false, features = ["http", "macros"], optional = true }
+# MCP client for code context providers. No `tls-*` feature: vein's rama
+# rustls and the aws-lc-rs provider it installs serve it, as they serve every
+# other client here (rama's `aws-lc` would add bindgen, and CMake builds).
+mcp-guest = { version = "0.12.0", default-features = false, features = ["http"], optional = true }
 
 vein-adapter.workspace = true
 # Background jobs (catalog syncs, delay promotions) in vein's own Postgres.
