@@ -6,7 +6,7 @@ resolver = "3"
 edition = "2024"
 rust-version = "1.99"
 authors = ["Abdelkader Boudih <oss@seuros.com>"]
-license = "AGPL-3.0-only"
+license = "BSD-3-Clause"
 repository = "https://github.com/contriboss/vein"
 homepage = "https://github.com/contriboss/vein"
 
