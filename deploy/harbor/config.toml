@@ -1,6 +1,8 @@
 # vein on harbor (FreeBSD), launched by launchbay under mothership
-# (deploy/harbor/ship-manifest.toml). No secrets: Postgres is reached over
-# its local socket as the `vein` role.
+# (deploy/harbor/ship-manifest.toml). No secrets here: database.url is
+# deliberately left unset below and comes from VEIN_DATABASE_URL in the
+# rc.d environment instead. This file is an example to copy per host, not
+# a drop-in config.
 
 [server]
 # Loopback only: mothership owns the public listener and proxies to it.
@@ -12,7 +14,8 @@ port = 8346
 path = "/home/seuros/.local/share/vein/storage"
 
 [database]
-url = "postgres://vein@localhost/vein?host=/tmp"
+# Set via VEIN_DATABASE_URL in the host environment instead, e.g.
+# postgres://vein@localhost/vein?host=/tmp for a local socket.
 max_connections = 10
 
 [logging]

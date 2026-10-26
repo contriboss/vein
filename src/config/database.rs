@@ -2,11 +2,17 @@ use crate::config::reliability::{ReliabilityConfig, RetryConfig};
 use anyhow::{Result, bail};
 use serde::Deserialize;
 
+/// Overrides `url`; set this instead of putting credentials in the config
+/// file. Takes precedence over `url` when both are set.
+pub const DATABASE_URL_ENV: &str = "VEIN_DATABASE_URL";
+
 /// The Postgres cache index.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct DatabaseConfig {
-    /// `postgres://user:pass@host/db`; required to run.
+    /// `postgres://user:pass@host/db`; required to run, unless
+    /// `VEIN_DATABASE_URL` is set. Prefer the env var outside local dev: this
+    /// field ends up in the config file, credentials and all.
     pub url: Option<String>,
     /// Connection pool size.
     pub max_connections: u32,
@@ -27,11 +33,18 @@ impl DatabaseConfig {
         }
     }
 
+    /// `VEIN_DATABASE_URL` if set, else `url` from the config file.
+    fn resolved_url(&self) -> Option<String> {
+        std::env::var(DATABASE_URL_ENV)
+            .ok()
+            .or_else(|| self.url.clone())
+    }
+
     /// Where the database lives, for display: the URL with any credentials
     /// removed.
     #[must_use]
     pub fn location(&self) -> String {
-        self.url
+        self.resolved_url()
             .as_deref()
             .map_or_else(String::new, redact_credentials)
     }
@@ -40,10 +53,14 @@ impl DatabaseConfig {
     ///
     /// # Errors
     ///
-    /// When `url` is unset or is not a `postgres://` URL.
+    /// When neither `VEIN_DATABASE_URL` nor `url` is set, or the URL is not
+    /// a `postgres://` URL.
     pub fn backend(&self) -> Result<DatabaseBackend> {
-        let Some(raw_url) = &self.url else {
-            bail!("database.url is required, e.g. postgres://user:pass@host/vein");
+        let Some(raw_url) = self.resolved_url() else {
+            bail!(
+                "database.url is required (or set {DATABASE_URL_ENV}), \
+                 e.g. postgres://user:pass@host/vein"
+            );
         };
         let url = raw_url.trim();
         match url.split_once("://").map(|(scheme, _)| scheme) {

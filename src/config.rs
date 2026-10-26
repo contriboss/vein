@@ -35,7 +35,7 @@ pub(crate) fn resolve_relative(path: &mut PathBuf, base_dir: &Path) {
 pub use admin::{AdminConfig, McpSettings};
 pub use catalog::CatalogConfig;
 pub use code_context::CodeContextConfig;
-pub use database::{DatabaseBackend, DatabaseConfig};
+pub use database::{DATABASE_URL_ENV, DatabaseBackend, DatabaseConfig};
 pub use delay_policy::DelayPolicyConfig;
 pub use docs::DocsConfig;
 pub use logging::LoggingConfig;

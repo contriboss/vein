@@ -275,6 +275,10 @@ fn test_config_normalizes_paths_on_load() {
 
 #[test]
 fn test_database_backend_requires_url() {
+    // The environment wins; with it set here, `url` being unset is moot.
+    if std::env::var(DATABASE_URL_ENV).is_ok() {
+        return;
+    }
     let err = DatabaseConfig::default().backend().unwrap_err();
     assert!(
         err.to_string().contains("database.url is required"),
@@ -312,6 +316,9 @@ fn test_validate_accepts_http_and_https_upstreams() {
 
 #[test]
 fn test_validate_requires_database_url() {
+    if std::env::var(DATABASE_URL_ENV).is_ok() {
+        return;
+    }
     let err = Config::default().validate().unwrap_err();
     assert!(
         err.to_string().contains("database.url is required"),
