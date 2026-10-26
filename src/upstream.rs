@@ -193,15 +193,12 @@ impl UpstreamClient {
             Ok(outcome) => Ok(outcome.into_inner()),
             Err(err) => match err.into_cause() {
                 // Being rate limited says nothing about upstream health.
-                Some(AttemptError::Status(response))
+                AttemptError::Status(response)
                     if response.status() == StatusCode::TOO_MANY_REQUESTS =>
                 {
                     Ok(*response)
                 }
-                Some(cause) => Err(cause),
-                None => Err(AttemptError::Transport(anyhow!(
-                    "upstream retry for {url} ended without a cause"
-                ))),
+                cause => Err(cause),
             },
         }
     }

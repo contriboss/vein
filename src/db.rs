@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use anyhow::{Context, Result, anyhow};
+#[cfg(test)]
+use anyhow::anyhow;
+use anyhow::{Context, Result};
 use chrono_machines::{AsyncRetryable, retry::RetryErrorKind};
 use rama::telemetry::tracing::{self, debug, error, info, warn};
 
@@ -79,9 +81,7 @@ where
         Err(err) => {
             let attempts = err.attempts();
             let non_retryable = err.kind() == RetryErrorKind::PredicateRejected;
-            let err = err
-                .into_cause()
-                .unwrap_or_else(|| anyhow!("{db_type} connection failed"));
+            let err = err.into_cause();
             if non_retryable {
                 error!(
                     attempts,
