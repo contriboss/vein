@@ -58,7 +58,7 @@ significant_drop_tightening = "allow"
 
 [package]
 name = "vein"
-version = "0.5.1"
+version = "0.6.0"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
