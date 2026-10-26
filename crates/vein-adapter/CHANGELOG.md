@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.6.0](https://github.com/contriboss/vein/compare/v0.5.0...v0.6.0) (2026-10-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* maintenance sync from forgejo
+
+### Features
+
+* **delay:** release delay policy, full-registry search, and promotion jobs ([74dbd8f](https://github.com/contriboss/vein/commit/74dbd8f78dca749740462f62b2d94556ab9f18ae))
+
+
+### Miscellaneous Chores
+
+* maintenance sync from forgejo ([979313b](https://github.com/contriboss/vein/commit/979313b3e0dbb3e0500fa6c016c5997b2f22e23a))
+* **release:** pin the next release to 0.6.0 ([656ec27](https://github.com/contriboss/vein/commit/656ec27dd9485f1a7fed4ac241efbc463251826d))
+
 ## [0.5.0](https://github.com/contriboss/vein/compare/v0.4.0...v0.5.0) (2026-07-30)
 
 
