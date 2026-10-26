@@ -8,6 +8,12 @@ project = "vein"
 repository = "ssh://git@harbor:12222/seuros/vein.git"
 branch = "master"
 
+# Written into harbor's <target>.env on every launch (launchbay regenerates
+# it from here each time, so this is the only place that sticks). No
+# password: peer auth over the local Postgres socket, not a real secret.
+[env]
+VEIN_DATABASE_URL = "postgres://vein@localhost/vein?host=/tmp"
+
 [[targets]]
 name = "harbor"
 hosts = ["harbor"]
