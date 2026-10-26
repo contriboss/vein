@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.0.0](https://github.com/contriboss/vein/compare/v0.5.1...v1.0.0) (2026-10-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* maintenance sync from forgejo
+
+### Features
+
+* code context tools on the MCP, GitHits the first provider ([160fb17](https://github.com/contriboss/vein/commit/160fb175d7879d02d49170e03339f38dc17cab98))
+* **config:** VEIN_DATABASE_URL overrides database.url ([aefb304](https://github.com/contriboss/vein/commit/aefb3045351d5b7d13767dcbbd0eecd9a8efbf22))
+* **delay:** release delay policy, full-registry search, and promotion jobs ([74dbd8f](https://github.com/contriboss/vein/commit/74dbd8f78dca749740462f62b2d94556ab9f18ae))
+* **docs:** package documentation at /docs and vein://.../readme|api ([d9ae700](https://github.com/contriboss/vein/commit/d9ae7008ab4b5b6d63596f54b3d1be2e70558183))
+* each registry is a Cargo feature (gems, crates, npm) ([fc74ca0](https://github.com/contriboss/vein/commit/fc74ca04eed5f2a12a79fa78aa1bef61f76e926e))
+* vein as a LAN package oracle, deployed to harbor with launchbay ([899f9ca](https://github.com/contriboss/vein/commit/899f9ca086fc0262a54bfa2d7771e03fbb4eefdd))
+
+
+### Miscellaneous Chores
+
+* maintenance sync from forgejo ([979313b](https://github.com/contriboss/vein/commit/979313b3e0dbb3e0500fa6c016c5997b2f22e23a))
+
 ## [0.5.1](https://github.com/contriboss/vein/compare/v0.5.0...v0.5.1) (2026-07-30)
 
 
