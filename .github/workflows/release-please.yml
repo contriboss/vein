@@ -86,18 +86,24 @@ jobs:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created || inputs.force_build }}
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
 
-      - uses: cross-platform-actions/action@v1.3.0
+      - uses: vmactions/freebsd-vm@v1
         with:
-          operating_system: freebsd
-          version: '15.0'
+          release: "15.1"
+          usesh: true
+          copyback: true
+          prepare: |
+            fetch -qo /tmp/upkg-install.sh https://raw.githubusercontent.com/seuros/upkg/master/install.sh
+            sh /tmp/upkg-install.sh
+            upkg install cmake llvm
+            curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.99
           run: |
-            sudo pkg install -y cmake llvm18
-            export LIBCLANG_PATH=/usr/local/llvm18/lib
-            curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-            . $HOME/.cargo/env
+            . "$HOME/.cargo/env"
+            LIBCLANG_PATH="$(ls -d /usr/local/llvm*/lib | sort -V | tail -1)"
+            export LIBCLANG_PATH
             cargo build --release
             mkdir -p dist
             cd target/release
