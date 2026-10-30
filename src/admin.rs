@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use rama::http::service::web::Router;
+use rama::telemetry::tracing;
 use vein_adapter::{CacheBackend, FilesystemStorage};
 
 use crate::config::Config;

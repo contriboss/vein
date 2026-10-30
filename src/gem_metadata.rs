@@ -1,7 +1,7 @@
 use anyhow::Result;
+use rama::telemetry::tracing::{debug, warn};
 use std::path::Path;
 use tokio::task;
-use tracing::{debug, warn};
 use vein_adapter::{AssetKey, CacheBackend, CacheBackendTrait, GemMetadata};
 
 mod analyzer;

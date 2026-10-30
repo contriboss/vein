@@ -4,6 +4,7 @@
 //! and `/mcp`, where mcp-host checks the same networks and admits them
 //! without a token.
 
+use rama::telemetry::tracing;
 use std::{net::IpAddr, sync::Arc};
 
 use anyhow::{Context, Result};

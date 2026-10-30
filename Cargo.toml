@@ -87,9 +87,9 @@ default = ["tls", "admin", "gems", "crates", "npm", "githits"]
 tls = ["rama/rustls", "vein-adapter/tls"]
 # The registries vein serves, at least one: each brings its proxy routes,
 # search, docs, catalog, release delay and MCP resources.
-gems = ["dep:ruby-prism", "dep:cyclonedx-bom", "dep:serde_yaml"]
-crates = ["dep:ruzstd"]
-npm = []
+gems = ["dep:ruby-prism", "dep:cyclonedx-bom", "dep:serde_yaml", "dep:tree-sitter", "dep:tree-sitter-ruby"]
+crates = ["dep:ruzstd", "dep:tree-sitter", "dep:tree-sitter-rust"]
+npm = ["dep:tree-sitter", "dep:tree-sitter-typescript"]
 # Code context providers for the MCP's tools; inert until `[code_context]`
 # names one. GitHits: https://githits.com, over its hosted MCP.
 githits = ["admin", "tls", "dep:mcp-guest"]
@@ -142,9 +142,6 @@ chrono-machines = { version = "0.9.0", features = ["async"] }
 # Time handling
 jiff.workspace = true
 
-# Logging (rama re-exports the same crate; the admin modules use it directly)
-tracing.workspace = true
-
 # Admin dashboard (feature `admin`)
 tera = { version = "2.4.0", optional = true }
 mcp-host = { version = "0.14.0", default-features = false, features = ["http", "macros"], optional = true }
@@ -162,6 +159,12 @@ sqlx = { workspace = true, features = ["postgres"] }
 ruzstd = { version = "0.9.1", optional = true }
 # Gem API docs: the gem's Ruby, parsed without a Ruby on the host.
 ruby-prism = { version = "2.0.0", optional = true }
+
+# Language parsers (tied to registry features; only included when needed)
+tree-sitter = { version = "0.27", optional = true }
+tree-sitter-ruby = { version = "0.23", optional = true }
+tree-sitter-rust = { version = "0.20", optional = true }
+tree-sitter-typescript = { version = "0.20", optional = true }
 
 [dev-dependencies]
 tempfile.workspace = true

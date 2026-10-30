@@ -1,5 +1,6 @@
 //! Dashboard controller with SSE streaming.
 
+use rama::telemetry::tracing;
 use std::time::Duration;
 
 use rama::http::service::web::extract::{Query, State};

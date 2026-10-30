@@ -4,10 +4,10 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result, anyhow};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+#[cfg(feature = "gems")]
+use rama::telemetry::tracing::warn;
 use rama::utils::include_dir::{Dir, include_dir};
 use tera::Tera;
-#[cfg(feature = "gems")]
-use tracing::warn;
 use vein_adapter::{CacheBackend, FilesystemStorage};
 
 #[cfg(feature = "gems")]

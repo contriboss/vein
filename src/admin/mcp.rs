@@ -14,6 +14,7 @@ mod templates;
 mod version_list;
 mod views;
 
+use rama::telemetry::tracing;
 use std::{fmt, net::IpAddr, sync::Arc};
 
 use crate::config::McpSettings;

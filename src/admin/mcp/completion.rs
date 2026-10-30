@@ -1,6 +1,7 @@
 //! Argument completion for the package templates: names from the gem
 //! catalog or the cache, versions from the cache.
 
+use rama::telemetry::tracing;
 use std::sync::Arc;
 
 use mcp_host::managers::completion::{CompletionFuture, CompletionProvider};

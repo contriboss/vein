@@ -1,6 +1,7 @@
 //! HTTP request handlers for the admin dashboard.
 
 use rama::http::service::web::response::Html;
+use rama::telemetry::tracing;
 use tera::{Context, Tera};
 
 #[cfg(feature = "gems")]

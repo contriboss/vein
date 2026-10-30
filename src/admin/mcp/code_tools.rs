@@ -2,6 +2,7 @@
 //! name: the follow-ups its results suggest name tools agents can call.
 //! What they return is third-party text, cleaned like author text.
 
+use rama::telemetry::tracing;
 use std::sync::Arc;
 use std::time::Duration;
 

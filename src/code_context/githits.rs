@@ -6,9 +6,9 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use mcp_guest::{CallToolResult, ContentBlock, GuestError, McpSession, TaskOrResult, ToolInfo};
+use rama::telemetry::tracing::warn;
 use serde_json::{Map, Value};
 use tokio::sync::Mutex;
-use tracing::warn;
 
 use super::{Answer, Pending, Provider, ToolSpec};
 use crate::config::code_context::GitHitsConfig;

@@ -1,10 +1,10 @@
+use rama::telemetry::tracing;
 use std::time::Instant;
 
 use anyhow::Result;
 use rama::{
     http::{Body, Method, Request},
     net::uri::{PathRef, Uri},
-    telemetry::tracing,
 };
 use vein_adapter::{AssetKey, AssetKind};
 

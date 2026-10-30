@@ -8,6 +8,7 @@
 use jiff::Timestamp;
 use rama::http::service::web::extract::{Form, Query, State};
 use rama::http::service::web::response::{Html, IntoResponse, Json, Redirect};
+use rama::telemetry::tracing;
 use serde::{Deserialize, Serialize};
 use tera::Context;
 use vein_adapter::{

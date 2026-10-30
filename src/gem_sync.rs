@@ -4,9 +4,9 @@ use crate::{config::Config, gem_metadata::extract_gem_metadata, upstream::Upstre
 use anyhow::{Context, Result, anyhow};
 use rama::http::{body::util::BodyExt, header::HeaderMap};
 use rama::net::uri::{PathRef, Uri};
+use rama::telemetry::tracing::{error, info, warn};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
-use tracing::{error, info, warn};
 use vein_adapter::{AssetKey, AssetKind, CacheBackend, CacheBackendTrait, FilesystemStorage};
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

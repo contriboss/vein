@@ -1,6 +1,8 @@
 // Unexercised `pub` items are expected in a library compiled as a test binary.
 #![cfg_attr(test, allow(dead_code_pub_in_binary))]
 
+pub mod prelude;
+
 #[cfg(feature = "admin")]
 pub mod admin;
 pub mod catalog;
@@ -20,6 +22,7 @@ pub mod jobs;
 pub mod loopback;
 #[cfg(feature = "npm")]
 pub mod npm;
+pub mod parse;
 pub mod proxy;
 pub mod registry;
 pub mod search;

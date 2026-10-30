@@ -1,3 +1,4 @@
+use rama::telemetry::tracing;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
