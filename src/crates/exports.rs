@@ -2,6 +2,7 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 
 #[cfg(feature = "crates")]
 use crate::parse;
@@ -181,6 +182,34 @@ fn get_node_text_raw(node: tree_sitter::Node, source: &[u8]) -> String {
     let start = node.start_byte();
     let end = node.end_byte();
     String::from_utf8_lossy(&source[start..end]).to_string()
+}
+
+/// Extract lib.rs from a .crate tarball.
+#[cfg(feature = "crates")]
+pub fn extract_lib_rs_from_crate(
+    tarball_bytes: &[u8],
+    crate_name: &str,
+    version: &str,
+) -> Result<Option<Vec<u8>>> {
+    use flate2::read::GzDecoder;
+    use tar::Archive;
+
+    let gz = GzDecoder::new(tarball_bytes);
+    let mut archive = Archive::new(gz);
+    let lib_rs_path = format!("{crate_name}-{version}/src/lib.rs");
+
+    for entry in archive.entries()? {
+        let mut entry = entry?;
+        let path = entry.path()?;
+
+        if path.to_string_lossy() == lib_rs_path {
+            let mut bytes = Vec::new();
+            entry.read_to_end(&mut bytes)?;
+            return Ok(Some(bytes));
+        }
+    }
+
+    Ok(None)
 }
 
 #[cfg(test)]

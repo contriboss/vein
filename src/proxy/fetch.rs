@@ -112,6 +112,8 @@ impl VeinProxy {
     /// Fetch a crate from crates.io CDN.
     #[cfg(feature = "crates")]
     async fn fetch_crate(&self, name: &str, version: &str) -> Result<Response<Body>> {
+        use rama::http::body::util::BodyExt;
+
         let url = format!("https://static.crates.io/crates/{name}/{name}-{version}.crate");
 
         let request = Request::builder()
@@ -127,20 +129,77 @@ impl VeinProxy {
             .await
             .map_err(|e| anyhow!("crate fetch failed: {e}"))?;
 
-        let buffered = buffer_response(response, false)
+        // Collect body bytes
+        let (parts, body) = response.into_parts();
+        let body_bytes = body
+            .collect()
             .await
-            .context("reading crate response")?;
+            .map_err(|e| anyhow!("{e}"))?
+            .to_bytes()
+            .to_vec();
 
-        // Extract exports from tarball (don't fail if extraction fails)
-        // Note: For now, extraction is queued but not implemented end-to-end
-        // TODO: Implement async DB insertion in a background task
+        // Spawn background task for exports extraction
+        let db_pool = self.pool.clone();
+        let name_owned = name.to_string();
+        let version_owned = version.to_string();
+        let tarball = body_bytes.clone();
+
+        tokio::spawn(async move {
+            if let Err(e) = Self::extract_and_insert_crate_exports(
+                &db_pool,
+                &name_owned,
+                &version_owned,
+                tarball,
+            )
+            .await
+            {
+                rama::telemetry::tracing::warn!(
+                    crate_name = %name_owned,
+                    version = %version_owned,
+                    error = %e,
+                    "failed to extract and insert crate exports"
+                );
+            }
+        });
+
+        // Return response to client
+        Ok(Response::from_parts(parts, Body::from(body_bytes)))
+    }
+
+    #[cfg(feature = "crates")]
+    async fn extract_and_insert_crate_exports(
+        db_pool: &sqlx::PgPool,
+        name: &str,
+        version: &str,
+        tarball_bytes: Vec<u8>,
+    ) -> Result<()> {
+        use crate::crates::exports::{extract_exports, extract_lib_rs_from_crate};
+
+        // Extract lib.rs from tarball
+        let Some(lib_rs) = extract_lib_rs_from_crate(&tarball_bytes, name, version)? else {
+            rama::telemetry::tracing::debug!(
+                crate_name = %name,
+                version = %version,
+                "no lib.rs found in crate"
+            );
+            return Ok(());
+        };
+
+        // Parse and extract public APIs
+        let exports = extract_exports(&lib_rs, name)?;
+        let count = exports.len();
+
+        // Insert into database
+        crate::crates::db::insert_crate_exports(db_pool, name, version, exports).await?;
+
         rama::telemetry::tracing::debug!(
-            crate_name = name,
-            version = version,
-            "crate fetch complete (exports extraction pending background implementation)"
+            crate_name = %name,
+            version = %version,
+            exports_count = count,
+            "extracted and inserted crate exports"
         );
 
-        Ok(buffered)
+        Ok(())
     }
 
     async fn forward_response(&self, response: Response<Body>) -> Result<Response<Body>> {
