@@ -5,6 +5,8 @@
 mod handlers;
 mod types;
 
+pub mod exports;
+
 pub use handlers::handle_sparse_index;
 pub use types::index_storage_path;
 
