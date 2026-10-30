@@ -5,6 +5,7 @@
 mod handlers;
 mod types;
 
+pub mod db;
 pub mod exports;
 
 pub use handlers::handle_sparse_index;

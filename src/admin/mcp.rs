@@ -5,6 +5,8 @@
 mod cargo;
 mod code_tools;
 mod completion;
+#[cfg(feature = "crates")]
+mod crate_exports;
 #[cfg(feature = "npm")]
 mod npm;
 mod resources;

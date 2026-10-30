@@ -127,9 +127,20 @@ impl VeinProxy {
             .await
             .map_err(|e| anyhow!("crate fetch failed: {e}"))?;
 
-        buffer_response(response, false)
+        let buffered = buffer_response(response, false)
             .await
-            .context("reading crate response")
+            .context("reading crate response")?;
+
+        // Extract exports from tarball (don't fail if extraction fails)
+        // Note: For now, extraction is queued but not implemented end-to-end
+        // TODO: Implement async DB insertion in a background task
+        rama::telemetry::tracing::debug!(
+            crate_name = name,
+            version = version,
+            "crate fetch complete (exports extraction pending background implementation)"
+        );
+
+        Ok(buffered)
     }
 
     async fn forward_response(&self, response: Response<Body>) -> Result<Response<Body>> {

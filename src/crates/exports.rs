@@ -30,6 +30,22 @@ pub enum SymbolKind {
     ReExport,
 }
 
+impl std::fmt::Display for SymbolKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Function => write!(f, "function"),
+            Self::Struct => write!(f, "struct"),
+            Self::Enum => write!(f, "enum"),
+            Self::Trait => write!(f, "trait"),
+            Self::Module => write!(f, "module"),
+            Self::Type => write!(f, "type"),
+            Self::Constant => write!(f, "constant"),
+            Self::Macro => write!(f, "macro"),
+            Self::ReExport => write!(f, "reexport"),
+        }
+    }
+}
+
 /// Extract public APIs from crate source.
 #[cfg(feature = "crates")]
 pub fn extract_exports(source: &[u8], crate_name: &str) -> Result<Vec<Export>> {
