@@ -479,13 +479,28 @@ async fn build_test_proxy(root: &Path) -> VeinProxy {
         .await
         .unwrap_or_else(|e| panic!("failed to connect to test database: {e}"));
 
+    #[cfg(feature = "crates")]
+    let queue = {
+        let stampeded_pool = stampeded::connect(PgPoolOptions::new().max_connections(2), &db_url)
+            .await
+            .unwrap_or_else(|e| panic!("failed to connect stampeded for tests: {e}"));
+        stampeded::schema::migrate(&stampeded_pool)
+            .await
+            .unwrap_or_else(|e| panic!("failed to migrate stampeded schema for tests: {e}"));
+        let q = Arc::new(stampeded::Queue::new(stampeded_pool));
+        q.create_queue(crate::jobs::QUEUE)
+            .await
+            .unwrap_or_else(|e| panic!("failed to create test queue: {e}"));
+        q
+    };
+
     VeinProxy::new(
         Arc::new(config),
         storage,
         index,
         Arc::new(pool),
         #[cfg(feature = "crates")]
-        None,
+        queue,
     )
     .unwrap()
 }

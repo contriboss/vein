@@ -174,22 +174,13 @@ impl VeinProxy {
         #[allow(unused_imports)]
         use stampeded::async_job::AsyncJob;
 
-        let Some(queue) = &self.queue else {
-            rama::telemetry::tracing::warn!(
-                crate_name = %name,
-                version = %version,
-                "queue not available, skipping crate extraction"
-            );
-            return Ok(());
-        };
-
         let job = CrateExtractor {
             name: name.to_string(),
             version: version.to_string(),
             tarball_path: tarball_path.to_string_lossy().to_string(),
         };
 
-        queue
+        self.queue
             .enqueue(job.new_job()?)
             .await
             .context("enqueueing crate extraction job")?;

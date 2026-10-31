@@ -84,13 +84,35 @@ pub fn run_server(config_path: PathBuf) -> Result<()> {
 
     drop(setup_rt);
 
+    // Create stampeded queue before proxy so both can use it
+    #[cfg(feature = "crates")]
+    let queue = {
+        let url = config.database.backend()?.url;
+        let queue_rt = build_current_thread_runtime("queue-init")?;
+        let queue = queue_rt.block_on(async {
+            let pool = stampeded::connect(PgPoolOptions::new().max_connections(4), &url)
+                .await
+                .context("connecting to stampeded")?;
+            stampeded::schema::migrate(&pool)
+                .await
+                .context("migrating stampeded schema")?;
+            let q = Arc::new(stampeded::Queue::new(pool));
+            q.create_queue(vein::jobs::QUEUE)
+                .await
+                .context("creating stampeded queue")?;
+            Ok::<_, anyhow::Error>(q)
+        })?;
+        drop(queue_rt);
+        queue
+    };
+
     let proxy = VeinProxy::new(
         config.clone(),
         storage.clone(),
         index.clone(),
         Arc::new(pool),
         #[cfg(feature = "crates")]
-        None, // TODO: inject queue once available from jobs task
+        queue,
     )
     .context("creating proxy service")?;
 
