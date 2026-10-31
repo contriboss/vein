@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.7.0](https://github.com/contriboss/vein/compare/v0.6.0...v0.7.0) (2026-10-31)
+
+
+### Features
+
+* add crates exports extraction module foundation ([d9cdff4](https://github.com/contriboss/vein/commit/d9cdff48b22403ffedf4ed5b25c4dbd53aa2050b))
+* add TreeSitter language parsers, consolidate imports ([5181a73](https://github.com/contriboss/vein/commit/5181a730bcf95c9b5cb405ddc2c652925a4bff8c))
+* complete crates exports framework ready for production ([a709fde](https://github.com/contriboss/vein/commit/a709fde97ae39e5b9788f6548d9d1559cd1b9260))
+* finalize queue injection for crate extraction pipeline ([7b84426](https://github.com/contriboss/vein/commit/7b84426e76aee3bff2be209c7539e7395eba75be))
+* implement TreeSitter AST walker for Rust crate exports ([7a5004d](https://github.com/contriboss/vein/commit/7a5004dc4db29245d13dca16b1da033f27f9291c))
+* wire crate extraction as stampeded AsyncJob ([d0edebf](https://github.com/contriboss/vein/commit/d0edebf0cac000b60e543a55121c3bb3cfee0d35))
+
+
+### Bug Fixes
+
+* **ci:** drop deprecated cross-platform-actions run input for FreeBSD ([c06a4a8](https://github.com/contriboss/vein/commit/c06a4a85534788f172a8c10269a09f6c777cf464))
+* **ci:** stop recompiling for the Docker image, fix arm64 QEMU hang ([839efc7](https://github.com/contriboss/vein/commit/839efc7d4bcf3fa0f830f1ead895abbf5b7c8784))
+* pin vein-adapter workspace dependency to 0.6.0 ([0027fbe](https://github.com/contriboss/vein/commit/0027fbeca3d8a67ccd8e2f387b441724326d672c))
+* simplify crate tarball collection for exports extraction ([f26fdc6](https://github.com/contriboss/vein/commit/f26fdc6b3d74c3d2853cec1b65fc179b4581792f))
+
 ## [0.6.0](https://github.com/contriboss/vein/compare/v0.5.1...v0.6.0) (2026-10-26)
 
 
