@@ -4752,8 +4752,7 @@ checksum = "d0af592be68c579aa78a16846bd19422978c3c52e438523d45ff5d1bff1f9d4a"
 [[package]]
 name = "tree-sitter-ruby"
 version = "0.23.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "be0484ea4ef6bb9c575b4fdabde7e31340a8d2dbc7d52b321ac83da703249f95"
+source = "git+https://github.com/seuros/tree-sitter-ruby?branch=master#b9655f91374e3a7a9b5d7cef6070797b4162ffe3"
 dependencies = [
  "cc",
  "tree-sitter-language",
@@ -4762,8 +4761,7 @@ dependencies = [
 [[package]]
 name = "tree-sitter-rust"
 version = "0.24.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "439e577dbe07423ec2582ac62c7531120dbfccfa6e5f92406f93dd271a120e45"
+source = "git+https://github.com/seuros/tree-sitter-rust?branch=master#eadd08bc964e9887ca7ff02fd979b7d00c4554e1"
 dependencies = [
  "cc",
  "tree-sitter-language",
@@ -5436,3 +5434,8 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "tree-sitter-typescript"
+version = "0.23.2"
+source = "git+https://github.com/seuros/tree-sitter-typescript?branch=master#7719aa61911d9383c6bec4375489f2da633e3bfc"

@@ -2,6 +2,12 @@
 members = ["crates/vein-adapter"]
 resolver = "3"
 
+# Use fixed tree-sitter forks for FreeBSD support
+[patch.crates-io]
+tree-sitter-rust = { git = "https://github.com/seuros/tree-sitter-rust", branch = "master" }
+tree-sitter-ruby = { git = "https://github.com/seuros/tree-sitter-ruby", branch = "master" }
+tree-sitter-typescript = { git = "https://github.com/seuros/tree-sitter-typescript", branch = "master" }
+
 [workspace.package]
 edition = "2024"
 rust-version = "1.99"
