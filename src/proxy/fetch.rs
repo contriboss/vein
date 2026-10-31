@@ -109,10 +109,12 @@ impl VeinProxy {
         .await
     }
 
-    /// Fetch a crate from crates.io CDN.
+    /// Fetch a crate from crates.io CDN and enqueue exports extraction.
     #[cfg(feature = "crates")]
     async fn fetch_crate(&self, name: &str, version: &str) -> Result<Response<Body>> {
         use rama::http::body::util::BodyExt;
+        use std::fs;
+        use std::path::PathBuf;
 
         let url = format!("https://static.crates.io/crates/{name}/{name}-{version}.crate");
 
@@ -138,65 +140,64 @@ impl VeinProxy {
             .to_bytes()
             .to_vec();
 
-        // Spawn background task for exports extraction
-        let db_pool = self.pool.clone();
-        let name_owned = name.to_string();
-        let version_owned = version.to_string();
-        let tarball = body_bytes.clone();
+        // Save tarball to temp storage
+        let tarball_path = PathBuf::from(format!("/tmp/vein/{name}-{version}.crate"));
+        fs::create_dir_all(tarball_path.parent().context("invalid path")?)?;
+        fs::write(&tarball_path, &body_bytes).context("writing tarball to temp storage")?;
 
-        tokio::spawn(async move {
-            if let Err(e) = Self::extract_and_insert_crate_exports(
-                &db_pool,
-                &name_owned,
-                &version_owned,
-                tarball,
-            )
+        // Enqueue extraction job (async, doesn't block response)
+        if let Err(e) = self
+            .enqueue_crate_extraction(name, version, tarball_path)
             .await
-            {
-                rama::telemetry::tracing::warn!(
-                    crate_name = %name_owned,
-                    version = %version_owned,
-                    error = %e,
-                    "failed to extract and insert crate exports"
-                );
-            }
-        });
+        {
+            rama::telemetry::tracing::warn!(
+                crate_name = %name,
+                version = %version,
+                error = %e,
+                "failed to enqueue crate extraction job"
+            );
+        }
 
-        // Return response to client
+        // Return response to client immediately
         Ok(Response::from_parts(parts, Body::from(body_bytes)))
     }
 
     #[cfg(feature = "crates")]
-    async fn extract_and_insert_crate_exports(
-        db_pool: &sqlx::PgPool,
+    async fn enqueue_crate_extraction(
+        &self,
         name: &str,
         version: &str,
-        tarball_bytes: Vec<u8>,
+        tarball_path: std::path::PathBuf,
     ) -> Result<()> {
-        use crate::crates::exports::{extract_exports, extract_lib_rs_from_crate};
+        #[allow(unused_imports)]
+        use crate::crates::extraction_job::CrateExtractor;
+        #[allow(unused_imports)]
+        use stampeded::async_job::AsyncJob;
 
-        // Extract lib.rs from tarball
-        let Some(lib_rs) = extract_lib_rs_from_crate(&tarball_bytes, name, version)? else {
-            rama::telemetry::tracing::debug!(
+        let Some(queue) = &self.queue else {
+            rama::telemetry::tracing::warn!(
                 crate_name = %name,
                 version = %version,
-                "no lib.rs found in crate"
+                "queue not available, skipping crate extraction"
             );
             return Ok(());
         };
 
-        // Parse and extract public APIs
-        let exports = extract_exports(&lib_rs, name)?;
-        let count = exports.len();
+        let job = CrateExtractor {
+            name: name.to_string(),
+            version: version.to_string(),
+            tarball_path: tarball_path.to_string_lossy().to_string(),
+        };
 
-        // Insert into database
-        crate::crates::db::insert_crate_exports(db_pool, name, version, exports).await?;
+        queue
+            .enqueue(job.new_job()?)
+            .await
+            .context("enqueueing crate extraction job")?;
 
         rama::telemetry::tracing::debug!(
             crate_name = %name,
             version = %version,
-            exports_count = count,
-            "extracted and inserted crate exports"
+            "crate extraction job enqueued"
         );
 
         Ok(())

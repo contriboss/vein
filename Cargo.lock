@@ -4157,9 +4157,9 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "stampeded"
-version = "0.4.0"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d727727ed6452f93377eeffc74ce59c3b569cb1d35b5489800ca3d4e640f32dd"
+checksum = "2c0f31e1f5103e31049ee8316bd1ff6ce565f0620e7f63500a27d590919877a7"
 dependencies = [
  "behavior-machines",
  "behavior-machines-circuit",

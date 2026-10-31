@@ -89,6 +89,8 @@ pub fn run_server(config_path: PathBuf) -> Result<()> {
         storage.clone(),
         index.clone(),
         Arc::new(pool),
+        #[cfg(feature = "crates")]
+        None, // TODO: inject queue once available from jobs task
     )
     .context("creating proxy service")?;
 

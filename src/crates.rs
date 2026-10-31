@@ -8,6 +8,9 @@ mod types;
 pub mod db;
 pub mod exports;
 
+#[cfg(feature = "crates")]
+pub mod extraction_job;
+
 pub use handlers::handle_sparse_index;
 pub use types::index_storage_path;
 

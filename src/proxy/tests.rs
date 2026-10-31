@@ -479,7 +479,15 @@ async fn build_test_proxy(root: &Path) -> VeinProxy {
         .await
         .unwrap_or_else(|e| panic!("failed to connect to test database: {e}"));
 
-    VeinProxy::new(Arc::new(config), storage, index, Arc::new(pool)).unwrap()
+    VeinProxy::new(
+        Arc::new(config),
+        storage,
+        index,
+        Arc::new(pool),
+        #[cfg(feature = "crates")]
+        None,
+    )
+    .unwrap()
 }
 
 fn req_with_headers(path: &str, headers: &[(&str, &str)]) -> Request<Body> {
