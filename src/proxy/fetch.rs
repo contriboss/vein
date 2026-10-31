@@ -194,6 +194,72 @@ impl VeinProxy {
         Ok(())
     }
 
+    #[cfg(feature = "gems")]
+    #[allow(dead_code)]
+    async fn enqueue_gem_extraction(
+        &self,
+        name: &str,
+        version: &str,
+        tarball_path: std::path::PathBuf,
+    ) -> Result<()> {
+        #[allow(unused_imports)]
+        use crate::gems::extraction_job::GemExtractor;
+        #[allow(unused_imports)]
+        use stampeded::async_job::AsyncJob;
+
+        let job = GemExtractor {
+            name: name.to_string(),
+            version: version.to_string(),
+            tarball_path: tarball_path.to_string_lossy().to_string(),
+        };
+
+        self.queue
+            .enqueue(job.new_job()?)
+            .await
+            .context("enqueueing gem extraction job")?;
+
+        rama::telemetry::tracing::debug!(
+            gem_name = %name,
+            version = %version,
+            "gem extraction job enqueued"
+        );
+
+        Ok(())
+    }
+
+    #[cfg(feature = "npm")]
+    #[allow(dead_code)]
+    async fn enqueue_npm_extraction(
+        &self,
+        name: &str,
+        version: &str,
+        tarball_path: std::path::PathBuf,
+    ) -> Result<()> {
+        #[allow(unused_imports)]
+        use crate::npm::extraction_job::NpmExtractor;
+        #[allow(unused_imports)]
+        use stampeded::async_job::AsyncJob;
+
+        let job = NpmExtractor {
+            name: name.to_string(),
+            version: version.to_string(),
+            tarball_path: tarball_path.to_string_lossy().to_string(),
+        };
+
+        self.queue
+            .enqueue(job.new_job()?)
+            .await
+            .context("enqueueing npm extraction job")?;
+
+        rama::telemetry::tracing::debug!(
+            package_name = %name,
+            version = %version,
+            "npm extraction job enqueued"
+        );
+
+        Ok(())
+    }
+
     async fn forward_response(&self, response: Response<Body>) -> Result<Response<Body>> {
         buffer_response(response, true)
             .await

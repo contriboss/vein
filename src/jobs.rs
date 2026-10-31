@@ -125,6 +125,16 @@ pub async fn run(
         worker = worker.register_job::<crate::crates::extraction_job::CrateExtractor>();
     }
 
+    #[cfg(feature = "gems")]
+    {
+        worker = worker.register_job::<crate::gems::extraction_job::GemExtractor>();
+    }
+
+    #[cfg(feature = "npm")]
+    {
+        worker = worker.register_job::<crate::npm::extraction_job::NpmExtractor>();
+    }
+
     let maintenance = Maintenance::new(queue, MaintenanceConfig::default());
     tokio::try_join!(worker.run(shutdown.clone()), maintenance.run(shutdown))
         .context("running vein's jobs")?;

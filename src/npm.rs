@@ -6,6 +6,9 @@
 mod handlers;
 mod types;
 
+#[cfg(feature = "npm")]
+pub mod extraction_job;
+
 pub use handlers::handle_npm_request;
 pub use types::metadata_storage_path;
 
