@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/contriboss/vein/compare/v0.6.0...v0.7.0) (2026-10-31)
+
+
+### Features
+
+* complete crates exports framework ready for production ([a709fde](https://github.com/contriboss/vein/commit/a709fde97ae39e5b9788f6548d9d1559cd1b9260))
+
 ## [0.6.0](https://github.com/contriboss/vein/compare/v0.5.0...v0.6.0) (2026-10-26)
 
 
