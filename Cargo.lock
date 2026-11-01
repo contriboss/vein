@@ -4761,7 +4761,7 @@ dependencies = [
 [[package]]
 name = "tree-sitter-rust"
 version = "0.24.2"
-source = "git+https://github.com/seuros/tree-sitter-rust?branch=master#03ec7c830e86fdaa98053bd269f13341d974f2a6"
+source = "git+https://github.com/seuros/tree-sitter-rust?branch=master#3908c84feb5ba273f81ff72d45d9af7c9e552b23"
 dependencies = [
  "cc",
  "tree-sitter-language",
