@@ -52,6 +52,13 @@ pub struct PostgresCacheBackend {
 }
 
 impl PostgresCacheBackend {
+    /// The pool, for tests that query the tables these migrations create.
+    #[cfg(any(test, feature = "test-support"))]
+    #[must_use]
+    pub const fn pool(&self) -> &PgPool {
+        &self.pool
+    }
+
     pub async fn connect(url: &str, max_connections: u32) -> Result<Self> {
         let pool = PgPoolOptions::new()
             .max_connections(max_connections.max(1))

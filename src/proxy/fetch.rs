@@ -113,8 +113,6 @@ impl VeinProxy {
     #[cfg(feature = "crates")]
     async fn fetch_crate(&self, name: &str, version: &str) -> Result<Response<Body>> {
         use rama::http::body::util::BodyExt;
-        use std::fs;
-        use std::path::PathBuf;
 
         let url = format!("https://static.crates.io/crates/{name}/{name}-{version}.crate");
 
@@ -131,7 +129,11 @@ impl VeinProxy {
             .await
             .map_err(|e| anyhow!("crate fetch failed: {e}"))?;
 
-        // Collect body bytes
+        // Errors go back to the client as they came; there is nothing to index.
+        if !response.status().is_success() {
+            return Ok(response);
+        }
+
         let (parts, body) = response.into_parts();
         let body_bytes = body
             .collect()
@@ -140,28 +142,40 @@ impl VeinProxy {
             .to_bytes()
             .to_vec();
 
-        // Save tarball to temp storage
-        let tarball_path = PathBuf::from(format!("/tmp/vein/{name}-{version}.crate"));
-        fs::create_dir_all(tarball_path.parent().context("invalid path")?)?;
-        fs::write(&tarball_path, &body_bytes).context("writing tarball to temp storage")?;
-
-        // Enqueue extraction job (async, doesn't block response)
-        let job = crate::crates::extraction_job::CrateExtractor {
-            name: name.to_string(),
-            version: version.to_string(),
-            tarball_path: tarball_path.to_string_lossy().into_owned(),
-        };
-        if let Err(e) = self.enqueue_extraction(&job).await {
+        // Indexing the API is best effort: the client gets its crate regardless.
+        if let Err(e) = self.queue_crate_indexing(name, version, &body_bytes).await {
             rama::telemetry::tracing::warn!(
                 crate_name = %name,
                 version = %version,
                 error = %e,
-                "failed to enqueue crate extraction job"
+                "failed to queue crate exports indexing"
             );
         }
 
         // Return response to client immediately
         Ok(Response::from_parts(parts, Body::from(body_bytes)))
+    }
+
+    /// Saves a copy of the crate under vein's storage (`.extract/`) for the
+    /// exports job, which removes it once indexed, and queues the job.
+    #[cfg(feature = "crates")]
+    async fn queue_crate_indexing(&self, name: &str, version: &str, tarball: &[u8]) -> Result<()> {
+        let file = crate::util::sanitize_filename(&format!("{name}-{version}.crate"));
+        let tarball_path = self.storage.resolve(&format!(".extract/{file}"));
+        if let Some(dir) = tarball_path.parent() {
+            tokio::fs::create_dir_all(dir)
+                .await
+                .with_context(|| format!("creating {}", dir.display()))?;
+        }
+        tokio::fs::write(&tarball_path, tarball)
+            .await
+            .with_context(|| format!("writing {}", tarball_path.display()))?;
+        let job = crate::crates::extraction_job::CrateExtractor {
+            name: name.to_string(),
+            version: version.to_string(),
+            tarball_path: tarball_path.to_string_lossy().into_owned(),
+        };
+        self.enqueue_extraction(&job).await
     }
 
     /// Queues `job` on vein's stampeded queue, for the worker to run in the

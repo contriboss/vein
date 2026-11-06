@@ -2,25 +2,29 @@
 
 //! Crate exports extraction as a stampeded async job.
 
+use std::path::Path;
+
+use anyhow::{Context, Result};
 use rama::telemetry::tracing;
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use stampeded::async_job::{AsyncJob, JobResult};
 
+use super::db::insert_crate_exports;
 use super::exports::{extract_exports, extract_lib_rs_from_crate};
 
-/// Extract public APIs from a Rust crate tarball.
-/// Saves results to JSON for processing by a subsequent background task.
+/// Index a downloaded crate's public API into `package_exports`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CrateExtractor {
     pub name: String,
     pub version: String,
+    /// The `.crate` copy the proxy saved for this job; removed once indexed.
     pub tarball_path: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct ExtractionResult {
     pub exports_count: usize,
-    pub exports_json_path: String,
 }
 
 impl AsyncJob for CrateExtractor {
@@ -30,72 +34,44 @@ impl AsyncJob for CrateExtractor {
 
     fn run(
         &self,
-        _ctx: &stampeded::worker::JobContext,
+        ctx: &stampeded::worker::JobContext,
     ) -> impl std::future::Future<Output = JobResult<Self::Output>> + Send {
-        let name = self.name.clone();
-        let version = self.version.clone();
-        let tarball_path = self.tarball_path.clone();
-
+        let pool = ctx.pool().clone();
+        let job = self.clone();
         async move {
-            let tarball_bytes = std::fs::read(&tarball_path).map_err(|e| {
-                Box::new(std::io::Error::new(e.kind(), e.to_string()))
-                    as Box<dyn std::error::Error + Send + Sync>
-            })?;
-
-            // Extract lib.rs from tarball
-            let Some(lib_rs) =
-                extract_lib_rs_from_crate(&tarball_bytes, &name, &version).map_err(|e| {
-                    Box::new(std::io::Error::other(e.to_string()))
-                        as Box<dyn std::error::Error + Send + Sync>
-                })?
-            else {
-                tracing::debug!(
-                    crate_name = %name,
-                    version = %version,
-                    "no lib.rs found in crate"
-                );
-                // Clean up
-                let _ = std::fs::remove_file(&tarball_path);
-                return Ok(ExtractionResult {
-                    exports_count: 0,
-                    exports_json_path: String::new(),
-                });
-            };
-
-            // Parse and extract public APIs
-            let exports = extract_exports(&lib_rs, &name).map_err(|e| {
-                Box::new(std::io::Error::other(e.to_string()))
-                    as Box<dyn std::error::Error + Send + Sync>
-            })?;
-
-            let count = exports.len();
-
-            // Save exports to JSON for db insertion
-            let exports_path = format!("/tmp/vein/{name}-{version}.exports.json");
-            let json = serde_json::to_string(&exports).map_err(|e| {
-                Box::new(std::io::Error::other(e.to_string()))
-                    as Box<dyn std::error::Error + Send + Sync>
-            })?;
-            std::fs::write(&exports_path, json).map_err(|e| {
-                Box::new(std::io::Error::new(e.kind(), e.to_string()))
-                    as Box<dyn std::error::Error + Send + Sync>
-            })?;
-
-            // Clean up tarball
-            let _ = std::fs::remove_file(&tarball_path);
-
-            tracing::debug!(
-                crate_name = %name,
-                version = %version,
-                exports_count = count,
-                exports_path = %exports_path,
-                "crate exports extracted"
-            );
-
-            Ok(ExtractionResult {
-                exports_count: count,
-                exports_json_path: exports_path,
-            })
+            let exports_count =
+                extract_into(&pool, &job.name, &job.version, Path::new(&job.tarball_path)).await?;
+            Ok(ExtractionResult { exports_count })
         }
     }
 }
+
+/// Stores the exports of `tarball`'s `src/lib.rs` and removes the tarball;
+/// how many. A failure keeps the tarball for the job's retry.
+pub async fn extract_into(
+    pool: &PgPool,
+    name: &str,
+    version: &str,
+    tarball: &Path,
+) -> Result<usize> {
+    let bytes = tokio::fs::read(tarball)
+        .await
+        .with_context(|| format!("reading {}", tarball.display()))?;
+    let exports = if let Some(lib_rs) = extract_lib_rs_from_crate(&bytes, name, version)? {
+        extract_exports(&lib_rs, name)?
+    } else {
+        tracing::debug!(crate_name = %name, %version, "no lib.rs in crate");
+        Vec::new()
+    };
+    let count = exports.len();
+    insert_crate_exports(pool, name, version, exports).await?;
+
+    if let Err(err) = tokio::fs::remove_file(tarball).await {
+        tracing::warn!(path = %tarball.display(), error = %err, "could not remove indexed crate");
+    }
+    tracing::debug!(crate_name = %name, %version, exports_count = count, "crate exports indexed");
+    Ok(count)
+}
+
+#[cfg(test)]
+mod tests;
