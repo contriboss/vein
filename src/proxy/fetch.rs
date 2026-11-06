@@ -146,10 +146,12 @@ impl VeinProxy {
         fs::write(&tarball_path, &body_bytes).context("writing tarball to temp storage")?;
 
         // Enqueue extraction job (async, doesn't block response)
-        if let Err(e) = self
-            .enqueue_crate_extraction(name, version, tarball_path)
-            .await
-        {
+        let job = crate::crates::extraction_job::CrateExtractor {
+            name: name.to_string(),
+            version: version.to_string(),
+            tarball_path: tarball_path.to_string_lossy().into_owned(),
+        };
+        if let Err(e) = self.enqueue_extraction(&job).await {
             rama::telemetry::tracing::warn!(
                 crate_name = %name,
                 version = %version,
@@ -162,101 +164,15 @@ impl VeinProxy {
         Ok(Response::from_parts(parts, Body::from(body_bytes)))
     }
 
+    /// Queues `job` on vein's stampeded queue, for the worker to run in the
+    /// background.
     #[cfg(feature = "crates")]
-    async fn enqueue_crate_extraction(
-        &self,
-        name: &str,
-        version: &str,
-        tarball_path: std::path::PathBuf,
-    ) -> Result<()> {
-        #[allow(unused_imports)]
-        use crate::crates::extraction_job::CrateExtractor;
-        #[allow(unused_imports)]
-        use stampeded::async_job::AsyncJob;
-
-        let job = CrateExtractor {
-            name: name.to_string(),
-            version: version.to_string(),
-            tarball_path: tarball_path.to_string_lossy().to_string(),
-        };
-
+    async fn enqueue_extraction<J: stampeded::async_job::AsyncJob>(&self, job: &J) -> Result<()> {
         self.queue
             .enqueue(job.new_job()?)
             .await
-            .context("enqueueing crate extraction job")?;
-
-        rama::telemetry::tracing::debug!(
-            crate_name = %name,
-            version = %version,
-            "crate extraction job enqueued"
-        );
-
-        Ok(())
-    }
-
-    #[cfg(feature = "gems")]
-    #[allow(dead_code)]
-    async fn enqueue_gem_extraction(
-        &self,
-        name: &str,
-        version: &str,
-        tarball_path: std::path::PathBuf,
-    ) -> Result<()> {
-        #[allow(unused_imports)]
-        use crate::gems::extraction_job::GemExtractor;
-        #[allow(unused_imports)]
-        use stampeded::async_job::AsyncJob;
-
-        let job = GemExtractor {
-            name: name.to_string(),
-            version: version.to_string(),
-            tarball_path: tarball_path.to_string_lossy().to_string(),
-        };
-
-        self.queue
-            .enqueue(job.new_job()?)
-            .await
-            .context("enqueueing gem extraction job")?;
-
-        rama::telemetry::tracing::debug!(
-            gem_name = %name,
-            version = %version,
-            "gem extraction job enqueued"
-        );
-
-        Ok(())
-    }
-
-    #[cfg(feature = "npm")]
-    #[allow(dead_code)]
-    async fn enqueue_npm_extraction(
-        &self,
-        name: &str,
-        version: &str,
-        tarball_path: std::path::PathBuf,
-    ) -> Result<()> {
-        #[allow(unused_imports)]
-        use crate::npm::extraction_job::NpmExtractor;
-        #[allow(unused_imports)]
-        use stampeded::async_job::AsyncJob;
-
-        let job = NpmExtractor {
-            name: name.to_string(),
-            version: version.to_string(),
-            tarball_path: tarball_path.to_string_lossy().to_string(),
-        };
-
-        self.queue
-            .enqueue(job.new_job()?)
-            .await
-            .context("enqueueing npm extraction job")?;
-
-        rama::telemetry::tracing::debug!(
-            package_name = %name,
-            version = %version,
-            "npm extraction job enqueued"
-        );
-
+            .with_context(|| format!("enqueueing {}", J::TASK))?;
+        rama::telemetry::tracing::debug!(task = J::TASK, "extraction job enqueued");
         Ok(())
     }
 
