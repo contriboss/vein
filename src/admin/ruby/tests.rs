@@ -1,4 +1,6 @@
 use super::*;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn branch_entry(
     name: &str,
@@ -104,11 +106,58 @@ fn ruby_status_from_sources_builds_expected_snapshot() {
     assert_eq!(status.recent_eol.len(), 1);
 }
 
+/// A client answering each request with the next status in `statuses` (the
+/// last one repeats), counting the requests in `calls`.
+fn scripted(
+    statuses: Vec<StatusCode>,
+    calls: Arc<AtomicUsize>,
+) -> impl Service<Request, Output = Response, Error = OpaqueError> {
+    rama::service::service_fn(move |_request: Request| {
+        let call = calls.fetch_add(1, Ordering::SeqCst);
+        let status = statuses[call.min(statuses.len() - 1)];
+        async move {
+            Ok::<_, OpaqueError>(
+                Response::builder()
+                    .status(status)
+                    .body(Body::from("- version: 3.4.0\n"))
+                    .unwrap(),
+            )
+        }
+    })
+}
+
+#[tokio::test]
+async fn fetch_with_retry_retries_a_server_error_then_succeeds() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let client = scripted(
+        vec![StatusCode::SERVICE_UNAVAILABLE, StatusCode::OK],
+        Arc::clone(&calls),
+    );
+
+    let body = fetch_with_retry(&client, RubyResource::Releases)
+        .await
+        .unwrap();
+
+    assert_eq!(body, "- version: 3.4.0\n");
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn fetch_with_retry_gives_up_at_once_on_a_client_error() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let client = scripted(vec![StatusCode::NOT_FOUND], Arc::clone(&calls));
+
+    let err = fetch_with_retry(&client, RubyResource::Releases)
+        .await
+        .unwrap_err();
+
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    assert!(format!("{err:#}").contains("status 404"), "{err:#}");
+}
+
 #[test]
-fn backoff_for_attempt_doubles_each_retry() {
-    assert_eq!(backoff_for_attempt(1), Duration::from_secs(1));
-    assert_eq!(backoff_for_attempt(2), Duration::from_secs(2));
-    assert_eq!(backoff_for_attempt(3), Duration::from_secs(4));
+fn fetch_backoff_allows_max_fetch_attempts() {
+    assert_eq!(fetch_backoff().max_attempts, MAX_FETCH_ATTEMPTS);
 }
 
 #[test]

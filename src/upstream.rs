@@ -183,7 +183,7 @@ impl UpstreamClient {
         let result = (|| self.attempt(url, headers))
             .retry_async(self.backoff)
             .delay_from(|err: &AttemptError, _attempt| match err.retry_after() {
-                Some(delay) => DelayHint::Ms(u64::try_from(delay.as_millis()).unwrap_or(u64::MAX)),
+                Some(delay) => DelayHint::Ms(crate::util::millis(delay)),
                 None => DelayHint::Backoff,
             })
             .call_async(crate::util::sleep_ms)

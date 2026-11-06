@@ -2,6 +2,7 @@ use rama::telemetry::tracing;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
+use chrono_machines::{AsyncRetryable, ExponentialBackoff};
 use jiff::Timestamp;
 use jiff::civil::Date;
 use rama::{
@@ -21,7 +22,7 @@ const RELEASES_URL: &str =
     "https://raw.githubusercontent.com/ruby/www.ruby-lang.org/master/_data/releases.yml";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const INITIAL_BACKOFF: Duration = Duration::from_secs(1);
-const MAX_FETCH_ATTEMPTS: u32 = 3;
+const MAX_FETCH_ATTEMPTS: u8 = 3;
 const RECENT_EOL_LIMIT: usize = 3;
 const USER_AGENT: &str = crate::upstream::UA;
 
@@ -142,77 +143,104 @@ async fn fetch_with_retry(
     client: &impl Service<Request, Output = Response, Error = OpaqueError>,
     resource: RubyResource,
 ) -> Result<String> {
-    let mut attempt = 1;
+    let result = (|| fetch_once(client, resource))
+        .retry_async(fetch_backoff())
+        .when(|failure: &FetchFailure| failure.retryable)
+        .notify(move |ctx| {
+            tracing::warn!(
+                attempt = ctx.attempt,
+                max_attempts = MAX_FETCH_ATTEMPTS,
+                retry_in_ms = ctx.next_delay_ms,
+                resource = resource.label(),
+                error = ctx
+                    .error
+                    .map(|failure| tracing::field::display(&failure.error)),
+                "Fetching from GitHub failed, retrying"
+            );
+        })
+        .call_async(crate::util::sleep_ms)
+        .await;
 
-    loop {
-        tracing::debug!(
-            attempt = attempt,
-            max_attempts = MAX_FETCH_ATTEMPTS,
-            resource = resource.label(),
-            "Fetching from GitHub"
-        );
-
-        let request = build_request(resource)?;
-
-        match client.serve(request).await {
-            Ok(response) => {
-                let status = response.status();
-
-                if status.is_success() {
-                    let body_bytes = response
-                        .into_body()
-                        .collect()
-                        .await
-                        .with_context(|| format!("collecting {} body", resource.label()))?
-                        .to_bytes();
-
-                    return String::from_utf8(body_bytes.to_vec())
-                        .with_context(|| format!("decoding {} as UTF-8", resource.label()));
-                }
-
-                if should_retry_status(status) && attempt < MAX_FETCH_ATTEMPTS {
-                    tracing::warn!(
-                        attempt = attempt,
-                        status = status.as_u16(),
-                        resource = resource.label(),
-                        "Request failed with retryable status, retrying..."
-                    );
-
-                    tokio::time::sleep(backoff_for_attempt(attempt)).await;
-                    attempt += 1;
-                    continue;
-                }
-
-                return Err(anyhow!(
-                    "{} request failed with status {}: {}",
-                    resource.label(),
-                    status.as_u16(),
-                    status.canonical_reason().unwrap_or("Unknown")
-                ));
-            }
-            Err(err) => {
-                if attempt < MAX_FETCH_ATTEMPTS {
-                    tracing::warn!(
-                        attempt = attempt,
-                        error = ?err,
-                        resource = resource.label(),
-                        "Network error, retrying..."
-                    );
-
-                    tokio::time::sleep(backoff_for_attempt(attempt)).await;
-                    attempt += 1;
-                    continue;
-                }
-
-                return Err(anyhow!(
-                    "fetching {} data after {} attempts: {}",
-                    resource.label(),
-                    MAX_FETCH_ATTEMPTS,
-                    err
-                ));
-            }
+    match result {
+        Ok(outcome) => Ok(outcome.into_inner()),
+        Err(err) => {
+            let attempts = err.attempts();
+            Err(err.into_cause().error.context(format!(
+                "fetching {} data ({attempts} attempts)",
+                resource.label()
+            )))
         }
     }
+}
+
+/// One failed fetch, and whether trying again may help.
+struct FetchFailure {
+    retryable: bool,
+    error: anyhow::Error,
+}
+
+impl FetchFailure {
+    const fn retryable(error: anyhow::Error) -> Self {
+        Self {
+            retryable: true,
+            error,
+        }
+    }
+
+    const fn fatal(error: anyhow::Error) -> Self {
+        Self {
+            retryable: false,
+            error,
+        }
+    }
+}
+
+/// One GET of `resource`: network failures, a body cut short, 429 and 5xx
+/// are worth retrying; any other status or a body that is not UTF-8 is not.
+async fn fetch_once(
+    client: &impl Service<Request, Output = Response, Error = OpaqueError>,
+    resource: RubyResource,
+) -> Result<String, FetchFailure> {
+    let request = build_request(resource).map_err(FetchFailure::fatal)?;
+    let response = client
+        .serve(request)
+        .await
+        .map_err(|err| FetchFailure::retryable(anyhow!("network error: {err}")))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let error = anyhow!(
+            "{} request failed with status {}: {}",
+            resource.label(),
+            status.as_u16(),
+            status.canonical_reason().unwrap_or("Unknown")
+        );
+        return Err(FetchFailure {
+            retryable: should_retry_status(status),
+            error,
+        });
+    }
+
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .map_err(|err| {
+            FetchFailure::retryable(anyhow!("collecting {} body: {err}", resource.label()))
+        })?
+        .to_bytes();
+    String::from_utf8(body.to_vec())
+        .with_context(|| format!("decoding {} as UTF-8", resource.label()))
+        .map_err(FetchFailure::fatal)
+}
+
+/// Up to [`MAX_FETCH_ATTEMPTS`] tries, waiting about [`INITIAL_BACKOFF`],
+/// then twice that, between them.
+fn fetch_backoff() -> ExponentialBackoff {
+    ExponentialBackoff::new()
+        .max_attempts(MAX_FETCH_ATTEMPTS)
+        .base_delay_ms(crate::util::millis(INITIAL_BACKOFF))
+        .jitter_factor(0.2)
 }
 
 pub async fn fetch_ruby_status() -> Result<RubyStatus> {
@@ -238,10 +266,6 @@ fn build_request(resource: RubyResource) -> Result<Request<Body>> {
 
 fn should_retry_status(status: StatusCode) -> bool {
     status.as_u16() == 429 || status.is_server_error()
-}
-
-fn backoff_for_attempt(attempt: u32) -> Duration {
-    INITIAL_BACKOFF * 2_u32.pow(attempt.saturating_sub(1))
 }
 
 fn partition_branches(branches: Vec<BranchEntry>) -> (Vec<BranchInfo>, Vec<BranchInfo>) {

@@ -6,6 +6,7 @@ use rama::telemetry::tracing;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono_machines::{Backoff, ExponentialBackoff};
 use mcp_host::prelude::{ExecutionContext, Server, Tool, ToolError, ToolFuture, ToolOutput};
 use mcp_host::protocol::types::ToolAnnotations;
 use serde_json::{Map, Value};
@@ -17,6 +18,8 @@ use crate::untrusted;
 const ANSWER_LIMIT: usize = 100_000;
 /// The most of a tool's description, in characters.
 const DESCRIPTION_LIMIT: usize = 4_000;
+/// The first wait after the provider fails to list its tools.
+const FIRST_RETRY: Duration = Duration::from_secs(10);
 /// The longest wait between attempts to list the provider's tools.
 const MAX_RETRY: Duration = Duration::from_mins(10);
 
@@ -112,7 +115,7 @@ pub fn offer(
     offers: impl Fn(&str) -> bool + Send + 'static,
 ) {
     tokio::spawn(async move {
-        let mut wait = Duration::from_secs(10);
+        let mut backoff = listing_backoff();
         loop {
             match provider.tools().await {
                 Ok(specs) => {
@@ -139,6 +142,7 @@ pub fn offer(
                     return;
                 }
                 Err(err) => {
+                    let wait = backoff.failed().map_or(MAX_RETRY, Duration::from_millis);
                     tracing::warn!(
                         provider = provider.name(),
                         error = %format!("{err:#}"),
@@ -146,9 +150,24 @@ pub fn offer(
                         "code context tools unavailable"
                     );
                     tokio::time::sleep(wait).await;
-                    wait = (wait * 2).min(MAX_RETRY);
                 }
             }
         }
     });
 }
+
+/// Waits between attempts to list the provider's tools: doubling from
+/// [`FIRST_RETRY`] up to [`MAX_RETRY`], never giving up, with a little jitter
+/// so several vein processes started together do not retry in step.
+fn listing_backoff() -> Backoff<ExponentialBackoff> {
+    Backoff::new(
+        ExponentialBackoff::new()
+            .max_attempts(u8::MAX)
+            .base_delay_ms(crate::util::millis(FIRST_RETRY))
+            .max_delay_ms(crate::util::millis(MAX_RETRY))
+            .jitter_factor(0.2),
+    )
+}
+
+#[cfg(test)]
+mod tests;

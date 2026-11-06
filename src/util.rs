@@ -8,6 +8,13 @@ pub async fn sleep_ms(ms: u64) {
     tokio::time::sleep(Duration::from_millis(ms)).await;
 }
 
+/// `duration` in whole milliseconds, as chrono-machines takes delays;
+/// saturates past `u64::MAX`.
+#[must_use]
+pub fn millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
 /// `a`, `a and b`, `a, b and c`, with `joint` for `and`.
 #[must_use]
 pub fn listed(parts: &[String], joint: &str) -> String {
