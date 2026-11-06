@@ -47,7 +47,8 @@ pub fn run_server(config_path: PathBuf) -> Result<()> {
 
     let (index, _) = connect_cache_index(&setup_rt, &config)?;
 
-    // Create database pool for crate exports and other metadata operations
+    // Database pool for crate exports and other metadata (vein-adapter's
+    // migrations create the tables).
     let pool = setup_rt.block_on(async {
         let url = config.database.backend()?.url;
         let pool = PgPoolOptions::new()
@@ -55,29 +56,6 @@ pub fn run_server(config_path: PathBuf) -> Result<()> {
             .connect(&url)
             .await
             .context("connecting to database")?;
-
-        // Create package_exports table for crate metadata
-        sqlx::query(
-            r"
-            CREATE TABLE IF NOT EXISTS package_exports (
-                id BIGSERIAL PRIMARY KEY,
-                registry TEXT NOT NULL,
-                name TEXT NOT NULL,
-                version TEXT NOT NULL,
-                symbol TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                path TEXT NOT NULL,
-                docs TEXT,
-                created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                UNIQUE(registry, name, version, symbol)
-            );
-            CREATE INDEX IF NOT EXISTS idx_package_exports_name_version
-                ON package_exports(name, version);
-            ",
-        )
-        .execute(&pool)
-        .await
-        .context("creating package_exports table")?;
 
         Ok::<_, anyhow::Error>(pool)
     })?;

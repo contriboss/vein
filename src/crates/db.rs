@@ -25,10 +25,10 @@ pub async fn insert_crate_exports(
             INSERT INTO package_exports
               (registry, name, version, symbol, kind, path, docs, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-            ON CONFLICT (registry, name, version, symbol)
+            ON CONFLICT (registry, name, version, path)
             DO UPDATE SET
+              symbol = EXCLUDED.symbol,
               kind = EXCLUDED.kind,
-              path = EXCLUDED.path,
               docs = EXCLUDED.docs,
               created_at = NOW()
             ",
