@@ -109,7 +109,16 @@ impl VeinProxy {
             }
         }
 
-        if let Some((cache_status, resp)) = self.try_handle_cached_request(&req, ctx).await? {
+        let cached = match self.try_handle_cached_request(&req, ctx).await {
+            Ok(cached) => cached,
+            Err(err) if err.is::<crate::upstream::Unavailable>() => {
+                ctx.cache = CacheStatus::Error;
+                error!(error = %err, "upstream unavailable for a cacheable request");
+                return response::respond_upstream_error(&err, "upstream unavailable");
+            }
+            Err(err) => return Err(err),
+        };
+        if let Some((cache_status, resp)) = cached {
             ctx.cache = cache_status;
             Ok(resp)
         } else {
@@ -130,10 +139,7 @@ impl VeinProxy {
                         Err(err) => {
                             ctx.cache = CacheStatus::Error;
                             error!(error = %err, "failed to serve compact index request");
-                            return response::respond_text(
-                                StatusCode::BAD_GATEWAY,
-                                "upstream error",
-                            );
+                            return response::respond_upstream_error(&err, "upstream error");
                         }
                     }
                 }
@@ -150,7 +156,7 @@ impl VeinProxy {
                             summary = %Self::request_summary(ctx),
                             "failed to proxy request to upstream"
                         );
-                        return response::respond_text(StatusCode::BAD_GATEWAY, "upstream error");
+                        return response::respond_upstream_error(&err, "upstream error");
                     }
                 }
             }
@@ -206,7 +212,7 @@ impl Service<Request<Body>> for VeinProxy {
 }
 
 /// Finalizes a registry handler result: records cache status on success, or
-/// logs the error and returns a `502 Bad Gateway` body on failure.
+/// logs the error and answers it with [`response::respond_upstream_error`].
 #[cfg(any(feature = "crates", feature = "npm"))]
 fn finish_registry_result(
     ctx: &mut RequestContext,
@@ -222,7 +228,7 @@ fn finish_registry_result(
         Err(err) => {
             error!(error = %err, message = error_log);
             ctx.cache = CacheStatus::Error;
-            response::respond_text(StatusCode::BAD_GATEWAY, error_body)
+            response::respond_upstream_error(&err, error_body)
         }
     }
 }

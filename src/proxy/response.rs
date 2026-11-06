@@ -69,6 +69,23 @@ pub fn respond_text(status: StatusCode, body: &str) -> Result<Response<Body>> {
         .map_err(Into::into)
 }
 
+/// The answer when the upstream could not serve: `503` with `Retry-After`
+/// while its circuit breaker refuses calls, `502 Bad Gateway` otherwise.
+pub fn respond_upstream_error(err: &anyhow::Error, body: &str) -> Result<Response<Body>> {
+    let Some(unavailable) = err.downcast_ref::<crate::upstream::Unavailable>() else {
+        return respond_text(StatusCode::BAD_GATEWAY, body);
+    };
+    let mut response = respond_text(StatusCode::SERVICE_UNAVAILABLE, body)?;
+    if let Some(after) = unavailable.retry_after {
+        // Whole seconds, rounded up, at least one.
+        let secs = (after.as_secs() + u64::from(after.subsec_nanos() > 0)).max(1);
+        response
+            .headers_mut()
+            .insert(header::RETRY_AFTER, header::HeaderValue::from(secs));
+    }
+    Ok(response)
+}
+
 /// The homepage: what this node serves, and how to point each client at
 /// `base`, the URL this client reached it on (`public_base`), so every
 /// snippet is copy-paste ready. Each one was checked against a live vein:

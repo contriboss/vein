@@ -27,6 +27,36 @@ use crate::config::UpstreamConfig;
 
 pub const UA: &str = concat!("vein/", env!("CARGO_PKG_VERSION"));
 
+/// An upstream whose circuit breaker is refusing calls after recent
+/// failures; `retry_after` is when it next lets a probe through.
+#[derive(Debug)]
+pub struct Unavailable {
+    pub upstream: String,
+    pub retry_after: Option<Duration>,
+}
+
+impl Unavailable {
+    /// All of `upstreams` are unavailable: the soonest any of them may be
+    /// tried again stands for the lot. `None` when `upstreams` is empty.
+    pub fn every(upstreams: impl IntoIterator<Item = Self>) -> Option<Self> {
+        upstreams.into_iter().reduce(|soonest, other| Self {
+            upstream: "every upstream".to_owned(),
+            retry_after: match (soonest.retry_after, other.retry_after) {
+                (Some(a), Some(b)) => Some(a.min(b)),
+                (a, b) => a.or(b),
+            },
+        })
+    }
+}
+
+impl fmt::Display for Unavailable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}: circuit is open", self.upstream)
+    }
+}
+
+impl std::error::Error for Unavailable {}
+
 /// Performs a one-shot upstream `GET` without retry or circuit breaker.
 ///
 /// Sets the vein user-agent and forwards `extra_headers`. When `accept` is
@@ -171,6 +201,18 @@ impl UpstreamClient {
             Ok(response) => Ok(response),
             Err(CircuitError::Execution(AttemptError::Status(response))) => Ok(*response),
             Err(CircuitError::Execution(AttemptError::Transport(err))) => Err(err),
+            Err(CircuitError::Open { .. } | CircuitError::HalfOpenLimitReached { .. }) => {
+                Err(Unavailable {
+                    upstream: url
+                        .authority()
+                        .map(|authority| authority.to_string())
+                        .unwrap_or_default(),
+                    retry_after: breaker
+                        .retry_after()
+                        .and_then(|secs| Duration::try_from_secs_f64(secs).ok()),
+                }
+                .into())
+            }
             Err(err) => Err(anyhow!("upstream {url} unavailable: {err}")),
         }
     }

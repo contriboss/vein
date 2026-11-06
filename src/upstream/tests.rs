@@ -124,7 +124,11 @@ async fn open_breaker_isolates_the_failing_upstream_only() {
         .get_with_headers(uri(&failing), &HeaderMap::new())
         .await
         .unwrap_err();
-    assert!(err.to_string().contains("is open"), "{err}");
+    let refused = err.downcast_ref::<Unavailable>().expect("an open circuit");
+    let retry_after = refused
+        .retry_after
+        .expect("an open circuit knows when it probes");
+    assert!(retry_after <= Duration::from_secs(33), "{retry_after:?}");
     assert_eq!(failing_hits.load(Ordering::SeqCst), 5);
 
     let response = client
@@ -188,4 +192,16 @@ async fn buffer_response_keeps_repeated_headers() {
     assert!(!buffered.headers().contains_key(header::TRANSFER_ENCODING));
     let body = buffered.into_body().collect().await.unwrap().to_bytes();
     assert_eq!(body.as_ref(), b"payload");
+}
+
+#[test]
+fn every_unavailable_upstream_retries_at_the_soonest() {
+    let refused = |retry_after: Option<u64>| Unavailable {
+        upstream: "a".into(),
+        retry_after: retry_after.map(Duration::from_secs),
+    };
+
+    let every = Unavailable::every([refused(Some(20)), refused(None), refused(Some(5))]).unwrap();
+    assert_eq!(every.retry_after, Some(Duration::from_secs(5)));
+    assert!(Unavailable::every([]).is_none());
 }

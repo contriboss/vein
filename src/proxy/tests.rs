@@ -609,3 +609,21 @@ async fn registries_built_out_answer_404() {
         );
     }
 }
+
+#[test]
+fn an_open_circuit_answers_503_with_retry_after() {
+    let refused = anyhow::Error::new(crate::upstream::Unavailable {
+        upstream: "rubygems.org".into(),
+        retry_after: Some(std::time::Duration::from_millis(12_300)),
+    })
+    .context("requesting upstream");
+
+    let response = super::response::respond_upstream_error(&refused, "upstream error").unwrap();
+    assert_eq!(response.status().as_u16(), 503);
+    assert_eq!(response.headers()["retry-after"], "13");
+
+    let failed = anyhow::anyhow!("connection reset");
+    let response = super::response::respond_upstream_error(&failed, "upstream error").unwrap();
+    assert_eq!(response.status().as_u16(), 502);
+    assert!(!response.headers().contains_key("retry-after"));
+}

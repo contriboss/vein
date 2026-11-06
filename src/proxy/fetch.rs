@@ -205,6 +205,10 @@ impl VeinProxy {
         }
 
         let mut last_err: Option<anyhow::Error> = None;
+        // Whether every upstream refused at its breaker, and when each
+        // may be tried again: then the client is told when to come back.
+        let mut unavailable = Vec::new();
+        let mut all_unavailable = true;
         let no_headers = HeaderMap::new();
 
         for upstream in &self.upstreams {
@@ -218,15 +222,23 @@ impl VeinProxy {
 
             match response {
                 Ok(r) if r.status().is_server_error() => {
+                    all_unavailable = false;
                     last_err = Some(anyhow!("{} returned {}", upstream_url, r.status()));
                 }
                 Ok(r) => return Ok(r),
-                Err(err) => {
-                    last_err = Some(anyhow!("{upstream_url} failed: {err}"));
-                }
+                Err(err) => match err.downcast::<crate::upstream::Unavailable>() {
+                    Ok(refused) => unavailable.push(refused),
+                    Err(err) => {
+                        all_unavailable = false;
+                        last_err = Some(anyhow!("{upstream_url} failed: {err}"));
+                    }
+                },
             }
         }
 
+        if all_unavailable && let Some(refused) = crate::upstream::Unavailable::every(unavailable) {
+            return Err(refused.into());
+        }
         Err(last_err.unwrap_or_else(|| anyhow!("all upstreams failed")))
     }
 }
