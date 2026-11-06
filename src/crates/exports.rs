@@ -59,37 +59,30 @@ pub fn extract_exports(source: &[u8], crate_name: &str) -> Result<Vec<Export>> {
     Ok(exports)
 }
 
+/// Records `node`'s public children under `module_path`, then descends: a
+/// module's items sit under its name, the module itself under its parent's.
 #[cfg(feature = "crates")]
 fn walk_node(
     node: tree_sitter::Node,
     source: &[u8],
     crate_name: &str,
-    current_path: &str,
+    module_path: &str,
     exports: &mut Vec<Export>,
 ) {
-    if is_public_item(node, source)
-        && let Some(export) = extract_symbol(node, source, crate_name, current_path)
-    {
-        exports.push(export);
-    }
-
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        let new_path = if child.kind() == "mod_item" {
-            if let Some(name) = get_node_text(child, source, "name") {
-                if current_path.is_empty() {
-                    name
-                } else {
-                    format!("{current_path}::{name}")
-                }
-            } else {
-                current_path.to_string()
-            }
-        } else {
-            current_path.to_string()
-        };
+        if is_public_item(child, source)
+            && let Some(export) = extract_symbol(child, source, crate_name, module_path)
+        {
+            exports.push(export);
+        }
 
-        walk_node(child, source, crate_name, &new_path, exports);
+        let child_path = match get_node_text(child, source, "name") {
+            Some(name) if child.kind() == "mod_item" && module_path.is_empty() => name,
+            Some(name) if child.kind() == "mod_item" => format!("{module_path}::{name}"),
+            _ => module_path.to_string(),
+        };
+        walk_node(child, source, crate_name, &child_path, exports);
     }
 }
 
@@ -110,10 +103,13 @@ fn is_public_item(node: tree_sitter::Node, source: &[u8]) -> bool {
         return false;
     }
 
-    node.child_by_field_name("visibility").is_some_and(|v| {
-        let text = get_node_text_raw(v, source);
-        text.starts_with("pub")
-    })
+    // tree-sitter-rust has no `visibility` field: the modifier is a plain
+    // child. Only a bare `pub` is the crate's API; `pub(crate)`,
+    // `pub(super)` and `pub(in ..)` are not.
+    let mut cursor = node.walk();
+    node.children(&mut cursor)
+        .find(|child| child.kind() == "visibility_modifier")
+        .is_some_and(|modifier| get_node_text_raw(modifier, source) == "pub")
 }
 
 #[cfg(feature = "crates")]
@@ -124,8 +120,11 @@ fn extract_symbol(
     module_path: &str,
 ) -> Option<Export> {
     let kind_str = node.kind();
-    let name =
-        get_node_text(node, source, "name").or_else(|| get_first_identifier(node, source))?;
+    let name = if kind_str == "use_declaration" {
+        reexported_name(node, source)?
+    } else {
+        get_node_text(node, source, "name")?
+    };
 
     let kind = match kind_str {
         "function_item" => SymbolKind::Function,
@@ -169,12 +168,17 @@ fn get_node_text(node: tree_sitter::Node, source: &[u8], field: &str) -> Option<
         .map(|n| get_node_text_raw(n, source))
 }
 
+/// The name a `pub use` brings into scope: `C` for `a::b::C`, `D` for
+/// `a::C as D`. Lists and globs (`a::{B, C}`, `a::*`) name no single item.
 #[cfg(feature = "crates")]
-fn get_first_identifier(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
-    let mut cursor = node.walk();
-    node.children(&mut cursor)
-        .find(|n| n.kind() == "identifier")
-        .map(|n| get_node_text_raw(n, source))
+fn reexported_name(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
+    let argument = node.child_by_field_name("argument")?;
+    match argument.kind() {
+        "identifier" => Some(get_node_text_raw(argument, source)),
+        "scoped_identifier" => get_node_text(argument, source, "name"),
+        "use_as_clause" => get_node_text(argument, source, "alias"),
+        _ => None,
+    }
 }
 
 #[cfg(feature = "crates")]
@@ -221,11 +225,29 @@ mod tests {
         let source = br"
             pub fn hello() {}
             pub struct World { name: String }
-            pub mod utils { pub fn helper() {} }
+            pub mod utils { pub fn helper() {} pub(crate) fn internal() {} }
             pub use std::collections::HashMap;
+            pub use std::sync::Arc as Shared;
+            pub(super) struct Hidden;
+            fn private() {}
         ";
 
         let exports = extract_exports(source, "example").expect("parse failed");
-        assert!(!exports.is_empty());
+        let found: Vec<(&str, SymbolKind)> = exports
+            .iter()
+            .map(|export| (export.path.as_str(), export.kind.clone()))
+            .collect();
+
+        assert_eq!(
+            found,
+            [
+                ("example::hello", SymbolKind::Function),
+                ("example::World", SymbolKind::Struct),
+                ("example::utils", SymbolKind::Module),
+                ("example::utils::helper", SymbolKind::Function),
+                ("example::HashMap", SymbolKind::ReExport),
+                ("example::Shared", SymbolKind::ReExport),
+            ]
+        );
     }
 }
