@@ -2,8 +2,6 @@
 //! where it stopped if vein restarts), then the crates updated since the
 //! last sync. Paced at one request a second, crates.io's crawler policy.
 
-use std::time::Duration;
-
 use anyhow::{Context, Result, anyhow};
 use jiff::Timestamp;
 use rama::{
@@ -13,6 +11,8 @@ use rama::{
 };
 use serde::Deserialize;
 use vein_adapter::{AssetKind, CacheBackend, CacheBackendTrait, CatalogName};
+
+use super::Pacing;
 
 pub const API: &str = "https://crates.io/api/v1/crates";
 /// The query of the next page of the full crawl; `done` once it finished.
@@ -47,7 +47,7 @@ pub async fn sync(
     index: &CacheBackend,
     client: &impl Service<Request, Output = Response, Error = OpaqueError>,
     api: &str,
-    pace: Duration,
+    pacing: Pacing<'_>,
 ) -> Result<usize> {
     let started = Timestamp::now();
     let crawl = index.catalog_meta_get(META_CRAWL).await?;
@@ -56,13 +56,13 @@ pub async fn sync(
             Some(since) => since.parse().context("reading the last crates sync time")?,
             None => Timestamp::UNIX_EPOCH,
         };
-        updates(index, client, api, pace, since).await?
+        updates(index, client, api, pacing, since).await?
     } else {
         crawl_all(
             index,
             client,
             api,
-            pace,
+            pacing,
             crawl.as_deref().unwrap_or(FIRST_PAGE),
         )
         .await?
@@ -77,7 +77,7 @@ async fn crawl_all(
     index: &CacheBackend,
     client: &impl Service<Request, Output = Response, Error = OpaqueError>,
     api: &str,
-    pace: Duration,
+    pacing: Pacing<'_>,
     from: &str,
 ) -> Result<usize> {
     let mut synced = 0;
@@ -92,7 +92,7 @@ async fn crawl_all(
         // Saved before the pause: a restart resumes on the next page.
         index.catalog_meta_set(META_CRAWL, &next).await?;
         query = next;
-        tokio::time::sleep(pace).await;
+        pacing.next_page().await?;
     }
 }
 
@@ -102,7 +102,7 @@ async fn updates(
     index: &CacheBackend,
     client: &impl Service<Request, Output = Response, Error = OpaqueError>,
     api: &str,
-    pace: Duration,
+    pacing: Pacing<'_>,
     since: Timestamp,
 ) -> Result<usize> {
     let mut synced = 0;
@@ -120,7 +120,7 @@ async fn updates(
             Some(next) if !reached_older => query = next,
             _ => return Ok(synced),
         }
-        tokio::time::sleep(pace).await;
+        pacing.next_page().await?;
     }
 }
 

@@ -104,10 +104,13 @@ pub async fn run(
     for kind in crate::registry::served() {
         let index = Arc::clone(&index);
         let url = url.clone();
-        worker = worker.register(sync_task(kind), move |_job| {
+        worker = worker.register(sync_task(kind), move |job| {
             let index = Arc::clone(&index);
             let url = url.clone();
-            async move { Ok(sync_exclusively(&url, &index, kind).await?) }
+            async move {
+                let stop = || job.is_cancelled();
+                Ok(sync_exclusively(&url, &index, kind, &stop).await?)
+            }
         });
     }
     let promote_index = Arc::clone(&index);
@@ -163,8 +166,13 @@ pub async fn keep_schedules(queue: &Queue, wanted: &[Recurring]) -> Result<()> {
 /// Syncs registry `kind`'s catalog unless another vein process already is:
 /// two walks would fight over one checkpoint. The lock lives on a connection
 /// of its own, so it ends with the sync, crash included, never left behind
-/// in a pool.
-async fn sync_exclusively(url: &str, index: &CacheBackend, kind: AssetKind) -> Result<()> {
+/// in a pool. `stop` is the job's cancellation, checked between pages.
+async fn sync_exclusively(
+    url: &str,
+    index: &CacheBackend,
+    kind: AssetKind,
+    stop: &(dyn Fn() -> bool + Sync),
+) -> Result<()> {
     let options: PgConnectOptions = url.parse().context("reading the database url")?;
     let mut lock = options
         .connect()
@@ -181,7 +189,7 @@ async fn sync_exclusively(url: &str, index: &CacheBackend, kind: AssetKind) -> R
         );
         return Ok(());
     }
-    if let Some(count) = catalog::sync_once(index, kind).await? {
+    if let Some(count) = catalog::sync_once(index, kind, stop).await? {
         info!(registry = kind.as_str(), count, "catalog synced");
     } else {
         info!(registry = kind.as_str(), "catalog already up to date");

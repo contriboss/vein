@@ -3,8 +3,6 @@
 //! from the sequence the walk started at, so nothing published during it
 //! is missed and unpublished packages leave.
 
-use std::time::Duration;
-
 use anyhow::{Result, anyhow};
 use rama::{
     Service,
@@ -14,6 +12,8 @@ use rama::{
 use serde::Deserialize;
 use serde_json::Value;
 use vein_adapter::{AssetKind, CacheBackend, CacheBackendTrait, CatalogName};
+
+use super::Pacing;
 
 pub const REPLICATE: &str = "https://replicate.npmjs.com";
 /// Last document id the walk read; the next page starts after it.
@@ -57,10 +57,10 @@ pub async fn sync(
     index: &CacheBackend,
     client: &impl Service<Request, Output = Response, Error = OpaqueError>,
     base: &str,
-    pace: Duration,
+    pacing: Pacing<'_>,
 ) -> Result<usize> {
     if let Some(seq) = index.catalog_meta_get(META_SEQ).await? {
-        return changes(index, client, base, pace, seq).await;
+        return changes(index, client, base, pacing, seq).await;
     }
     let seq = if let Some(seq) = index.catalog_meta_get(META_WALK_SEQ).await? {
         seq
@@ -70,16 +70,16 @@ pub async fn sync(
         index.catalog_meta_set(META_WALK_SEQ, &seq).await?;
         seq
     };
-    let walked = walk(index, client, base, pace).await?;
+    let walked = walk(index, client, base, pacing).await?;
     index.catalog_meta_set(META_SEQ, &seq).await?;
-    Ok(walked + changes(index, client, base, pace, seq).await?)
+    Ok(walked + changes(index, client, base, pacing, seq).await?)
 }
 
 async fn walk(
     index: &CacheBackend,
     client: &impl Service<Request, Output = Response, Error = OpaqueError>,
     base: &str,
-    pace: Duration,
+    pacing: Pacing<'_>,
 ) -> Result<usize> {
     let mut synced = 0;
     let mut after = index.catalog_meta_get(META_WALK).await?;
@@ -118,7 +118,7 @@ async fn walk(
         if !full {
             return Ok(synced);
         }
-        tokio::time::sleep(pace).await;
+        pacing.next_page().await?;
     }
 }
 
@@ -126,7 +126,7 @@ async fn changes(
     index: &CacheBackend,
     client: &impl Service<Request, Output = Response, Error = OpaqueError>,
     base: &str,
-    pace: Duration,
+    pacing: Pacing<'_>,
     mut since: String,
 ) -> Result<usize> {
     let mut synced = 0;
@@ -154,7 +154,7 @@ async fn changes(
         synced += live.len() + gone.len();
         since = sequence(&page.last_seq);
         index.catalog_meta_set(META_SEQ, &since).await?;
-        tokio::time::sleep(pace).await;
+        pacing.next_page().await?;
     }
 }
 

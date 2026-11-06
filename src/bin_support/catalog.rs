@@ -20,7 +20,7 @@ pub fn run_catalog_sync(config_path: PathBuf, registry: Option<AssetKind>) -> Re
         None => config.catalog.registries.clone(),
     };
     for kind in registries {
-        match rt.block_on(catalog::sync_once(index.as_ref(), kind)) {
+        match rt.block_on(catalog::sync_once(index.as_ref(), kind, &|| false)) {
             Ok(Some(count)) => println!("{} catalogue synced: {count} names", kind.as_str()),
             Ok(None) => println!("{} catalogue already up to date", kind.as_str()),
             Err(err) => return Err(err.context(format!("syncing the {} catalogue", kind.as_str()))),

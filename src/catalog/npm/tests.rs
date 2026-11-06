@@ -1,6 +1,9 @@
 use serde_json::json;
 
 use super::*;
+use std::time::Duration;
+
+const NEVER: Pacing<'static> = Pacing::new(Duration::ZERO, &|| false);
 use crate::test_support::{ok, spawn_route_server};
 
 /// The walk pages through `_all_docs` (the replica has no `skip`, so each
@@ -55,10 +58,7 @@ async fn walks_all_docs_then_follows_changes() {
     let client = super::super::build_client();
 
     // 9 999 packages, then `zz-last`; then one added and one removed.
-    assert_eq!(
-        sync(&index, &client, &base, Duration::ZERO).await.unwrap(),
-        10_002
-    );
+    assert_eq!(sync(&index, &client, &base, NEVER).await.unwrap(), 10_002);
     assert!(
         !seen
             .lock()

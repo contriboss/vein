@@ -133,7 +133,7 @@ async fn a_second_sync_of_a_registry_stands_down() {
         .unwrap();
     assert!(held);
 
-    sync_exclusively(&url, &index, AssetKind::NpmPackage)
+    sync_exclusively(&url, &index, AssetKind::NpmPackage, &|| false)
         .await
         .unwrap();
     assert_eq!(
