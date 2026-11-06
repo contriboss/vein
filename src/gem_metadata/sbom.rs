@@ -148,6 +148,9 @@ pub fn generate_cyclonedx_sbom(
     Ok(result)
 }
 
+/// `CycloneDX` spec the generated SBOMs declare, validate against and serialize as.
+const SBOM_SPEC: SpecVersion = SpecVersion::V1_5;
+
 fn compute_cyclonedx_sbom(metadata: &GemMetadata) -> Result<Option<serde_json::Value>> {
     let root_ref = format!("pkg:gem/{}@{}", metadata.name, metadata.version);
 
@@ -306,19 +309,19 @@ fn compute_cyclonedx_sbom(metadata: &GemMetadata) -> Result<Option<serde_json::V
     }
 
     let bom = Bom {
-        spec_version: SpecVersion::V1_5,
+        spec_version: SBOM_SPEC,
         metadata: Some(bom_metadata),
         ..Bom::default()
     };
 
-    let validation = bom.validate_version(SpecVersion::V1_5);
+    let validation = bom.validate_version(SBOM_SPEC);
     if !validation.passed() {
         warn!(?validation, "generated CycloneDX SBOM failed validation");
         return Ok(None);
     }
 
     let mut output = Vec::new();
-    bom.output_as_json_v1_5(&mut output)
+    bom.output_as_json(&mut output, SBOM_SPEC)
         .context("serializing CycloneDX SBOM")?;
 
     let sbom = serde_json::from_slice(&output).context("parsing CycloneDX SBOM json")?;
