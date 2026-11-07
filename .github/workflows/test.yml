@@ -11,12 +11,18 @@ concurrency:
 
 jobs:
   test:
+    name: test (${{ matrix.name }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         # Every registry is a feature: the full build, then each one alone.
-        features: [default, "tls,admin,gems", "tls,admin,crates", "tls,admin,npm"]
+        # `name` keys the cache: cache keys cannot contain commas.
+        include:
+          - { name: default, features: default }
+          - { name: gems, features: "tls,admin,gems" }
+          - { name: crates, features: "tls,admin,crates" }
+          - { name: npm, features: "tls,admin,npm" }
     services:
       postgres:
         image: postgres:18
@@ -35,12 +41,12 @@ jobs:
       VEIN_TEST_DATABASE_URL: postgres://vein:vein@localhost:5432/vein_test
     steps:
       - uses: actions/checkout@v7
+      # rust-toolchain.toml pins the version and its components (clippy).
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.features }}
+          key: ${{ matrix.name }}
       - name: Run tests
         run: |
           if [ "${{ matrix.features }}" = default ]; then
