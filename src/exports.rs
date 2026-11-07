@@ -11,6 +11,25 @@ use vein_adapter::{
     AssetKind, CacheBackend, CacheBackendTrait, FilesystemStorage, PackageExport, PendingExports,
 };
 
+/// A doc comment's summary for the index: its first line of prose.
+///
+/// At most 200 characters. Code fences are skipped, and the description
+/// ends at the first `JSDoc` tag (a `@deprecated` note is not the summary).
+pub fn summary<'a>(lines: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    let mut fenced = false;
+    for line in lines.into_iter().map(str::trim) {
+        if line.starts_with("```") {
+            fenced = !fenced;
+            continue;
+        }
+        if fenced || line.is_empty() {
+            continue;
+        }
+        return (!line.starts_with('@')).then(|| line.chars().take(200).collect());
+    }
+    None
+}
+
 /// The stampeded task that indexes pending versions.
 pub const TASK: &str = "exports.index";
 /// Versions fetched from the ledger per round.

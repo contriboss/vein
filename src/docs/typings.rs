@@ -337,12 +337,12 @@ fn jsdoc_summary(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
     if !raw.starts_with("/**") {
         return None;
     }
-    raw.trim_start_matches("/**")
-        .trim_end_matches("*/")
-        .lines()
-        .map(|line| line.trim().trim_start_matches('*').trim())
-        .find(|line| !line.is_empty() && !line.starts_with('@'))
-        .map(|line| line.chars().take(200).collect())
+    crate::exports::summary(
+        raw.trim_start_matches("/**")
+            .trim_end_matches("*/")
+            .lines()
+            .map(|line| line.trim().trim_start_matches('*')),
+    )
 }
 
 fn text<'s>(node: tree_sitter::Node, source: &'s [u8]) -> &'s str {

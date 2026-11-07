@@ -53,7 +53,9 @@ pub fn extract_exports(source: &[u8], crate_name: &str) -> Result<Vec<PackageExp
     let mut exports = Vec::new();
     let root = tree.root_node();
 
-    walk_node(root, source, crate_name, "", &mut exports);
+    // Paths are as Rust code names them: `state-machines` is `state_machines`.
+    let crate_name = crate_name.replace('-', "_");
+    walk_node(root, source, &crate_name, "", &mut exports);
 
     Ok(exports)
 }
@@ -152,13 +154,34 @@ fn extract_symbol(
 }
 
 #[cfg(feature = "crates")]
+/// The summary of `node`'s doc comment: the `///` lines (or `/** */`
+/// block) right above it, past any attributes. Plain comments are not docs.
 fn extract_docs(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
-    let prev = node.prev_sibling()?;
-    if matches!(prev.kind(), "line_comment" | "block_comment") {
-        Some(get_node_text_raw(prev, source))
-    } else {
-        None
+    // Collected bottom-up, then put back in reading order.
+    let mut lines: Vec<String> = Vec::new();
+    let mut previous = node.prev_sibling();
+    while let Some(sibling) = previous {
+        let text = get_node_text_raw(sibling, source);
+        match sibling.kind() {
+            "attribute_item" => {}
+            "line_comment" if text.starts_with("///") && !text.starts_with("////") => {
+                lines.push(text.trim_start_matches("///").trim().to_owned());
+            }
+            "block_comment" if text.starts_with("/**") && !text.starts_with("/***") => {
+                let body = text.trim_start_matches("/**").trim_end_matches("*/");
+                lines.extend(
+                    body.lines()
+                        .rev()
+                        .map(|line| line.trim().trim_start_matches('*').trim().to_owned()),
+                );
+                break;
+            }
+            _ => break,
+        }
+        previous = sibling.prev_sibling();
     }
+    lines.reverse();
+    crate::exports::summary(lines.iter().map(String::as_str))
 }
 
 #[cfg(feature = "crates")]
@@ -221,17 +244,9 @@ mod tests {
 
     #[test]
     fn test_extract_exports() {
-        let source = br"
-            pub fn hello() {}
-            pub struct World { name: String }
-            pub mod utils { pub fn helper() {} pub(crate) fn internal() {} }
-            pub use std::collections::HashMap;
-            pub use std::sync::Arc as Shared;
-            pub(super) struct Hidden;
-            fn private() {}
-        ";
+        let source = include_bytes!("../../tests/fixtures/exports/my-example/src/lib.rs");
 
-        let exports = extract_exports(source, "example").expect("parse failed");
+        let exports = extract_exports(source, "my-example").expect("parse failed");
         let found: Vec<(&str, &str)> = exports
             .iter()
             .map(|export| (export.path.as_str(), export.kind.as_str()))
@@ -240,13 +255,24 @@ mod tests {
         assert_eq!(
             found,
             [
-                ("example::hello", "function"),
-                ("example::World", "struct"),
-                ("example::utils", "module"),
-                ("example::utils::helper", "function"),
-                ("example::HashMap", "reexport"),
-                ("example::Shared", "reexport"),
+                ("my_example::hello", "function"),
+                ("my_example::World", "struct"),
+                ("my_example::Mood", "enum"),
+                ("my_example::utils", "module"),
+                ("my_example::utils::helper", "function"),
+                ("my_example::a", "module"),
+                ("my_example::a::new", "function"),
+                ("my_example::b", "module"),
+                ("my_example::b::new", "function"),
+                ("my_example::HashMap", "reexport"),
+                ("my_example::Shared", "reexport"),
             ]
         );
+        let docs: Vec<Option<&str>> = exports
+            .iter()
+            .take(3)
+            .map(|export| export.docs.as_deref())
+            .collect();
+        assert_eq!(docs, [Some("Says hello."), None, Some("A block doc.")]);
     }
 }

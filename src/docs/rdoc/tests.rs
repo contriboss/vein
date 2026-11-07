@@ -339,31 +339,7 @@ fn a_page_too_long_for_every_methods_docs_keeps_their_summaries() {
 fn exports_list_namespaces_and_their_public_members() {
     let api = parsed(&[(
         "lib/demo.rb",
-        concat!(
-            "# Demo things.\n",
-            "module Demo\n",
-            "  VERSION = \"1.0\"\n",
-            "\n",
-            "  # A widget.\n",
-            "  class Widget\n",
-            "    attr_reader :size\n",
-            "\n",
-            "    # Builds one.\n",
-            "    def self.build; end\n",
-            "\n",
-            "    # Spins it.\n",
-            "    def spin(fast = false); end\n",
-            "\n",
-            "    protected\n",
-            "\n",
-            "    def guarded; end\n",
-            "\n",
-            "    private\n",
-            "\n",
-            "    def hidden; end\n",
-            "  end\n",
-            "end\n",
-        ),
+        include_str!("../../../tests/fixtures/exports/demo-gem/lib/demo.rb"),
     )]);
 
     let exports: Vec<(String, String, Option<String>)> = api

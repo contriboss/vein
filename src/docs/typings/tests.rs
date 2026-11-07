@@ -59,44 +59,37 @@ fn definitely_typed_names_scoped_packages_with_two_underscores() {
     assert_eq!(definitely_typed("@babel/core"), "@types/babel__core");
 }
 
+/// A package's declarations from `tests/fixtures/exports`, by their path
+/// below the tarball's `package/`.
+fn fixture_typings(declared: &str, files: &[(&str, &str)]) -> Typings {
+    Typings {
+        declared: Some(declared.to_owned()),
+        files: files
+            .iter()
+            .map(|(path, text)| ((*path).to_owned(), (*text).to_owned()))
+            .collect(),
+    }
+}
+
 #[test]
 fn exports_follow_reexports_through_the_declaration_files() {
-    let typings = Typings {
-        declared: Some("./index.d.cts".into()),
-        files: [
+    let typings = fixture_typings(
+        "./index.d.cts",
+        &[
             (
                 "index.d.cts",
-                concat!(
-                    "export * from \"./v4/external.cjs\";\n",
-                    "export * as locales from \"./locales/index.cjs\";\n",
-                ),
+                include_str!("../../../tests/fixtures/exports/zod/index.d.cts"),
             ),
             (
                 "v4/external.d.cts",
-                concat!(
-                    "/** Parses anything. */\n",
-                    "export declare function parse(input: unknown): unknown;\n",
-                    "export declare class ZodError extends Error {}\n",
-                    "export interface ZodType { _type: unknown }\n",
-                    "export type Infer<T> = T;\n",
-                    "export declare const string: () => ZodType, number: () => ZodType;\n",
-                    "declare function object(): ZodType;\n",
-                    "export { object, object as obj };\n",
-                    "export * from \"../shared\";\n",
-                ),
+                include_str!("../../../tests/fixtures/exports/zod/v4/external.d.cts"),
             ),
             (
                 "shared/index.d.ts",
-                concat!(
-                    "export declare enum Kind { A }\n",
-                    "export * from \"../index.cjs\";\n",
-                ),
+                include_str!("../../../tests/fixtures/exports/zod/shared/index.d.ts"),
             ),
-        ]
-        .into_iter()
-        .map(|(path, text)| (path.to_owned(), text.to_owned()))
-        .collect(),
-    };
+        ],
+    );
 
     let found: Vec<(String, String, Option<String>)> = exports(&typings, "zod")
         .into_iter()
@@ -120,6 +113,32 @@ fn exports_follow_reexports_through_the_declaration_files() {
             path("obj", "function"),
             path("Kind", "enum"),
             path("locales", "namespace"),
+        ]
+    );
+}
+
+#[test]
+fn jsdoc_summaries_skip_examples_and_tags() {
+    let typings = fixture_typings(
+        "index.d.ts",
+        &[(
+            "index.d.ts",
+            include_str!("../../../tests/fixtures/exports/jsdoc/index.d.ts"),
+        )],
+    );
+
+    let docs: Vec<(String, Option<String>)> = exports(&typings, "demo")
+        .into_iter()
+        .map(|export| (export.symbol, export.docs))
+        .collect();
+    assert_eq!(
+        docs,
+        [
+            (
+                "fenced".to_owned(),
+                Some("Runs after the example.".to_owned())
+            ),
+            ("old".to_owned(), None),
         ]
     );
 }
