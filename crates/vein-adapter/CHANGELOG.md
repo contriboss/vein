@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.7.0](https://github.com/contriboss/vein/compare/v0.6.0...v0.7.0) (2026-11-07)
+
+
+### Features
+
+* complete crates exports framework ready for production ([a709fde](https://github.com/contriboss/vein/commit/a709fde97ae39e5b9788f6548d9d1559cd1b9260))
+
+
+### Bug Fixes
+
+* **crates:** index exports into Postgres, keep tarballs under storage ([89b5c2c](https://github.com/contriboss/vein/commit/89b5c2caad54a27658c749bfe17acb7dffb289b2))
+* **crates:** key package exports by path, drop duplicate DDL ([b44e399](https://github.com/contriboss/vein/commit/b44e399a691cb27c1412dd11d402a476971f05e2))
+
 ## [0.6.0](https://github.com/contriboss/vein/compare/v0.5.0...v0.6.0) (2026-10-26)
 
 

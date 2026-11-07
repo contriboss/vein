@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.7.0](https://github.com/contriboss/vein/compare/v0.6.0...v0.7.0) (2026-11-07)
+
+
+### Features
+
+* add crates exports extraction module foundation ([d9cdff4](https://github.com/contriboss/vein/commit/d9cdff48b22403ffedf4ed5b25c4dbd53aa2050b))
+* add TreeSitter language parsers, consolidate imports ([5181a73](https://github.com/contriboss/vein/commit/5181a730bcf95c9b5cb405ddc2c652925a4bff8c))
+* **catalog:** stop crawls at checkpoints when the job is cancelled ([dcc4c39](https://github.com/contriboss/vein/commit/dcc4c391ae0af09efe3d05752108c39c233a7489))
+* complete crates exports framework ready for production ([a709fde](https://github.com/contriboss/vein/commit/a709fde97ae39e5b9788f6548d9d1559cd1b9260))
+* finalize queue injection for crate extraction pipeline ([7b84426](https://github.com/contriboss/vein/commit/7b84426e76aee3bff2be209c7539e7395eba75be))
+* implement TreeSitter AST walker for Rust crate exports ([7a5004d](https://github.com/contriboss/vein/commit/7a5004dc4db29245d13dca16b1da033f27f9291c))
+* **proxy:** answer 503 with Retry-After while upstream circuits are open ([d8f6d4a](https://github.com/contriboss/vein/commit/d8f6d4a535bcf46ddde66bf26b08d8e552155f18))
+* wire crate extraction as stampeded AsyncJob ([d0edebf](https://github.com/contriboss/vein/commit/d0edebf0cac000b60e543a55121c3bb3cfee0d35))
+* wire ruby gem and npm extraction jobs ([2e17ed5](https://github.com/contriboss/vein/commit/2e17ed573386d0e79e8a694ff53f440cb1b8ddc4))
+
+
+### Bug Fixes
+
+* **ci:** drop deprecated cross-platform-actions run input for FreeBSD ([c06a4a8](https://github.com/contriboss/vein/commit/c06a4a85534788f172a8c10269a09f6c777cf464))
+* **ci:** stop recompiling for the Docker image, fix arm64 QEMU hang ([839efc7](https://github.com/contriboss/vein/commit/839efc7d4bcf3fa0f830f1ead895abbf5b7c8784))
+* **crates:** extract public exports from crate sources ([2cfdaf1](https://github.com/contriboss/vein/commit/2cfdaf13d6208faae4c49177fc9853a634f9c3ec))
+* **crates:** index exports into Postgres, keep tarballs under storage ([89b5c2c](https://github.com/contriboss/vein/commit/89b5c2caad54a27658c749bfe17acb7dffb289b2))
+* **crates:** key package exports by path, drop duplicate DDL ([b44e399](https://github.com/contriboss/vein/commit/b44e399a691cb27c1412dd11d402a476971f05e2))
+* **parse:** link tree-sitter grammars via LANGUAGE constants ([9d90949](https://github.com/contriboss/vein/commit/9d90949bb9bdf8cc60a8cd248a8c85fd83f6c671))
+* pin vein-adapter workspace dependency to 0.6.0 ([0027fbe](https://github.com/contriboss/vein/commit/0027fbeca3d8a67ccd8e2f387b441724326d672c))
+* **proxy:** build without the crates feature ([347b9df](https://github.com/contriboss/vein/commit/347b9df0a384af74239fe743347d8305f34e4ad7))
+* simplify crate tarball collection for exports extraction ([f26fdc6](https://github.com/contriboss/vein/commit/f26fdc6b3d74c3d2853cec1b65fc179b4581792f))
+* upgrade tree-sitter-rust to 0.24 to resolve linker errors ([65e330d](https://github.com/contriboss/vein/commit/65e330d4272940a25e968713345617385b2457b5))
+* use fixed tree-sitter forks for FreeBSD support ([99f1449](https://github.com/contriboss/vein/commit/99f144974cba7b038c562832ce1b29cd266dceab))
+
 ## [0.6.0](https://github.com/contriboss/vein/compare/v0.5.1...v0.6.0) (2026-10-26)
 
 
