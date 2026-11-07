@@ -5,8 +5,6 @@
 mod cargo;
 mod code_tools;
 mod completion;
-#[cfg(feature = "crates")]
-mod crate_exports;
 #[cfg(feature = "npm")]
 mod npm;
 mod resources;
@@ -87,7 +85,10 @@ fn instructions(code_context: Option<&dyn crate::code_context::Provider>) -> Str
          newest releases, and a prerelease newer than all of them. Every version is at \
          .../versions, one at .../versions/{{version}}, its README at \
          .../versions/{{version}}/readme, its API at .../versions/{{version}}/api (an \
-         outline; .../api/{{path}} for one part of it: {}).{sbom} vein://quarantine lists \
+         outline; .../api/{{path}} for one part of it: {}).{sbom} Which cached package \
+         exports a symbol: {}; a cached version's exported \
+         symbols at .../versions/{{version}}/exports (indexed in the background, minutes \
+         after a download). vein://quarantine lists \
          the {} versions held back by the release delay policy; vein://stats summarises \
          the whole cache. A package nobody fetched yet is looked up through this proxy \
          (and cached) on first read, so its versions are {} own. Fields under \
@@ -104,6 +105,7 @@ fn instructions(code_context: Option<&dyn crate::code_context::Provider>) -> Str
             "or"
         ),
         each(|_, named| named.api_path.into()).join("; "),
+        templates::EXPORTS_SEARCH,
         listed(&each(|kind, _| crate::registry::noun(kind).into()), "and"),
         listed(&each(|_, named| named.owner.into()), "or"),
         if gems { ", and the SBOM's text," } else { "" },
@@ -344,6 +346,64 @@ impl VeinMcp {
             None => format!("{prefix}/{name}/versions/{version}/api"),
         };
         json_resource(uri, &views::Api::from(api))
+    }
+
+    /// `.../versions/{version}/exports` of package `{name}` in registry
+    /// `kind`, under `prefix`: what the exports index read from its cached
+    /// archive.
+    async fn exports(&self, ctx: &Ctx<'_>, kind: AssetKind, prefix: &str) -> ResourceResult {
+        let name = uri_param(ctx, "name")?;
+        let version = uri_param(ctx, "version")?;
+        let exports = self
+            .resources
+            .exports(kind, name, version)
+            .await
+            .map_err(read_error)?;
+        if exports.is_empty() {
+            return Err(ResourceError::NotFound(format!(
+                "no exports indexed for {name} {version}: vein indexes the versions it has \
+                 cached every 10 minutes, and one exporting nothing has none"
+            )));
+        }
+        json_resource(
+            format!("{prefix}/{name}/versions/{version}/exports"),
+            &views::Exports {
+                name: name.to_owned(),
+                version: version.to_owned(),
+                count: exports.len(),
+                symbols: exports.into_iter().map(views::Export::from).collect(),
+            },
+        )
+    }
+
+    /// `vein://search/exports/{query}`: cached versions exporting a symbol
+    /// matching `{query}`, exact names first.
+    async fn exports_search(&self, ctx: &Ctx<'_>) -> ResourceResult {
+        const HITS: i64 = 50;
+        let query = search_query(ctx)?;
+        let hits = self
+            .resources
+            .exports_search(&query, HITS)
+            .await
+            .map_err(read_error)?
+            .into_iter()
+            .map(|hit| views::ExportHit {
+                registry: hit.kind.as_str(),
+                uri: format!(
+                    "vein://{}/{}/versions/{}/exports",
+                    Named::of(hit.kind).segment,
+                    hit.name,
+                    hit.version
+                ),
+                name: hit.name,
+                version: hit.version,
+                export: views::Export::from(hit.export),
+            })
+            .collect();
+        json_resource(
+            search_uri("exports", &query),
+            &views::ExportSearch { query, hits },
+        )
     }
 
     /// `vein://search/{ecosystem}/{query}`: the proxy's own search, the one

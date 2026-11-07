@@ -36,11 +36,6 @@ pub struct VeinProxy {
     http: DefaultHttpWebClient,
     /// Where package searches go before vein's catalog answers them.
     search: crate::search::Registries,
-    /// Database pool for storing package metadata (exports, etc.)
-    pub pool: Arc<sqlx::PgPool>,
-    /// Stampeded job queue for background extraction tasks
-    #[cfg(feature = "crates")]
-    pub queue: Arc<stampeded::Queue>,
 }
 
 impl VeinProxy {
@@ -48,8 +43,6 @@ impl VeinProxy {
         config: Arc<Config>,
         storage: Arc<FilesystemStorage>,
         index: Arc<CacheBackend>,
-        pool: Arc<sqlx::PgPool>,
-        #[cfg(feature = "crates")] queue: Arc<stampeded::Queue>,
     ) -> Result<Self> {
         let (upstreams, upstream_client) = if let Some(ref upstream_config) = config.upstream {
             let mut upstreams = Vec::new();
@@ -82,9 +75,6 @@ impl VeinProxy {
             upstream_client,
             http: DefaultHttpWebClient::default(),
             search,
-            pool,
-            #[cfg(feature = "crates")]
-            queue,
         })
     }
 }

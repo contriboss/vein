@@ -15,7 +15,7 @@ use sqlx::ConnectOptions;
 use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
 use stampeded::{Maintenance, MaintenanceConfig, NewJob, Queue, Queues, Worker, WorkerConfig};
 use tokio::sync::watch;
-use vein_adapter::{AssetKind, CacheBackend};
+use vein_adapter::{AssetKind, CacheBackend, FilesystemStorage};
 
 use crate::config::Config;
 use crate::{catalog, delay};
@@ -51,6 +51,12 @@ pub fn recurring(config: &Config) -> Vec<Recurring> {
             cron: "17 */6 * * *",
         })
         .collect();
+    // The exports index catches up with the cache every 10 minutes.
+    jobs.push(Recurring {
+        key: format!("{KEY_PREFIX}exports:index"),
+        task: crate::exports::TASK,
+        cron: "*/10 * * * *",
+    });
     if config.delay_policy.enabled {
         jobs.push(Recurring {
             key: format!("{KEY_PREFIX}delay:promote"),
@@ -113,6 +119,20 @@ pub async fn run(
             }
         });
     }
+    let storage = Arc::new(FilesystemStorage::new(config.storage.path.clone()));
+    let exports_index = Arc::clone(&index);
+    worker = worker.register(crate::exports::TASK, move |job| {
+        let index = Arc::clone(&exports_index);
+        let storage = Arc::clone(&storage);
+        async move {
+            let stop = || job.is_cancelled();
+            let indexed = crate::exports::index_pending(&index, &storage, &stop).await?;
+            if indexed > 0 {
+                info!(indexed, "exports: indexed cached versions");
+            }
+            Ok(())
+        }
+    });
     let promote_index = Arc::clone(&index);
     worker = worker.register(PROMOTE, move |_job| {
         let index = Arc::clone(&promote_index);
@@ -122,21 +142,6 @@ pub async fn run(
             Ok(())
         }
     });
-
-    #[cfg(feature = "crates")]
-    {
-        worker = worker.register_job::<crate::crates::extraction_job::CrateExtractor>();
-    }
-
-    #[cfg(feature = "gems")]
-    {
-        worker = worker.register_job::<crate::gems::extraction_job::GemExtractor>();
-    }
-
-    #[cfg(feature = "npm")]
-    {
-        worker = worker.register_job::<crate::npm::extraction_job::NpmExtractor>();
-    }
 
     let maintenance = Maintenance::new(queue, MaintenanceConfig::default());
     tokio::try_join!(worker.run(shutdown.clone()), maintenance.run(shutdown))

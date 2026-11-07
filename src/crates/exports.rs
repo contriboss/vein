@@ -1,23 +1,13 @@
 //! Extract and index public APIs from Rust crates using `tree-sitter`.
 
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use anyhow::{Context, Result};
 use std::io::Read;
+use vein_adapter::PackageExport;
 
 #[cfg(feature = "crates")]
 use crate::parse;
 
-/// Public API symbol from a crate.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Export {
-    pub name: String,
-    pub kind: SymbolKind,
-    pub path: String, // fully qualified path (e.g., "tokio::spawn")
-    pub docs: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SymbolKind {
     Function,
     Struct,
@@ -47,9 +37,18 @@ impl std::fmt::Display for SymbolKind {
     }
 }
 
+/// The public API of a `.crate` archive, read from its `src/lib.rs`; none
+/// for a crate without one (a binary).
+pub fn from_crate(tarball: &[u8], name: &str, version: &str) -> Result<Vec<PackageExport>> {
+    match extract_lib_rs_from_crate(tarball, name, version).context("reading the crate")? {
+        Some(lib_rs) => extract_exports(&lib_rs, name),
+        None => Ok(Vec::new()),
+    }
+}
+
 /// Extract public APIs from crate source.
 #[cfg(feature = "crates")]
-pub fn extract_exports(source: &[u8], crate_name: &str) -> Result<Vec<Export>> {
+pub fn extract_exports(source: &[u8], crate_name: &str) -> Result<Vec<PackageExport>> {
     let tree = parse::rust::parse(source)?;
     let mut exports = Vec::new();
     let root = tree.root_node();
@@ -67,7 +66,7 @@ fn walk_node(
     source: &[u8],
     crate_name: &str,
     module_path: &str,
-    exports: &mut Vec<Export>,
+    exports: &mut Vec<PackageExport>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -118,7 +117,7 @@ fn extract_symbol(
     source: &[u8],
     crate_name: &str,
     module_path: &str,
-) -> Option<Export> {
+) -> Option<PackageExport> {
     let kind_str = node.kind();
     let name = if kind_str == "use_declaration" {
         reexported_name(node, source)?
@@ -144,9 +143,9 @@ fn extract_symbol(
         format!("{crate_name}::{module_path}::{name}")
     };
 
-    Some(Export {
-        name,
-        kind,
+    Some(PackageExport {
+        symbol: name,
+        kind: kind.to_string(),
         path,
         docs: extract_docs(node, source),
     })
@@ -233,20 +232,20 @@ mod tests {
         ";
 
         let exports = extract_exports(source, "example").expect("parse failed");
-        let found: Vec<(&str, SymbolKind)> = exports
+        let found: Vec<(&str, &str)> = exports
             .iter()
-            .map(|export| (export.path.as_str(), export.kind.clone()))
+            .map(|export| (export.path.as_str(), export.kind.as_str()))
             .collect();
 
         assert_eq!(
             found,
             [
-                ("example::hello", SymbolKind::Function),
-                ("example::World", SymbolKind::Struct),
-                ("example::utils", SymbolKind::Module),
-                ("example::utils::helper", SymbolKind::Function),
-                ("example::HashMap", SymbolKind::ReExport),
-                ("example::Shared", SymbolKind::ReExport),
+                ("example::hello", "function"),
+                ("example::World", "struct"),
+                ("example::utils", "module"),
+                ("example::utils::helper", "function"),
+                ("example::HashMap", "reexport"),
+                ("example::Shared", "reexport"),
             ]
         );
     }

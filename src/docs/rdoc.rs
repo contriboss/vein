@@ -177,6 +177,46 @@ impl Api {
         self.namespaces.is_empty()
     }
 
+    /// Every class and module with its public methods, attributes and
+    /// constants, for the exports index: `Ns#method` for an instance's,
+    /// `Ns.method` for the namespace's own, `Ns::CONSTANT`.
+    #[must_use]
+    pub fn exports(&self) -> Vec<vein_adapter::PackageExport> {
+        let export =
+            |symbol: &str, kind: &str, path: String, docs: &str| vein_adapter::PackageExport {
+                symbol: symbol.to_owned(),
+                kind: kind.to_owned(),
+                path,
+                docs: summary(docs),
+            };
+        let mut exports = Vec::new();
+        for (name, namespace) in self.namespaces.iter().filter(|(name, _)| !name.is_empty()) {
+            let short = name.rsplit("::").next().unwrap_or(name);
+            let kind = match namespace.kind {
+                Kind::Class => "class",
+                Kind::Module => "module",
+            };
+            exports.push(export(short, kind, name.clone(), &namespace.docs));
+            for constant in &namespace.constants {
+                let path = format!("{name}::{}", constant.name);
+                exports.push(export(&constant.name, "constant", path, &constant.docs));
+            }
+            // `Ns.member` for the namespace's own, `Ns#member` for its instances'.
+            let member = |member: &str, singleton: bool| {
+                format!("{name}{}{member}", if singleton { "." } else { "#" })
+            };
+            for attribute in &namespace.attributes {
+                let path = member(&attribute.name, attribute.singleton);
+                exports.push(export(&attribute.name, "attribute", path, &attribute.docs));
+            }
+            for method in namespace.methods.iter().filter(|method| !method.protected) {
+                let path = member(&method.name, method.singleton);
+                exports.push(export(&method.name, "method", path, &method.docs));
+            }
+        }
+        exports
+    }
+
     fn namespace(&mut self, scope: &Scope) -> Option<&mut Namespace> {
         if scope.hidden {
             return None;
@@ -960,10 +1000,18 @@ fn section(page: &mut String, title: &str, lines: &[String]) {
 
 /// `- head: the docs' first line`.
 fn described(head: &str, docs: &str) -> String {
-    match docs.lines().map(str::trim).find(|line| !line.is_empty()) {
-        Some(summary) => format!("- {head}: {}", cut(summary, 200)),
+    match summary(docs) {
+        Some(summary) => format!("- {head}: {summary}"),
         None => format!("- {head}"),
     }
+}
+
+/// The first line of `docs`, at most 200 characters; `None` without one.
+fn summary(docs: &str) -> Option<String> {
+    docs.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(|line| cut(line, 200))
 }
 
 #[cfg(test)]

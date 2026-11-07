@@ -13,16 +13,21 @@ fn the_config_decides_the_schedules() {
             .collect()
     };
     let catalog = |kind: AssetKind| (format!("vein:catalog:{}", kind.as_str()), sync_task(kind));
-    // The gem catalogue by default, when this build serves gems.
+    let exports = ("vein:exports:index".to_owned(), crate::exports::TASK);
+    // The gem catalogue by default, when this build serves gems, and the
+    // exports index always.
     let default = Config::default();
     let gem = crate::registry::built(AssetKind::Gem).then(|| catalog(AssetKind::Gem));
-    assert_eq!(tasks(&default), Vec::from_iter(gem));
+    let mut expected = Vec::from_iter(gem);
+    expected.push(exports.clone());
+    assert_eq!(tasks(&default), expected);
 
     // Like harbor: every registry built in, and the delay.
     let mut harbor = Config::default();
     harbor.catalog.registries = crate::registry::served();
     harbor.delay_policy.enabled = true;
     let mut expected: Vec<_> = crate::registry::served().into_iter().map(catalog).collect();
+    expected.push(exports);
     expected.push(("vein:delay:promote".to_owned(), "delay.promote"));
     assert_eq!(tasks(&harbor), expected);
 }
@@ -97,7 +102,8 @@ async fn schedules_follow_the_config_and_spare_other_apps() {
             "billing:nightly",
             "vein:catalog:gem",
             "vein:catalog:npm",
-            "vein:delay:promote"
+            "vein:delay:promote",
+            "vein:exports:index"
         ]
     );
 
@@ -107,7 +113,7 @@ async fn schedules_follow_the_config_and_spare_other_apps() {
     keep_schedules(&queue, &recurring(&config)).await.unwrap();
     assert_eq!(
         schedule_keys(&queue).await,
-        ["billing:nightly", "vein:catalog:gem"]
+        ["billing:nightly", "vein:catalog:gem", "vein:exports:index"]
     );
 }
 

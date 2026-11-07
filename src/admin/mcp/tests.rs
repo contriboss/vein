@@ -316,6 +316,31 @@ async fn seeded_resources_with(
             .await
             .unwrap();
     }
+    // What the exports index would have read from serde 1.0.228.
+    let export =
+        |symbol: &str, kind: &str, path: &str, docs: Option<&str>| vein_adapter::PackageExport {
+            symbol: symbol.into(),
+            kind: kind.into(),
+            path: path.into(),
+            docs: docs.map(Into::into),
+        };
+    cache
+        .exports_replace(
+            AssetKind::Crate,
+            "serde",
+            "1.0.228",
+            &[
+                export(
+                    "Serialize",
+                    "trait",
+                    "serde::Serialize",
+                    Some("A data structure.\u{202e}"),
+                ),
+                export("Deserialize", "trait", "serde::Deserialize", None),
+            ],
+        )
+        .await
+        .unwrap();
     // rubygems.org really has both `Rack` and `rack`.
     let names = ["Rack", "rack", "rack-test", "rails"].map(String::from);
     cache.catalog_upsert_names(&names).await.unwrap();
@@ -585,6 +610,7 @@ async fn advertises_resources_and_no_tools() {
         .into_iter()
         .flat_map(templates::of)
         .copied()
+        .chain([templates::EXPORTS_SEARCH])
         .collect();
     expected.sort_unstable();
     assert_eq!(listed, expected);
@@ -1390,4 +1416,39 @@ async fn a_local_provider_is_not_said_to_leave_the_network() {
         let description = tool["description"].as_str().unwrap();
         assert!(description.starts_with("From Vein. "), "{description}");
     }
+}
+
+/// A cached version's exports and the symbol search read the exports
+/// index; docs come out cleaned, and a version not indexed says why.
+#[cfg(feature = "crates")]
+#[tokio::test]
+async fn exports_and_symbol_search_read_the_index() {
+    let (service, _storage) = open().await;
+    let session = Session::open(&service).await;
+
+    let (_, exports) = session
+        .read("vein://crates/serde/versions/1.0.228/exports")
+        .await;
+    assert_eq!(exports["count"], 2);
+    assert_eq!(exports["symbols"][0]["path"], "serde::Deserialize");
+    assert!(exports["symbols"][0].get("author_supplied").is_none());
+    assert_eq!(
+        exports["symbols"][1]["author_supplied"]["docs"],
+        "A data structure."
+    );
+
+    let (_, search) = session.read("vein://search/exports/serialize").await;
+    let hit = &search["hits"][0];
+    assert_eq!(hit["registry"], "crate");
+    assert_eq!(hit["path"], "serde::Serialize");
+    assert_eq!(hit["uri"], "vein://crates/serde/versions/1.0.228/exports");
+
+    let frame = session
+        .rpc(
+            "resources/read",
+            json!({"uri": "vein://crates/serde/versions/1.0.99/exports"}),
+        )
+        .await;
+    let message = frame["error"]["message"].to_string();
+    assert!(message.contains("no exports indexed"), "{frame}");
 }

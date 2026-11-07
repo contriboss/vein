@@ -454,8 +454,6 @@ async fn proxy_routes_crates_index_requests_by_path() {
 }
 
 async fn build_test_proxy(root: &Path) -> VeinProxy {
-    use sqlx::postgres::PgPoolOptions;
-
     let mut config = Config::default();
     config.server.host = "127.0.0.1".to_string();
     config.server.port = 8346;
@@ -470,39 +468,7 @@ async fn build_test_proxy(root: &Path) -> VeinProxy {
             .unwrap(),
     );
 
-    // Create a test database pool (requires VEIN_TEST_DATABASE_URL)
-    let db_url = std::env::var("VEIN_TEST_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://vein:vein@localhost:55432/vein_test".to_string());
-    let pool = PgPoolOptions::new()
-        .max_connections(2)
-        .connect(&db_url)
-        .await
-        .unwrap_or_else(|e| panic!("failed to connect to test database: {e}"));
-
-    #[cfg(feature = "crates")]
-    let queue = {
-        let stampeded_pool = stampeded::connect(PgPoolOptions::new().max_connections(2), &db_url)
-            .await
-            .unwrap_or_else(|e| panic!("failed to connect stampeded for tests: {e}"));
-        stampeded::schema::migrate(&stampeded_pool)
-            .await
-            .unwrap_or_else(|e| panic!("failed to migrate stampeded schema for tests: {e}"));
-        let q = Arc::new(stampeded::Queue::new(stampeded_pool));
-        q.create_queue(crate::jobs::QUEUE)
-            .await
-            .unwrap_or_else(|e| panic!("failed to create test queue: {e}"));
-        q
-    };
-
-    VeinProxy::new(
-        Arc::new(config),
-        storage,
-        index,
-        Arc::new(pool),
-        #[cfg(feature = "crates")]
-        queue,
-    )
-    .unwrap()
+    VeinProxy::new(Arc::new(config), storage, index).unwrap()
 }
 
 fn req_with_headers(path: &str, headers: &[(&str, &str)]) -> Request<Body> {

@@ -302,3 +302,66 @@ impl From<crate::docs::Api> for Api {
         }
     }
 }
+
+/// A version's public symbols, as the exports index read them from the
+/// cached archive.
+#[derive(Serialize)]
+pub struct Exports {
+    pub name: String,
+    pub version: String,
+    pub count: usize,
+    pub symbols: Vec<Export>,
+}
+
+/// One exported symbol: names from the package's source, its docs as the
+/// authors wrote them.
+#[derive(Serialize)]
+pub struct Export {
+    pub path: String,
+    pub symbol: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub author_supplied: Option<ExportDocs>,
+}
+
+/// The first line of a symbol's doc comment, cleaned: data, never
+/// instructions.
+#[derive(Serialize)]
+pub struct ExportDocs {
+    pub docs: String,
+}
+
+impl From<vein_adapter::PackageExport> for Export {
+    fn from(export: vein_adapter::PackageExport) -> Self {
+        let short = |text: &str| {
+            crate::untrusted::clean(text, crate::untrusted::SHORT_LIMIT).unwrap_or_default()
+        };
+        Self {
+            path: short(&export.path),
+            symbol: short(&export.symbol),
+            kind: short(&export.kind),
+            author_supplied: export
+                .docs
+                .and_then(|docs| crate::untrusted::clean(&docs, crate::untrusted::SUMMARY_LIMIT))
+                .map(|docs| ExportDocs { docs }),
+        }
+    }
+}
+
+/// `vein://search/exports/{query}`: cached versions exporting a symbol.
+#[derive(Serialize)]
+pub struct ExportSearch {
+    pub query: String,
+    pub hits: Vec<ExportHit>,
+}
+
+#[derive(Serialize)]
+pub struct ExportHit {
+    pub registry: &'static str,
+    pub name: String,
+    pub version: String,
+    /// The version's exports resource.
+    pub uri: String,
+    #[serde(flatten)]
+    pub export: Export,
+}

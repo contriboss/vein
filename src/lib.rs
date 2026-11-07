@@ -13,12 +13,11 @@ pub mod crates;
 pub mod db;
 pub mod delay;
 pub mod docs;
+pub mod exports;
 #[cfg(feature = "gems")]
 pub mod gem_metadata;
 #[cfg(feature = "gems")]
 pub mod gem_sync;
-#[cfg(feature = "gems")]
-pub mod gems;
 pub mod http_cache;
 pub mod jobs;
 pub mod loopback;

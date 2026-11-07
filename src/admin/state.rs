@@ -225,6 +225,25 @@ impl AdminResources {
         Ok((source, crate::search::names(kind, &answer)))
     }
 
+    /// One cached version's indexed exports, by path.
+    pub async fn exports(
+        &self,
+        kind: AssetKind,
+        name: &str,
+        version: &str,
+    ) -> Result<Vec<vein_adapter::PackageExport>> {
+        self.cache.exports_list(kind, name, version).await
+    }
+
+    /// Indexed exports whose symbol matches `query`, across registries.
+    pub async fn exports_search(
+        &self,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<vein_adapter::ExportMatch>> {
+        self.cache.exports_search(None, query, limit).await
+    }
+
     /// Package documentation over this cache and proxy.
     #[must_use]
     pub fn docs(&self) -> crate::docs::Docs {

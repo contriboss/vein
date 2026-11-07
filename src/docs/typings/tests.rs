@@ -58,3 +58,68 @@ fn definitely_typed_names_scoped_packages_with_two_underscores() {
     assert_eq!(definitely_typed("node"), "@types/node");
     assert_eq!(definitely_typed("@babel/core"), "@types/babel__core");
 }
+
+#[test]
+fn exports_follow_reexports_through_the_declaration_files() {
+    let typings = Typings {
+        declared: Some("./index.d.cts".into()),
+        files: [
+            (
+                "index.d.cts",
+                concat!(
+                    "export * from \"./v4/external.cjs\";\n",
+                    "export * as locales from \"./locales/index.cjs\";\n",
+                ),
+            ),
+            (
+                "v4/external.d.cts",
+                concat!(
+                    "/** Parses anything. */\n",
+                    "export declare function parse(input: unknown): unknown;\n",
+                    "export declare class ZodError extends Error {}\n",
+                    "export interface ZodType { _type: unknown }\n",
+                    "export type Infer<T> = T;\n",
+                    "export declare const string: () => ZodType, number: () => ZodType;\n",
+                    "declare function object(): ZodType;\n",
+                    "export { object, object as obj };\n",
+                    "export * from \"../shared\";\n",
+                ),
+            ),
+            (
+                "shared/index.d.ts",
+                concat!(
+                    "export declare enum Kind { A }\n",
+                    "export * from \"../index.cjs\";\n",
+                ),
+            ),
+        ]
+        .into_iter()
+        .map(|(path, text)| (path.to_owned(), text.to_owned()))
+        .collect(),
+    };
+
+    let found: Vec<(String, String, Option<String>)> = exports(&typings, "zod")
+        .into_iter()
+        .map(|export| (export.path, export.kind, export.docs))
+        .collect();
+    let path = |p: &str, kind: &str| (format!("zod::{p}"), kind.to_owned(), None);
+    assert_eq!(
+        found,
+        [
+            (
+                "zod::parse".to_owned(),
+                "function".to_owned(),
+                Some("Parses anything.".to_owned())
+            ),
+            path("ZodError", "class"),
+            path("ZodType", "interface"),
+            path("Infer", "type"),
+            path("string", "variable"),
+            path("number", "variable"),
+            path("object", "function"),
+            path("obj", "function"),
+            path("Kind", "enum"),
+            path("locales", "namespace"),
+        ]
+    );
+}

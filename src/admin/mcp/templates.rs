@@ -5,6 +5,8 @@ mod crate_api;
 #[cfg(feature = "crates")]
 mod crate_api_item;
 #[cfg(feature = "crates")]
+mod crate_exports;
+#[cfg(feature = "crates")]
 mod crate_info;
 #[cfg(feature = "crates")]
 mod crate_readme;
@@ -14,12 +16,15 @@ mod crate_search;
 mod crate_version;
 #[cfg(feature = "crates")]
 mod crate_versions;
+mod exports_search;
 #[cfg(feature = "gems")]
 mod gem;
 #[cfg(feature = "gems")]
 mod gem_api;
 #[cfg(feature = "gems")]
 mod gem_api_item;
+#[cfg(feature = "gems")]
+mod gem_exports;
 #[cfg(feature = "gems")]
 mod gem_readme;
 #[cfg(feature = "gems")]
@@ -34,6 +39,8 @@ mod gem_versions;
 mod npm_api;
 #[cfg(feature = "npm")]
 mod npm_api_item;
+#[cfg(feature = "npm")]
+mod npm_exports;
 #[cfg(feature = "npm")]
 mod npm_package;
 #[cfg(feature = "npm")]
@@ -66,6 +73,8 @@ pub const GEM_API: &str = "vein://gems/{name}/versions/{version}/api";
 #[cfg(feature = "gems")]
 pub const GEM_API_ITEM: &str = "vein://gems/{name}/versions/{version}/api/{+path}";
 #[cfg(feature = "gems")]
+pub const GEM_EXPORTS: &str = "vein://gems/{name}/versions/{version}/exports";
+#[cfg(feature = "gems")]
 pub const GEM_SBOM: &str = "vein://gems/{name}/versions/{version}/sbom";
 #[cfg(feature = "crates")]
 pub const CRATE_SEARCH: &str = "vein://search/crates/{query}";
@@ -81,6 +90,8 @@ pub const CRATE_README: &str = "vein://crates/{name}/versions/{version}/readme";
 pub const CRATE_API: &str = "vein://crates/{name}/versions/{version}/api";
 #[cfg(feature = "crates")]
 pub const CRATE_API_ITEM: &str = "vein://crates/{name}/versions/{version}/api/{+path}";
+#[cfg(feature = "crates")]
+pub const CRATE_EXPORTS: &str = "vein://crates/{name}/versions/{version}/exports";
 #[cfg(feature = "npm")]
 pub const NPM_SEARCH: &str = "vein://search/npm/{query}";
 #[cfg(feature = "npm")]
@@ -95,6 +106,11 @@ pub const NPM_README: &str = "vein://npm/{+name}/versions/{version}/readme";
 pub const NPM_API: &str = "vein://npm/{+name}/versions/{version}/api";
 #[cfg(feature = "npm")]
 pub const NPM_API_ITEM: &str = "vein://npm/{+name}/versions/{version}/api/{+path}";
+#[cfg(feature = "npm")]
+pub const NPM_EXPORTS: &str = "vein://npm/{+name}/versions/{version}/exports";
+/// Symbol search across every registry: no package arguments to complete,
+/// so it is in no registry's list.
+pub const EXPORTS_SEARCH: &str = "vein://search/exports/{query}";
 
 /// Registry `kind`'s templates: none for one this build left out.
 #[must_use]
@@ -110,6 +126,7 @@ pub const fn of(kind: AssetKind) -> &'static [&'static str] {
             GEM_README,
             GEM_API,
             GEM_API_ITEM,
+            GEM_EXPORTS,
         ],
         #[cfg(feature = "crates")]
         AssetKind::Crate => &[
@@ -120,6 +137,7 @@ pub const fn of(kind: AssetKind) -> &'static [&'static str] {
             CRATE_README,
             CRATE_API,
             CRATE_API_ITEM,
+            CRATE_EXPORTS,
         ],
         #[cfg(feature = "npm")]
         AssetKind::NpmPackage => &[
@@ -130,6 +148,7 @@ pub const fn of(kind: AssetKind) -> &'static [&'static str] {
             NPM_README,
             NPM_API,
             NPM_API_ITEM,
+            NPM_EXPORTS,
         ],
         #[allow(unreachable_patterns)]
         _ => &[],
@@ -137,7 +156,7 @@ pub const fn of(kind: AssetKind) -> &'static [&'static str] {
 }
 
 pub fn router() -> Result<McpResourceTemplateRouter<VeinMcp>, AppsError> {
-    let router = McpResourceTemplateRouter::new();
+    let router = exports_search::mount(McpResourceTemplateRouter::new())?;
     #[cfg(feature = "gems")]
     let router = gems(router)?;
     #[cfg(feature = "crates")]
@@ -158,7 +177,8 @@ fn gems(
     let router = gem_sbom::mount(router)?;
     let router = gem_readme::mount(router)?;
     let router = gem_api::mount(router)?;
-    gem_api_item::mount(router)
+    let router = gem_api_item::mount(router)?;
+    gem_exports::mount(router)
 }
 
 #[cfg(feature = "crates")]
@@ -171,7 +191,8 @@ fn crates(
     let router = crate_version::mount(router)?;
     let router = crate_readme::mount(router)?;
     let router = crate_api::mount(router)?;
-    crate_api_item::mount(router)
+    let router = crate_api_item::mount(router)?;
+    crate_exports::mount(router)
 }
 
 #[cfg(feature = "npm")]
@@ -184,5 +205,6 @@ fn npm(
     let router = npm_version::mount(router)?;
     let router = npm_readme::mount(router)?;
     let router = npm_api::mount(router)?;
-    npm_api_item::mount(router)
+    let router = npm_api_item::mount(router)?;
+    npm_exports::mount(router)
 }
