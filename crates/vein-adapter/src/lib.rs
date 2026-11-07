@@ -10,7 +10,8 @@ mod version;
 // Core types (always available)
 pub use cache::{
     AssetKey, AssetKind, CacheBackendTrait, CachedAsset, CachedVersion, CatalogName,
-    DependencyKind, GemDependency, GemMetadata, GemSymbolRecord, IndexStats, SbomCoverage,
+    DependencyKind, ExportMatch, GemDependency, GemMetadata, GemSymbolRecord, IndexStats,
+    PackageExport, PendingExports, SbomCoverage,
 };
 
 pub use cache::PostgresCacheBackend as CacheBackend;

@@ -787,3 +787,148 @@ async fn registry_names_are_searched_per_registry() {
         .unwrap();
     assert_eq!(cache.names_count(AssetKind::Crate).await.unwrap(), 2);
 }
+
+fn export(symbol: &str, kind: &str, path: &str) -> crate::PackageExport {
+    crate::PackageExport {
+        symbol: symbol.into(),
+        kind: kind.into(),
+        path: path.into(),
+        docs: None,
+    }
+}
+
+/// A re-extraction replaces a version's exports; a repeated path keeps its
+/// first entry; search ranks exact symbols first and filters by registry.
+#[tokio::test]
+async fn exports_are_replaced_listed_and_searched() {
+    let backend = setup_test_db().await;
+    backend
+        .exports_replace(
+            AssetKind::Crate,
+            "tokio",
+            "1.0.0",
+            &[export("stale", "function", "tokio::stale")],
+        )
+        .await
+        .unwrap();
+    backend
+        .exports_replace(
+            AssetKind::Crate,
+            "tokio",
+            "1.0.0",
+            &[
+                export("spawn", "function", "tokio::spawn"),
+                export("spawn", "function", "tokio::spawn"),
+                export("spawn_blocking", "function", "tokio::task::spawn_blocking"),
+            ],
+        )
+        .await
+        .unwrap();
+    backend
+        .exports_replace(
+            AssetKind::NpmPackage,
+            "child_process",
+            "1.0.0",
+            &[export("spawn", "function", "child_process::spawn")],
+        )
+        .await
+        .unwrap();
+
+    let listed: Vec<String> = backend
+        .exports_list(AssetKind::Crate, "tokio", "1.0.0")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|export| export.path)
+        .collect();
+    assert_eq!(listed, ["tokio::spawn", "tokio::task::spawn_blocking"]);
+
+    let found: Vec<(AssetKind, String)> = backend
+        .exports_search(None, "spawn", 10)
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|hit| (hit.kind, hit.export.path))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            (AssetKind::Crate, "tokio::spawn".to_string()),
+            (AssetKind::NpmPackage, "child_process::spawn".to_string()),
+            (AssetKind::Crate, "tokio::task::spawn_blocking".to_string()),
+        ]
+    );
+
+    let crates_only = backend
+        .exports_search(Some(AssetKind::NpmPackage), "spawn", 10)
+        .await
+        .unwrap();
+    assert_eq!(crates_only.len(), 1);
+    assert_eq!(crates_only[0].name, "child_process");
+}
+
+/// Cached versions wait for the index until read or failed; a gem's
+/// platform-less build is the one read; unrequested registries are skipped.
+#[tokio::test]
+async fn cached_versions_are_pending_until_indexed() {
+    let backend = setup_test_db().await;
+    let cache = |kind, name, platform, path| {
+        let backend = &backend;
+        async move {
+            backend
+                .insert_or_replace(
+                    &AssetKey {
+                        kind,
+                        name,
+                        version: "1.0.0",
+                        platform,
+                    },
+                    path,
+                    "sha",
+                    1,
+                )
+                .await
+                .unwrap();
+        }
+    };
+    cache(
+        AssetKind::Gem,
+        "nokogiri",
+        Some("x86_64-linux"),
+        "gems/nokogiri-native.gem",
+    )
+    .await;
+    cache(AssetKind::Gem, "nokogiri", None, "gems/nokogiri.gem").await;
+    cache(AssetKind::Crate, "serde", None, "crates/serde.crate").await;
+    cache(
+        AssetKind::Spec,
+        "nokogiri",
+        None,
+        "specs/nokogiri.gemspec.rz",
+    )
+    .await;
+
+    let mut pending = backend
+        .exports_pending(&[AssetKind::Gem, AssetKind::Crate], 10)
+        .await
+        .unwrap();
+    pending.sort_by(|a, b| a.name.cmp(&b.name));
+    let paths: Vec<&str> = pending.iter().map(|p| p.path.as_str()).collect();
+    assert_eq!(paths, ["gems/nokogiri.gem", "crates/serde.crate"]);
+
+    backend
+        .exports_replace(AssetKind::Gem, "nokogiri", "1.0.0", &[])
+        .await
+        .unwrap();
+    backend
+        .exports_failed(AssetKind::Crate, "serde", "1.0.0", "no lib.rs")
+        .await
+        .unwrap();
+    assert_eq!(
+        backend
+            .exports_pending(&[AssetKind::Gem, AssetKind::Crate], 10)
+            .await
+            .unwrap(),
+        []
+    );
+}

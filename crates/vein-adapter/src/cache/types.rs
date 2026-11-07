@@ -41,6 +41,37 @@ impl std::str::FromStr for AssetKind {
     }
 }
 
+/// A public symbol of a package version, as `package_exports` holds it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PackageExport {
+    /// The short name (`spawn`, `Machine#draw`'s `draw`).
+    pub symbol: String,
+    /// `function`, `struct`, `class`, `method`, `interface`, ...
+    pub kind: String,
+    /// Unique within the version: `tokio::spawn`, `StateMachines::Machine#draw`.
+    pub path: String,
+    pub docs: Option<String>,
+}
+
+/// A cached package version the exports index has not read yet.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingExports {
+    pub kind: AssetKind,
+    pub name: String,
+    pub version: String,
+    /// The cached archive, relative to the storage root.
+    pub path: String,
+}
+
+/// An export found by symbol, with the package version exporting it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportMatch {
+    pub kind: AssetKind,
+    pub name: String,
+    pub version: String,
+    pub export: PackageExport,
+}
+
 /// A name a registry publishes, as its catalog holds it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CatalogName {

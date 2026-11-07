@@ -27,8 +27,8 @@ pub struct GemSymbolRecord<'a> {
 
 // Re-export commonly used types
 pub use types::{
-    AssetKey, AssetKind, CachedAsset, CachedVersion, CatalogName, DependencyKind, GemDependency,
-    GemMetadata, IndexStats, SbomCoverage,
+    AssetKey, AssetKind, CachedAsset, CachedVersion, CatalogName, DependencyKind, ExportMatch,
+    GemDependency, GemMetadata, IndexStats, PackageExport, PendingExports, SbomCoverage,
 };
 
 // Re-export quarantine types
@@ -98,6 +98,47 @@ pub trait CacheBackendTrait: Send + Sync {
         kind: AssetKind,
         names: &[String],
     ) -> impl Future<Output = Result<()>> + Send;
+    /// Cached versions of registries `kinds` the exports index has not read,
+    /// most recently used first.
+    fn exports_pending(
+        &self,
+        kinds: &[AssetKind],
+        limit: i64,
+    ) -> impl Future<Output = Result<Vec<PendingExports>>> + Send;
+    /// Records that one version could not be read, so it is not retried.
+    fn exports_failed(
+        &self,
+        kind: AssetKind,
+        name: &str,
+        version: &str,
+        error: &str,
+    ) -> impl Future<Output = Result<()>> + Send;
+    /// Replaces the exports recorded for one package version with
+    /// `exports` (paths are unique: a repeated one keeps its first entry),
+    /// and marks the version read.
+    fn exports_replace(
+        &self,
+        kind: AssetKind,
+        name: &str,
+        version: &str,
+        exports: &[PackageExport],
+    ) -> impl Future<Output = Result<()>> + Send;
+    /// One package version's exports, by path.
+    fn exports_list(
+        &self,
+        kind: AssetKind,
+        name: &str,
+        version: &str,
+    ) -> impl Future<Output = Result<Vec<PackageExport>>> + Send;
+    /// Exports whose symbol matches `query` across every indexed version
+    /// (of registry `kind`, when given): exact first, then case-insensitive,
+    /// then prefix, then containing.
+    fn exports_search(
+        &self,
+        kind: Option<AssetKind>,
+        query: &str,
+        limit: i64,
+    ) -> impl Future<Output = Result<Vec<ExportMatch>>> + Send;
     /// How many names of registry `kind` the catalog holds.
     fn names_count(&self, kind: AssetKind) -> impl Future<Output = Result<u64>> + Send;
     fn catalog_meta_get(&self, key: &str) -> impl Future<Output = Result<Option<String>>> + Send;

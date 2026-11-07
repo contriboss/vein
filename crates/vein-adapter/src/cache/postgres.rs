@@ -21,8 +21,8 @@ use super::{
     },
     serialization::{hydrate_metadata_row, parse_language_rows, prepare_metadata_strings},
     types::{
-        AssetKey, AssetKind, CachedAsset, CachedVersion, CatalogName, GemMetadata, IndexStats,
-        SbomCoverage,
+        AssetKey, AssetKind, CachedAsset, CachedVersion, CatalogName, ExportMatch, GemMetadata,
+        IndexStats, PackageExport, PendingExports, SbomCoverage,
     },
 };
 
@@ -631,6 +631,215 @@ impl CacheBackendTrait for PostgresCacheBackend {
             .collect())
     }
 
+    async fn exports_replace(
+        &self,
+        kind: AssetKind,
+        name: &str,
+        version: &str,
+        exports: &[PackageExport],
+    ) -> Result<()> {
+        let mut seen = std::collections::HashSet::new();
+        let unique: Vec<&PackageExport> = exports
+            .iter()
+            .filter(|export| seen.insert(export.path.as_str()))
+            .collect();
+        let symbols: Vec<&str> = unique.iter().map(|e| e.symbol.as_str()).collect();
+        let kinds: Vec<&str> = unique.iter().map(|e| e.kind.as_str()).collect();
+        let paths: Vec<&str> = unique.iter().map(|e| e.path.as_str()).collect();
+        let docs: Vec<Option<&str>> = unique.iter().map(|e| e.docs.as_deref()).collect();
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .context("starting exports replace")?;
+        sqlx::query(
+            "DELETE FROM package_exports WHERE registry = $1 AND name = $2 AND version = $3",
+        )
+        .bind(kind.as_str())
+        .bind(name)
+        .bind(version)
+        .execute(&mut *tx)
+        .await
+        .context("clearing package exports (postgres)")?;
+        sqlx::query(
+            r"
+            INSERT INTO package_exports (registry, name, version, symbol, kind, path, docs)
+            SELECT $1, $2, $3, symbol, kind, path, docs
+            FROM UNNEST($4::TEXT[], $5::TEXT[], $6::TEXT[], $7::TEXT[])
+                AS t(symbol, kind, path, docs)
+            ",
+        )
+        .bind(kind.as_str())
+        .bind(name)
+        .bind(version)
+        .bind(&symbols)
+        .bind(&kinds)
+        .bind(&paths)
+        .bind(&docs)
+        .execute(&mut *tx)
+        .await
+        .context("inserting package exports (postgres)")?;
+        sqlx::query(
+            r"
+            INSERT INTO package_exports_indexed (registry, name, version, export_count)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (registry, name, version) DO UPDATE SET
+                export_count = EXCLUDED.export_count, error = NULL, indexed_at = NOW()
+            ",
+        )
+        .bind(kind.as_str())
+        .bind(name)
+        .bind(version)
+        .bind(i32::try_from(unique.len()).unwrap_or(i32::MAX))
+        .execute(&mut *tx)
+        .await
+        .context("marking package exports indexed (postgres)")?;
+        tx.commit().await.context("committing package exports")?;
+        Ok(())
+    }
+
+    async fn exports_pending(
+        &self,
+        kinds: &[AssetKind],
+        limit: i64,
+    ) -> Result<Vec<PendingExports>> {
+        let kinds: Vec<&str> = kinds.iter().map(AssetKind::as_str).collect();
+        // One archive per version: a gem's platform-less build when there is one.
+        let rows = sqlx::query_as::<_, (String, String, String, String)>(
+            r"
+            SELECT kind, name, version, path FROM (
+                SELECT DISTINCT ON (ca.kind, ca.name, ca.version)
+                       ca.kind, ca.name, ca.version, ca.path, ca.last_accessed
+                FROM cached_assets ca
+                WHERE ca.kind = ANY($1)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM package_exports_indexed i
+                      WHERE i.registry = ca.kind AND i.name = ca.name AND i.version = ca.version
+                  )
+                ORDER BY ca.kind, ca.name, ca.version, (ca.platform IS NULL) DESC
+            ) pending
+            ORDER BY last_accessed DESC NULLS LAST
+            LIMIT $2
+            ",
+        )
+        .bind(&kinds)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .context("finding versions to index (postgres)")?;
+        rows.into_iter()
+            .map(|(kind, name, version, path)| {
+                Ok(PendingExports {
+                    kind: kind.parse().map_err(|err: String| anyhow::anyhow!(err))?,
+                    name,
+                    version,
+                    path,
+                })
+            })
+            .collect()
+    }
+
+    async fn exports_failed(
+        &self,
+        kind: AssetKind,
+        name: &str,
+        version: &str,
+        error: &str,
+    ) -> Result<()> {
+        sqlx::query(
+            r"
+            INSERT INTO package_exports_indexed (registry, name, version, error)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (registry, name, version) DO UPDATE SET
+                error = EXCLUDED.error, indexed_at = NOW()
+            ",
+        )
+        .bind(kind.as_str())
+        .bind(name)
+        .bind(version)
+        .bind(error)
+        .execute(&self.pool)
+        .await
+        .context("recording an exports failure (postgres)")?;
+        Ok(())
+    }
+
+    async fn exports_list(
+        &self,
+        kind: AssetKind,
+        name: &str,
+        version: &str,
+    ) -> Result<Vec<PackageExport>> {
+        let rows = sqlx::query_as::<_, (String, String, String, Option<String>)>(
+            r"
+            SELECT symbol, kind, path, docs FROM package_exports
+            WHERE registry = $1 AND name = $2 AND version = $3
+            ORDER BY path COLLATE ucs_basic
+            ",
+        )
+        .bind(kind.as_str())
+        .bind(name)
+        .bind(version)
+        .fetch_all(&self.pool)
+        .await
+        .context("listing package exports (postgres)")?;
+        Ok(rows.into_iter().map(package_export).collect())
+    }
+
+    async fn exports_search(
+        &self,
+        kind: Option<AssetKind>,
+        query: &str,
+        limit: i64,
+    ) -> Result<Vec<ExportMatch>> {
+        let rows = sqlx::query_as::<
+            _,
+            (
+                String,
+                String,
+                String,
+                String,
+                String,
+                String,
+                Option<String>,
+            ),
+        >(
+            r"
+            SELECT registry, name, version, symbol, kind, path, docs FROM package_exports
+            WHERE symbol ILIKE $1 AND ($5::TEXT IS NULL OR registry = $5)
+            ORDER BY CASE
+                     WHEN symbol = $3 THEN 0
+                     WHEN lower(symbol) = lower($3) THEN 1
+                     WHEN symbol ILIKE $4 THEN 2
+                     ELSE 3
+                 END,
+                 length(path), path COLLATE ucs_basic, name COLLATE ucs_basic, version
+            LIMIT $2
+            ",
+        )
+        .bind(search_like_pattern(query))
+        .bind(limit)
+        .bind(query)
+        .bind(search_prefix_pattern(query))
+        .bind(kind.map(|kind| kind.as_str()))
+        .fetch_all(&self.pool)
+        .await
+        .context("searching package exports (postgres)")?;
+        rows.into_iter()
+            .map(|(registry, name, version, symbol, kind, path, docs)| {
+                Ok(ExportMatch {
+                    kind: registry
+                        .parse()
+                        .map_err(|err: String| anyhow::anyhow!(err))?,
+                    name,
+                    version,
+                    export: package_export((symbol, kind, path, docs)),
+                })
+            })
+            .collect()
+    }
+
     async fn names_upsert(&self, kind: AssetKind, names: &[CatalogName]) -> Result<()> {
         if names.is_empty() {
             return Ok(());
@@ -1135,5 +1344,16 @@ mod test_schema {
             })
             .await
             .map(drop)
+    }
+}
+
+fn package_export(
+    (symbol, kind, path, docs): (String, String, String, Option<String>),
+) -> PackageExport {
+    PackageExport {
+        symbol,
+        kind,
+        path,
+        docs,
     }
 }
