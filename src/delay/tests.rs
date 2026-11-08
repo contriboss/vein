@@ -153,11 +153,59 @@ fn verdicts_follow_publish_time_overrides_and_decisions() {
     ];
     for (case, kind, name, listed, row, expected) in cases {
         assert_eq!(
-            decide(&config, *kind, name, *listed, row.as_ref(), now),
+            decide(&config, *kind, name, *listed, row.as_ref(), false, now),
             *expected,
             "{case}"
         );
     }
+}
+
+/// A trusted package's fresh release is visible at once; a version an
+/// admin blocked stays blocked.
+#[test]
+fn trust_releases_fresh_versions_but_not_blocked_ones() {
+    let now: Timestamp = "2026-10-23T12:00:00Z".parse().unwrap();
+    let config = policy();
+    let fresh = Listed {
+        version: "0.2.2",
+        platform: None,
+        published_at: Some(now),
+    };
+    let held = decide(
+        &config,
+        AssetKind::Crate,
+        "window-machines",
+        fresh,
+        None,
+        false,
+        now,
+    );
+    assert!(matches!(held, Verdict::Held(_)), "{held:?}");
+    assert_eq!(
+        decide(
+            &config,
+            AssetKind::Crate,
+            "window-machines",
+            fresh,
+            None,
+            true,
+            now
+        ),
+        Verdict::Visible
+    );
+    let blocked = row(VersionStatus::Blocked, now);
+    assert_eq!(
+        decide(
+            &config,
+            AssetKind::Crate,
+            "window-machines",
+            fresh,
+            Some(&blocked),
+            true,
+            now
+        ),
+        Verdict::Blocked
+    );
 }
 
 /// Blocking refuses the download of that exact version; holding does not.
@@ -205,5 +253,32 @@ async fn blocked_versions_are_refused_and_held_ones_are_not() {
     assert_eq!(
         screen(&off, &index, AssetKind::NpmPackage, "lefft-pad", &held).await,
         None
+    );
+}
+
+/// Trust reaches what the proxy serves: a fresh release of a trusted
+/// package is listed at once, through the same screen the indexes use.
+#[tokio::test]
+async fn a_trusted_package_is_screened_visible() {
+    let index = index().await;
+    let config = policy();
+    let fresh = [Listed {
+        version: "0.2.2",
+        platform: None,
+        published_at: Some(Timestamp::now()),
+    }];
+
+    let verdicts = screen(&config, &index, AssetKind::Crate, "window-machines", &fresh)
+        .await
+        .unwrap();
+    assert!(matches!(verdicts[0], Verdict::Held(_)), "{verdicts:?}");
+
+    index
+        .trust_package(AssetKind::Crate, "window-machines", None)
+        .await
+        .unwrap();
+    assert_eq!(
+        screen(&config, &index, AssetKind::Crate, "window-machines", &fresh).await,
+        Some(vec![Verdict::Visible])
     );
 }

@@ -56,7 +56,7 @@ impl Verdict {
 }
 
 /// The verdict on `listed`, given its tracked row (an admin's decision, or
-/// an earlier hold) and the time.
+/// an earlier hold), whether an admin trusts the package, and the time.
 #[must_use]
 pub fn decide(
     config: &DelayPolicyConfig,
@@ -64,6 +64,7 @@ pub fn decide(
     name: &str,
     listed: Listed<'_>,
     row: Option<&PackageVersion>,
+    trusted: bool,
     now: Timestamp,
 ) -> Verdict {
     match row.map(|row| row.status) {
@@ -71,7 +72,8 @@ pub fn decide(
         Some(VersionStatus::Available | VersionStatus::Pinned) => return Verdict::Visible,
         Some(VersionStatus::Quarantine) | None => {}
     }
-    if config.pin_reason(kind, name, listed.version).is_some()
+    if trusted
+        || config.pin_reason(kind, name, listed.version).is_some()
         || config.delay_days_for(kind, name) == 0
     {
         return Verdict::Visible;
@@ -112,6 +114,11 @@ pub async fn screen(
         warn!(error = %err, package = name, "delay: tracked versions unavailable, holding by publish time only");
         Vec::new()
     });
+    // Unknown trust holds as usual: the delay is the safe side.
+    let trusted = index.is_trusted(kind, name).await.unwrap_or_else(|err| {
+        warn!(error = %err, package = name, "delay: trust unavailable, holding as usual");
+        false
+    });
     let now = Timestamp::now();
     let mut held = Vec::new();
     let verdicts: Vec<Verdict> = listed
@@ -120,7 +127,7 @@ pub async fn screen(
             let row = rows.iter().find(|row| {
                 row.version == listed.version && row.platform.as_deref() == listed.platform
             });
-            let verdict = decide(config, kind, name, *listed, row, now);
+            let verdict = decide(config, kind, name, *listed, row, trusted, now);
             if let Verdict::Held(until) = verdict {
                 // `decide` holds only what it can date, from the index or the row.
                 let published = listed

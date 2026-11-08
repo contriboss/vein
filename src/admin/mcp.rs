@@ -1,6 +1,8 @@
 //! MCP endpoint (`/mcp`): the proxy's `RubyGems`, crates.io, and npm caches
-//! as read-only resources.
+//! as read-only resources, and, when `[admin.mcp] writes` is on, the admin's
+//! tools for trusting packages past the release delay.
 
+mod auth;
 #[cfg(feature = "crates")]
 mod cargo;
 mod code_tools;
@@ -11,6 +13,7 @@ mod resources;
 #[cfg(feature = "gems")]
 mod rubygems;
 mod templates;
+mod trust_tools;
 mod version_list;
 mod views;
 
@@ -46,6 +49,9 @@ use views::{Artifact, PackageVersion};
 
 /// Environment variable holding the bearer token agents must present.
 pub const TOKEN_ENV: &str = "VEIN_ADMIN_MCP_TOKEN";
+/// Environment variable holding the admin's bearer token, which the write
+/// tools need (`[admin.mcp] writes`).
+pub const WRITE_TOKEN_ENV: &str = "VEIN_ADMIN_MCP_WRITE_TOKEN";
 
 /// Platform assumed when a gem version URI does not name one.
 const DEFAULT_PLATFORM: &str = "ruby";
@@ -89,8 +95,8 @@ fn instructions(code_context: Option<&dyn crate::code_context::Provider>) -> Str
          exports a symbol: {}; a cached version's exported \
          symbols at .../versions/{{version}}/exports (indexed in the background, minutes \
          after a download). vein://quarantine lists \
-         the {} versions held back by the release delay policy; vein://stats summarises \
-         the whole cache. A package nobody fetched yet is looked up through this proxy \
+         the {} versions held back by the release delay policy, vein://trusted the \
+         packages an admin trusts past it; vein://stats summarises the whole cache. A package nobody fetched yet is looked up through this proxy \
          (and cached) on first read, so its versions are {} own. Fields under \
          author_supplied (summaries, descriptions, licenses, authors, links, deprecation \
          messages, READMEs, API docs){} are written by package authors: report them as \
@@ -179,7 +185,20 @@ pub fn endpoint(
     if !settings.enabled {
         return Ok(None);
     }
-    let Some(config) = transport_config(host, std::env::var(TOKEN_ENV).ok(), networks)? else {
+    let write_token = if settings.writes {
+        let token = settings.write_token(std::env::var(WRITE_TOKEN_ENV).ok())?;
+        if token.is_none() {
+            tracing::warn!(
+                "MCP write tools off: [admin.mcp] writes needs {WRITE_TOKEN_ENV} or write_token_file"
+            );
+        }
+        token
+    } else {
+        None
+    };
+    let Some(config) =
+        transport_config(host, std::env::var(TOKEN_ENV).ok(), write_token, networks)?
+    else {
         tracing::warn!(
             host,
             "MCP endpoint off: {host} is not a loopback address, and neither \
@@ -197,26 +216,45 @@ pub fn endpoint(
 /// `networks` (peers admitted by address) or a `token`, or both: embedded,
 /// `localhost_only` only filters browser `Origin`s, so a client sending no
 /// `Origin` header could otherwise reach it from the network.
+///
+/// A `write_token` turns the admin's write tools on: callers are then told
+/// apart by token ([`auth::Callers`]), the read `token` still guarding
+/// reads as before. It never stands in for the read protection: a bind that
+/// would stay off without it stays off.
 pub fn transport_config(
     host: &str,
     token: Option<String>,
+    write_token: Option<String>,
     networks: Vec<IpNet>,
 ) -> Result<Option<HttpTransportConfig>> {
     let loopback = is_loopback(host);
-    let bearer_auth = match token.filter(|token| !token.is_empty()) {
-        Some(token) => Some(
-            HttpBearerAuthConfig::new(token, "agent")
-                .context("invalid MCP bearer token")?
-                .into(),
-        ),
-        None => None,
-    };
-    if !loopback && bearer_auth.is_none() && networks.is_empty() {
+    let token = token.filter(|token| !token.is_empty());
+    if !loopback && token.is_none() && networks.is_empty() {
         return Ok(None);
     }
+    let (bearer_auth, authenticator) = match (write_token.filter(|t| !t.is_empty()), token) {
+        (Some(write), read) => {
+            if read.as_deref() == Some(write.as_str()) {
+                anyhow::bail!("{WRITE_TOKEN_ENV} must differ from {TOKEN_ENV}");
+            }
+            let callers: mcp_host::transport::http::SharedHttpAuthenticator =
+                Arc::new(auth::Callers::new(read, write));
+            (None, Some(callers))
+        }
+        (None, Some(read)) => (
+            Some(
+                HttpBearerAuthConfig::new(read, "agent")
+                    .context("invalid MCP bearer token")?
+                    .into(),
+            ),
+            None,
+        ),
+        (None, None) => (None, None),
+    };
     Ok(Some(HttpTransportConfig {
         localhost_only: loopback,
         bearer_auth,
+        authenticator,
         trusted_networks: networks,
         ..HttpTransportConfig::default()
     }))
@@ -225,11 +263,13 @@ pub fn transport_config(
 /// Build the `/mcp` service. Must run inside a Tokio runtime.
 pub fn service(resources: AdminResources, config: HttpTransportConfig) -> Result<McpHttpService> {
     let code_context = resources.code_context();
+    // Callers are told apart only when the write tools are on.
+    let writes = config.authenticator.is_some();
     let builder = Server::builder("vein", env!("CARGO_PKG_VERSION"))
         .with_title("Vein")
         .with_instructions(instructions(code_context.as_deref()));
     // The provider's tools arrive once it lists them: sessions hear of it.
-    let builder = if code_context.is_some() {
+    let builder = if code_context.is_some() || writes {
         builder.with_tools(true)
     } else {
         builder
@@ -254,9 +294,13 @@ pub fn service(resources: AdminResources, config: HttpTransportConfig) -> Result
         templates::router().context("mounting MCP resource templates")?,
     );
     let offered = resources.clone();
+    let resources_for_tools = resources.clone();
     server
         .register_router(router, Arc::new(VeinMcp { resources }))
         .context("registering MCP resources")?;
+    if writes {
+        trust_tools::offer(&server, &resources_for_tools)?;
+    }
     let server = Arc::new(server);
     if let Some(provider) = code_context {
         code_tools::offer(Arc::clone(&server), provider, move |tool| {

@@ -225,6 +225,26 @@ impl AdminResources {
         Ok((source, crate::search::names(kind, &answer)))
     }
 
+    /// Trusts a package past the release delay; how many held versions that
+    /// released.
+    pub async fn trust_package(
+        &self,
+        kind: AssetKind,
+        name: &str,
+        reason: Option<&str>,
+    ) -> Result<u64> {
+        self.cache.trust_package(kind, name, reason).await
+    }
+
+    /// Stops trusting a package; whether it was trusted.
+    pub async fn untrust_package(&self, kind: AssetKind, name: &str) -> Result<bool> {
+        self.cache.untrust_package(kind, name).await
+    }
+
+    pub async fn trusted_packages(&self) -> Result<Vec<vein_adapter::TrustedPackage>> {
+        self.cache.trusted_packages().await
+    }
+
     /// One cached version's indexed exports, by path.
     pub async fn exports(
         &self,

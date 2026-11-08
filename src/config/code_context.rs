@@ -4,7 +4,9 @@
 
 use std::path::PathBuf;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
+
+use super::read_token_file;
 use serde::Deserialize;
 
 /// The environment variable holding the `GitHits` API token (`ghi-...`).
@@ -92,22 +94,7 @@ impl GitHitsConfig {
                  code_context.githits.token_file gives its API token"
             );
         };
-        let file = home_relative(file);
-        let text = std::fs::read_to_string(&file)
-            .with_context(|| format!("reading the GitHits token from {}", file.display()))?;
-        let token = text.lines().next().unwrap_or_default().trim();
-        if token.is_empty() {
-            bail!("{} holds no GitHits token", file.display());
-        }
-        Ok(token.to_owned())
-    }
-}
-
-/// `path`, with a leading `~/` as `$HOME/`.
-fn home_relative(path: &std::path::Path) -> PathBuf {
-    match (path.strip_prefix("~"), std::env::var_os("HOME")) {
-        (Ok(rest), Some(home)) => PathBuf::from(home).join(rest),
-        _ => path.to_path_buf(),
+        read_token_file(file, "GitHits")
     }
 }
 

@@ -97,3 +97,30 @@ pub fn served() -> Vec<AssetKind> {
 
 #[cfg(test)]
 mod tests;
+
+/// That `name` could be a package of registry `kind`, built into vein: it
+/// goes into proxy paths and storage keys, so nothing that could leave one.
+pub fn check_name(kind: AssetKind, name: &str) -> anyhow::Result<()> {
+    if !built(kind) {
+        return Err(NotBuilt(kind).into());
+    }
+    let segment = |part: &str| {
+        !part.is_empty()
+            && !part.starts_with('.')
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    };
+    let valid = name.len() <= 214
+        && match (kind, name.strip_prefix('@')) {
+            (AssetKind::NpmPackage, Some(scoped)) => scoped
+                .split_once('/')
+                .is_some_and(|(scope, rest)| segment(scope) && segment(rest)),
+            _ => segment(name),
+        };
+    if valid {
+        Ok(())
+    } else {
+        anyhow::bail!("`{name}` is not a {} name", noun(kind))
+    }
+}

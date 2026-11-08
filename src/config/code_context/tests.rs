@@ -1,4 +1,5 @@
 use super::*;
+use crate::config::home_relative;
 
 /// A token file holding `text`, and its directory's guard.
 fn token_file(text: &str) -> (tempfile::TempDir, PathBuf) {

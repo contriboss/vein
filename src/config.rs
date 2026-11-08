@@ -183,3 +183,24 @@ impl Config {
         Ok(())
     }
 }
+
+/// The first line of token file `file` (`~/` is the home of the user vein
+/// runs as), naming the token `what` in errors.
+pub(crate) fn read_token_file(file: &Path, what: &str) -> Result<String> {
+    let file = home_relative(file);
+    let text = std::fs::read_to_string(&file)
+        .with_context(|| format!("reading the {what} token from {}", file.display()))?;
+    let token = text.lines().next().unwrap_or_default().trim();
+    if token.is_empty() {
+        bail!("{} holds no {what} token", file.display());
+    }
+    Ok(token.to_owned())
+}
+
+/// `path`, with a leading `~/` as `$HOME/`.
+pub(crate) fn home_relative(path: &Path) -> PathBuf {
+    match (path.strip_prefix("~"), std::env::var_os("HOME")) {
+        (Ok(rest), Some(home)) => PathBuf::from(home).join(rest),
+        _ => path.to_path_buf(),
+    }
+}

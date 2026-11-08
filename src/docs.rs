@@ -43,31 +43,12 @@ impl Package {
     /// `name` `version` in registry `kind`, if both could be one: they go
     /// into proxy paths, so nothing that could leave one.
     pub fn new(kind: AssetKind, name: &str, version: &str) -> Result<Self> {
-        if !registry::built(kind) {
-            return Err(NotBuilt(kind).into());
-        }
-        let segment = |part: &str| {
-            !part.is_empty()
-                && !part.starts_with('.')
-                && part
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-        };
-        let name_ok = name.len() <= 214
-            && match (kind, name.strip_prefix('@')) {
-                (AssetKind::NpmPackage, Some(scoped)) => scoped
-                    .split_once('/')
-                    .is_some_and(|(scope, rest)| segment(scope) && segment(rest)),
-                _ => segment(name),
-            };
+        registry::check_name(kind, name)?;
         let version_ok = version.len() <= 128
             && !version.is_empty()
             && version
                 .chars()
                 .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '+'));
-        if !name_ok {
-            bail!("`{name}` is not a {} name", registry::noun(kind));
-        }
         if !version_ok {
             bail!("`{version}` is not a version");
         }

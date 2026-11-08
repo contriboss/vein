@@ -15,7 +15,7 @@ use super::*;
 #[test]
 fn loopback_binds_serve_without_a_token() {
     for host in ["127.0.0.1", "localhost", "::1", "[::1]"] {
-        let config = transport_config(host, None, Vec::new())
+        let config = transport_config(host, None, None, Vec::new())
             .unwrap()
             .expect(host);
         assert!(config.localhost_only, "{host}");
@@ -26,12 +26,12 @@ fn loopback_binds_serve_without_a_token() {
 #[test]
 fn public_binds_stay_off_without_a_token() {
     assert!(
-        transport_config("0.0.0.0", None, Vec::new())
+        transport_config("0.0.0.0", None, None, Vec::new())
             .unwrap()
             .is_none()
     );
     assert!(
-        transport_config("192.168.1.10", Some(String::new()), Vec::new())
+        transport_config("192.168.1.10", Some(String::new()), None, Vec::new())
             .unwrap()
             .is_none()
     );
@@ -40,7 +40,7 @@ fn public_binds_stay_off_without_a_token() {
 #[test]
 fn public_binds_open_to_trusted_networks_without_a_token() {
     let networks = vec!["192.168.1.0/24".parse().unwrap()];
-    let config = transport_config("0.0.0.0", None, networks.clone())
+    let config = transport_config("0.0.0.0", None, None, networks.clone())
         .unwrap()
         .expect("trusted networks stand in for the token");
     assert!(!config.localhost_only);
@@ -48,7 +48,7 @@ fn public_binds_open_to_trusted_networks_without_a_token() {
     assert_eq!(config.trusted_networks, networks);
 
     // Both set: mcp-host requires both.
-    let both = transport_config("0.0.0.0", Some("s3cret".into()), networks)
+    let both = transport_config("0.0.0.0", Some("s3cret".into()), None, networks)
         .unwrap()
         .unwrap();
     assert!(both.bearer_auth.is_some() && !both.trusted_networks.is_empty());
@@ -56,7 +56,7 @@ fn public_binds_open_to_trusted_networks_without_a_token() {
 
 #[test]
 fn public_binds_require_the_token() {
-    let config = transport_config("0.0.0.0", Some("s3cret".into()), Vec::new())
+    let config = transport_config("0.0.0.0", Some("s3cret".into()), None, Vec::new())
         .unwrap()
         .unwrap();
     assert!(!config.localhost_only);
@@ -384,6 +384,21 @@ async fn seeded_resources_with(
         .await
         .unwrap();
 
+    // A crate of ours the release delay holds, for the trust tools.
+    cache
+        .set_version_status(
+            &AssetKey {
+                kind: AssetKind::Crate,
+                name: "window-machines",
+                version: "0.2.2",
+                platform: None,
+            },
+            vein_adapter::VersionStatus::Quarantine,
+            Some("auto".into()),
+        )
+        .await
+        .unwrap();
+
     let mut config = VeinConfig::default();
     config.server.host = "127.0.0.1".into();
     config.server.port = proxy_port;
@@ -439,7 +454,7 @@ fn test_config() -> HttpTransportConfig {
     HttpTransportConfig {
         // Keep POST SSE bodies finite so tests can collect them.
         sse_keep_alive_interval: None,
-        ..transport_config("127.0.0.1", None, Vec::new())
+        ..transport_config("127.0.0.1", None, None, Vec::new())
             .unwrap()
             .unwrap()
     }
@@ -448,6 +463,8 @@ fn test_config() -> HttpTransportConfig {
 struct Session<'a> {
     service: &'a McpHttpService,
     id: String,
+    /// The bearer token every request of this session sends.
+    token: Option<String>,
     capabilities: Value,
     /// What the server told this client in `initialize`.
     instructions: String,
@@ -460,9 +477,25 @@ impl Session<'_> {
 
     /// Initialize as the client `clientInfo` named `name` at `version`.
     async fn open_as<'s>(service: &'s McpHttpService, name: &str, version: &str) -> Session<'s> {
+        Self::open_with(service, name, version, None).await
+    }
+
+    /// Initialize sending `token` as the bearer token on every request.
+    #[cfg(feature = "crates")]
+    async fn open_with_token<'s>(service: &'s McpHttpService, token: &str) -> Session<'s> {
+        Self::open_with(service, "test", "1", Some(token)).await
+    }
+
+    async fn open_with<'s>(
+        service: &'s McpHttpService,
+        name: &str,
+        version: &str,
+        token: Option<&str>,
+    ) -> Session<'s> {
         let response = service
             .handle(post(
                 None,
+                token,
                 &json!({
                     "jsonrpc": "2.0", "id": 1, "method": "initialize",
                     "params": {
@@ -482,6 +515,7 @@ impl Session<'_> {
         let session = Session {
             service,
             id,
+            token: token.map(str::to_owned),
             capabilities: init["result"]["capabilities"].clone(),
             instructions: init["result"]["instructions"]
                 .as_str()
@@ -495,7 +529,10 @@ impl Session<'_> {
     }
 
     async fn send(&self, message: Value) -> Value {
-        let response = self.service.handle(post(Some(&self.id), &message)).await;
+        let response = self
+            .service
+            .handle(post(Some(&self.id), self.token.as_deref(), &message))
+            .await;
         sse_response(response.into_body()).await
     }
 
@@ -550,7 +587,7 @@ async fn sse_response(body: Body) -> Value {
         .unwrap_or(Value::Null)
 }
 
-fn post(session_id: Option<&str>, body: &Value) -> Request {
+fn post(session_id: Option<&str>, token: Option<&str>, body: &Value) -> Request {
     let mut builder = Request::builder()
         .method(Method::POST)
         .uri("/mcp")
@@ -558,6 +595,9 @@ fn post(session_id: Option<&str>, body: &Value) -> Request {
         .header("Accept", "application/json, text/event-stream");
     if let Some(id) = session_id {
         builder = builder.header("Mcp-Session-Id", id);
+    }
+    if let Some(token) = token {
+        builder = builder.header("Authorization", format!("Bearer {token}"));
     }
     builder
         .body(Body::from(serde_json::to_vec(body).unwrap()))
@@ -595,7 +635,10 @@ async fn advertises_resources_and_no_tools() {
         .map(|resource| resource["uri"].as_str().unwrap())
         .collect();
     uris.sort_unstable();
-    assert_eq!(uris, ["vein://quarantine", "vein://stats"]);
+    assert_eq!(
+        uris,
+        ["vein://quarantine", "vein://stats", "vein://trusted"]
+    );
 
     let listed = session.result("resources/templates/list", json!({})).await;
     let mut listed: Vec<&str> = listed["resourceTemplates"]
@@ -1451,4 +1494,143 @@ async fn exports_and_symbol_search_read_the_index() {
         .await;
     let message = frame["error"]["message"].to_string();
     assert!(message.contains("no exports indexed"), "{frame}");
+}
+
+/// The write tools, on a loopback bind with only a write token.
+async fn open_with_writes() -> (McpHttpService, TempDir) {
+    let (port, _) = fake_proxy().await;
+    let storage = tempfile::tempdir().unwrap();
+    let config = HttpTransportConfig {
+        sse_keep_alive_interval: None,
+        ..transport_config("127.0.0.1", None, Some(WRITE_TOKEN.into()), Vec::new())
+            .unwrap()
+            .unwrap()
+    };
+    let service = service(seeded_resources(&storage, port).await, config).unwrap();
+    (service, storage)
+}
+
+const WRITE_TOKEN: &str = "w-token";
+
+#[cfg(feature = "crates")]
+fn tool_names(listed: &Value) -> Vec<String> {
+    listed["tools"]
+        .as_array()
+        .map(|tools| {
+            tools
+                .iter()
+                .filter_map(|tool| tool["name"].as_str().map(str::to_owned))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Only the write token's holder sees and runs the trust tools; trusting
+/// releases what the delay held, and `vein://trusted` lists it.
+#[cfg(feature = "crates")]
+#[tokio::test]
+async fn the_admin_trusts_packages_and_readers_cannot() {
+    let (service, _storage) = open_with_writes().await;
+
+    let reader = Session::open(&service).await;
+    let listed = reader.result("tools/list", json!({})).await;
+    assert!(
+        !tool_names(&listed).contains(&"trust_package".to_owned()),
+        "{listed}"
+    );
+    let refused = reader
+        .rpc(
+            "tools/call",
+            json!({"name": "trust_package", "arguments": {"registry": "crate", "name": "window-machines"}}),
+        )
+        .await;
+    let (_, trusted) = reader.read("vein://trusted").await;
+    assert_eq!(
+        trusted["packages"],
+        json!([]),
+        "a reader trusted it: {refused}"
+    );
+
+    let admin = Session::open_with_token(&service, WRITE_TOKEN).await;
+    let listed = admin.result("tools/list", json!({})).await;
+    let names = tool_names(&listed);
+    assert!(names.contains(&"trust_package".to_owned()), "{listed}");
+    assert!(names.contains(&"untrust_package".to_owned()), "{listed}");
+
+    let called = admin
+        .result(
+            "tools/call",
+            json!({
+                "name": "trust_package",
+                "arguments": {"registry": "crate", "name": "window-machines", "reason": "we publish it"}
+            }),
+        )
+        .await;
+    assert_eq!(called["structuredContent"]["released"], 1, "{called}");
+
+    let (_, trusted) = admin.read("vein://trusted").await;
+    assert_eq!(trusted["packages"][0]["name"], "window-machines");
+    assert_eq!(trusted["packages"][0]["reason"], "we publish it");
+
+    let bad = admin
+        .rpc(
+            "tools/call",
+            json!({"name": "trust_package", "arguments": {"registry": "crate", "name": "../etc"}}),
+        )
+        .await;
+    assert!(bad.to_string().contains("not a crate name"), "{bad}");
+
+    let called = admin
+        .result(
+            "tools/call",
+            json!({"name": "untrust_package", "arguments": {"registry": "crate", "name": "window-machines"}}),
+        )
+        .await;
+    assert_eq!(called["structuredContent"]["was_trusted"], true, "{called}");
+}
+
+/// A token that is neither one is refused outright.
+#[tokio::test]
+async fn a_wrong_token_is_refused() {
+    let (service, _storage) = open_with_writes().await;
+    let response = service
+        .handle(post(
+            None,
+            Some("not-it"),
+            &json!({
+                "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "1"}
+                }
+            }),
+        ))
+        .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// The write token turns callers apart, never read protection off: a
+/// public bind with no read token and no trusted network stays off, and
+/// the two tokens must differ.
+#[test]
+fn the_write_token_never_opens_a_bind() {
+    assert!(
+        transport_config("0.0.0.0", None, Some(WRITE_TOKEN.into()), Vec::new())
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        transport_config(
+            "0.0.0.0",
+            Some("same".into()),
+            Some("same".into()),
+            Vec::new()
+        )
+        .is_err()
+    );
+    let config = transport_config("127.0.0.1", None, Some(WRITE_TOKEN.into()), Vec::new())
+        .unwrap()
+        .unwrap();
+    assert!(config.authenticator.is_some() && config.bearer_auth.is_none());
 }
