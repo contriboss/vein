@@ -39,6 +39,13 @@ host = "0.0.0.0"
 port = 9401
 trusted_networks = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
 
+# The admin's /mcp tools (trust_package, untrust_package): only a session
+# sending this token as `Authorization: Bearer` sees or runs them; reads stay
+# as above. The token lives outside the repo, on harbor, mode 600.
+[admin.mcp]
+writes = true
+write_token_file = "~/.config/vein/mcp-write.token"
+
 [catalog]
 # Search answers offline too: every gem, crate and npm name.
 registries = ["gem", "crate", "npm"]
