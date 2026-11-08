@@ -21,5 +21,6 @@ pub use version::{compare_gem_versions, is_semver_prerelease, sort_newest_first}
 
 // Quarantine types
 pub use cache::{
-    DelayPolicy, PackageVersion, QuarantineStats, VersionStatus, calculate_availability,
+    DelayPolicy, PackageVersion, QuarantineStats, TrustedPackage, VersionStatus,
+    calculate_availability,
 };

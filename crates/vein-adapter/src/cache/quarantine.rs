@@ -53,6 +53,16 @@ impl std::str::FromStr for VersionStatus {
     }
 }
 
+/// A package an admin trusts: its versions skip the release delay.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrustedPackage {
+    pub kind: AssetKind,
+    pub name: String,
+    /// Why it is trusted, as the admin put it.
+    pub reason: Option<String>,
+    pub trusted_at: Timestamp,
+}
+
 /// A package version the delay policy tracks: one it held back, or one an
 /// admin approved, pinned or blocked.
 #[derive(Debug, Clone, Serialize, Deserialize)]

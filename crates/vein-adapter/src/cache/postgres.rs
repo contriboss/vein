@@ -11,7 +11,7 @@ use sqlx::{
 use crate::version::sort_newest_first;
 
 use super::{
-    CacheBackendTrait, PackageVersion, QuarantineStats, VersionStatus,
+    CacheBackendTrait, PackageVersion, QuarantineStats, TrustedPackage, VersionStatus,
     backend_common::{
         build_index_stats, build_quarantine_stats, build_sbom_coverage, json_array_like_pattern,
         newest_first, search_like_pattern, search_prefix_pattern,
@@ -731,7 +731,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         rows.into_iter()
             .map(|(kind, name, version, path)| {
                 Ok(PendingExports {
-                    kind: kind.parse().map_err(|err: String| anyhow::anyhow!(err))?,
+                    kind: parse_kind(&kind)?,
                     name,
                     version,
                     path,
@@ -829,9 +829,7 @@ impl CacheBackendTrait for PostgresCacheBackend {
         rows.into_iter()
             .map(|(registry, name, version, symbol, kind, path, docs)| {
                 Ok(ExportMatch {
-                    kind: registry
-                        .parse()
-                        .map_err(|err: String| anyhow::anyhow!(err))?,
+                    kind: parse_kind(&registry)?,
                     name,
                     version,
                     export: package_export((symbol, kind, path, docs)),
@@ -1100,6 +1098,84 @@ impl CacheBackendTrait for PostgresCacheBackend {
         Ok(())
     }
 
+    async fn trust_package(
+        &self,
+        kind: AssetKind,
+        name: &str,
+        reason: Option<&str>,
+    ) -> Result<u64> {
+        let mut tx = self.pool.begin().await.context("starting trust")?;
+        sqlx::query(
+            r"
+            INSERT INTO trusted_packages (kind, name, reason) VALUES ($1, $2, $3)
+            ON CONFLICT (kind, name) DO UPDATE SET reason = EXCLUDED.reason, trusted_at = NOW()
+            ",
+        )
+        .bind(kind.as_str())
+        .bind(name)
+        .bind(reason)
+        .execute(&mut *tx)
+        .await
+        .context("trusting a package (postgres)")?;
+        let released = sqlx::query(
+            r"
+            UPDATE package_versions
+            SET status = 'available', status_reason = 'trusted', updated_at = NOW()
+            WHERE kind = $1 AND name = $2 AND status = 'quarantine'
+            ",
+        )
+        .bind(kind.as_str())
+        .bind(name)
+        .execute(&mut *tx)
+        .await
+        .context("releasing a trusted package's versions (postgres)")?;
+        tx.commit().await.context("committing trust")?;
+        Ok(released.rows_affected())
+    }
+
+    async fn untrust_package(&self, kind: AssetKind, name: &str) -> Result<bool> {
+        let removed = sqlx::query("DELETE FROM trusted_packages WHERE kind = $1 AND name = $2")
+            .bind(kind.as_str())
+            .bind(name)
+            .execute(&self.pool)
+            .await
+            .context("untrusting a package (postgres)")?;
+        Ok(removed.rows_affected() > 0)
+    }
+
+    async fn trusted_packages(&self) -> Result<Vec<TrustedPackage>> {
+        let rows = sqlx::query_as::<_, (String, String, Option<String>, jiff_sqlx::Timestamp)>(
+            r"
+            SELECT kind, name, reason, trusted_at FROM trusted_packages
+            ORDER BY kind, name COLLATE ucs_basic
+            ",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("listing trusted packages (postgres)")?;
+        rows.into_iter()
+            .map(|(kind, name, reason, trusted_at)| {
+                Ok(TrustedPackage {
+                    kind: parse_kind(&kind)?,
+                    name,
+                    reason,
+                    trusted_at: trusted_at.to_jiff(),
+                })
+            })
+            .collect()
+    }
+
+    async fn is_trusted(&self, kind: AssetKind, name: &str) -> Result<bool> {
+        sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM trusted_packages WHERE kind = $1 AND name = $2)",
+        )
+        .bind(kind.as_str())
+        .bind(name)
+        .fetch_one(&self.pool)
+        .await
+        .context("checking a package's trust (postgres)")
+    }
+
     async fn promote_expired_quarantines(&self, now: Timestamp) -> Result<u64> {
         let result = sqlx::query(
             r"
@@ -1345,6 +1421,11 @@ mod test_schema {
             .await
             .map(drop)
     }
+}
+
+/// A registry as a row names it (`gem`, `crate`, `npm`).
+fn parse_kind(text: &str) -> Result<AssetKind> {
+    text.parse().map_err(|err: String| anyhow::anyhow!(err))
 }
 
 fn package_export(

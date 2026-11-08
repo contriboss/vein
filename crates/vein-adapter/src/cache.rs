@@ -33,7 +33,8 @@ pub use types::{
 
 // Re-export quarantine types
 pub use quarantine::{
-    DelayPolicy, PackageVersion, QuarantineStats, VersionStatus, calculate_availability,
+    DelayPolicy, PackageVersion, QuarantineStats, TrustedPackage, VersionStatus,
+    calculate_availability,
 };
 
 pub use postgres::PostgresCacheBackend;
@@ -198,6 +199,25 @@ pub trait CacheBackendTrait: Send + Sync {
     ) -> impl Future<Output = Result<Vec<PackageVersion>>> + Send;
 
     fn quarantine_stats(&self) -> impl Future<Output = Result<QuarantineStats>> + Send;
+    /// Trusts package `name` of registry `kind` (again, with a new
+    /// `reason`, if it already was), and releases its held versions; how
+    /// many were released.
+    fn trust_package(
+        &self,
+        kind: AssetKind,
+        name: &str,
+        reason: Option<&str>,
+    ) -> impl Future<Output = Result<u64>> + Send;
+    /// Stops trusting a package; whether it was trusted. Versions already
+    /// released stay released.
+    fn untrust_package(
+        &self,
+        kind: AssetKind,
+        name: &str,
+    ) -> impl Future<Output = Result<bool>> + Send;
+    /// Every trusted package, by registry and name.
+    fn trusted_packages(&self) -> impl Future<Output = Result<Vec<TrustedPackage>>> + Send;
+    fn is_trusted(&self, kind: AssetKind, name: &str) -> impl Future<Output = Result<bool>> + Send;
 
     // ==================== Symbol Indexing Methods ====================
 

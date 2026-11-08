@@ -932,3 +932,84 @@ async fn cached_versions_are_pending_until_indexed() {
         []
     );
 }
+
+/// Trusting a package releases its held versions (a blocked one stays
+/// blocked); trusting again updates the reason; untrusting forgets it.
+#[tokio::test]
+async fn trusted_packages_release_what_was_held() {
+    use crate::cache::quarantine::VersionStatus;
+
+    let backend = setup_test_db().await;
+    let version = |version| AssetKey {
+        kind: AssetKind::Crate,
+        name: "window-machines",
+        version,
+        platform: None,
+    };
+    for (number, status) in [
+        ("0.2.0", VersionStatus::Quarantine),
+        ("0.2.2", VersionStatus::Quarantine),
+        ("0.1.0", VersionStatus::Blocked),
+    ] {
+        backend
+            .set_version_status(&version(number), status, Some("auto".into()))
+            .await
+            .unwrap();
+    }
+
+    assert!(
+        !backend
+            .is_trusted(AssetKind::Crate, "window-machines")
+            .await
+            .unwrap()
+    );
+    let released = backend
+        .trust_package(AssetKind::Crate, "window-machines", Some("ours"))
+        .await
+        .unwrap();
+    assert_eq!(released, 2);
+    assert!(
+        backend
+            .is_trusted(AssetKind::Crate, "window-machines")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !backend
+            .is_trusted(AssetKind::Gem, "window-machines")
+            .await
+            .unwrap()
+    );
+
+    let statuses: Vec<(String, VersionStatus)> = backend
+        .package_versions(AssetKind::Crate, "window-machines")
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|row| (row.version, row.status))
+        .collect();
+    assert!(statuses.contains(&("0.1.0".into(), VersionStatus::Blocked)));
+    assert!(statuses.contains(&("0.2.0".into(), VersionStatus::Available)));
+
+    backend
+        .trust_package(AssetKind::Crate, "window-machines", Some("still ours"))
+        .await
+        .unwrap();
+    let trusted = backend.trusted_packages().await.unwrap();
+    assert_eq!(trusted.len(), 1);
+    assert_eq!(trusted[0].reason.as_deref(), Some("still ours"));
+
+    assert!(
+        backend
+            .untrust_package(AssetKind::Crate, "window-machines")
+            .await
+            .unwrap()
+    );
+    assert!(
+        !backend
+            .untrust_package(AssetKind::Crate, "window-machines")
+            .await
+            .unwrap()
+    );
+    assert_eq!(backend.trusted_packages().await.unwrap(), []);
+}
