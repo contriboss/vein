@@ -139,6 +139,10 @@ fn jsdoc_summaries_skip_examples_and_tags() {
                 Some("Runs after the example.".to_owned())
             ),
             ("old".to_owned(), None),
+            (
+                "Twice".to_owned(),
+                Some("Opened twice, as date-fns 4 writes `ContextFn`'s comment.".to_owned())
+            ),
         ]
     );
 }

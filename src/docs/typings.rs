@@ -341,7 +341,12 @@ fn jsdoc_summary(node: tree_sitter::Node, source: &[u8]) -> Option<String> {
         raw.trim_start_matches("/**")
             .trim_end_matches("*/")
             .lines()
-            .map(|line| line.trim().trim_start_matches('*')),
+            // A stray inner `/**` (date-fns opens one comment twice) is noise.
+            .map(|line| {
+                line.trim()
+                    .trim_start_matches("/**")
+                    .trim_start_matches('*')
+            }),
     )
 }
 
