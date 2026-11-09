@@ -1,6 +1,9 @@
 use mcp_host::prelude::*;
 use mcp_host::registry::router::McpResourceTemplateRouter;
 
+use vein_adapter::AssetKind;
+
+use crate::admin::mcp::advisories::every;
 use crate::admin::mcp::version_list::{VersionList, is_semver_prerelease};
 use crate::admin::mcp::{VeinMcp, json_resource, unknown_package, uri_param};
 
@@ -28,6 +31,7 @@ impl VeinMcp {
         json_resource(
             format!("vein://npm/{name}/versions"),
             &VersionList {
+                advisories: every(&self.advisories(AssetKind::NpmPackage, name).await),
                 all_deprecated,
                 deprecated: if all_deprecated {
                     Vec::new()

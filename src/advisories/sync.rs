@@ -62,7 +62,7 @@ pub async fn sync(
     let root = checkout.to_path_buf();
     let full = changes.is_none();
     let (upserts, removed) = tokio::task::spawn_blocking(move || match changes {
-        Some(changes) => read_changes(&root, changes),
+        Some(changes) => Ok(read_changes(&root, changes)),
         None => read_all(&root.join(REVIEWED)),
     })
     .await
@@ -164,12 +164,14 @@ async fn changed(checkout: &Path, from: &str, to: &str) -> Result<Vec<Change>> {
             })
         })
         .filter(|change| match change {
-            Change::Written(path) | Change::Deleted(path) => path.ends_with(".json"),
+            Change::Written(path) | Change::Deleted(path) => {
+                Path::new(path).extension().is_some_and(|ext| ext == "json")
+            }
         })
         .collect())
 }
 
-fn read_changes(root: &Path, changes: Vec<Change>) -> Result<(Vec<Advisory>, Vec<String>)> {
+fn read_changes(root: &Path, changes: Vec<Change>) -> (Vec<Advisory>, Vec<String>) {
     let mut upserts = Vec::new();
     let mut removed = Vec::new();
     for change in changes {
@@ -186,14 +188,15 @@ fn read_changes(root: &Path, changes: Vec<Change>) -> Result<(Vec<Advisory>, Vec
             }
         }
     }
-    Ok((upserts, removed))
+    (upserts, removed)
 }
 
 fn read_all(dir: &Path) -> Result<(Vec<Advisory>, Vec<String>)> {
     let mut upserts = Vec::new();
     let mut pending: Vec<PathBuf> = vec![dir.to_path_buf()];
     while let Some(dir) = pending.pop() {
-        let entries = std::fs::read_dir(&dir).with_context(|| format!("reading {}", dir.display()))?;
+        let entries =
+            std::fs::read_dir(&dir).with_context(|| format!("reading {}", dir.display()))?;
         for entry in entries {
             let path = entry?.path();
             if path.is_dir() {
@@ -210,7 +213,8 @@ fn read_all(dir: &Path) -> Result<(Vec<Advisory>, Vec<String>)> {
 }
 
 fn read(path: &Path) -> Result<Option<Advisory>> {
-    let json = std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
+    let json =
+        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     super::parse(&json)
 }
 

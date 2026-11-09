@@ -23,7 +23,11 @@ fn run(dir: &Path, args: &[&str]) {
 fn publish(origin: &Path, file: &str, id: &str) {
     let dir = origin.join(REVIEWED).join("2026/11").join(id);
     std::fs::create_dir_all(&dir).unwrap();
-    std::fs::copy(Path::new(FIXTURES).join(file), dir.join(format!("{id}.json"))).unwrap();
+    std::fs::copy(
+        Path::new(FIXTURES).join(file),
+        dir.join(format!("{id}.json")),
+    )
+    .unwrap();
 }
 
 fn commit(origin: &Path, message: &str) {
@@ -63,29 +67,52 @@ async fn imports_everything_then_only_changes() {
 
     let checkout = dir.path().join("storage/advisory-database");
     let url = format!("file://{}", origin.display());
-    let first = sync(&index, &checkout, &url, &|| false).await.unwrap().unwrap();
+    let first = sync(&index, &checkout, &url, &|| false)
+        .await
+        .unwrap()
+        .unwrap();
     assert!(first.full);
     assert_eq!(first.upserted, 2);
-    assert_eq!(ids(&index, AssetKind::Crate, "pageant").await, ["GHSA-662x-8wvj-2276"]);
+    assert_eq!(
+        ids(&index, AssetKind::Crate, "pageant").await,
+        ["GHSA-662x-8wvj-2276"]
+    );
     assert!(
         !checkout.join("advisories/unreviewed").exists(),
         "only reviewed advisories are checked out"
     );
 
-    assert_eq!(sync(&index, &checkout, &url, &|| false).await.unwrap(), None);
+    assert_eq!(
+        sync(&index, &checkout, &url, &|| false).await.unwrap(),
+        None
+    );
 
     std::fs::remove_dir_all(origin.join(REVIEWED).join("2026/11/GHSA-662x-8wvj-2276")).unwrap();
     publish(&origin, "withdrawn.json", "GHSA-6j52-38f8-qhxr");
     publish(&origin, "npm-two-ranges.json", "GHSA-mc8m-rr6c-r5qr");
     commit(&origin, "second");
 
-    let second = sync(&index, &checkout, &url, &|| false).await.unwrap().unwrap();
+    let second = sync(&index, &checkout, &url, &|| false)
+        .await
+        .unwrap()
+        .unwrap();
     assert!(!second.full);
     assert_eq!((second.upserted, second.removed), (1, 2));
-    assert!(ids(&index, AssetKind::Crate, "pageant").await.is_empty());
-    assert!(ids(&index, AssetKind::Gem, "shopify_app").await.is_empty());
     assert_eq!(
-        ids(&index, AssetKind::NpmPackage, "@payloadcms/storage-vercel-blob").await,
+        ids(&index, AssetKind::Crate, "pageant").await,
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        ids(&index, AssetKind::Gem, "shopify_app").await,
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        ids(
+            &index,
+            AssetKind::NpmPackage,
+            "@payloadcms/storage-vercel-blob"
+        )
+        .await,
         ["GHSA-mc8m-rr6c-r5qr"]
     );
 }
@@ -107,5 +134,10 @@ async fn a_stopped_run_imports_nothing() {
     let url = format!("file://{}", origin.display());
     assert_eq!(sync(&index, &checkout, &url, &|| true).await.unwrap(), None);
     assert_eq!(index.advisory_revision(SOURCE).await.unwrap(), None);
-    assert!(sync(&index, &checkout, &url, &|| false).await.unwrap().is_some());
+    assert!(
+        sync(&index, &checkout, &url, &|| false)
+            .await
+            .unwrap()
+            .is_some()
+    );
 }

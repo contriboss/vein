@@ -384,6 +384,24 @@ async fn seeded_resources_with(
         .await
         .unwrap();
 
+    // Advisories on serde 1.0.99 and rack 3.2.6, as the advisory job would
+    // import them.
+    let advisories = [
+        include_str!("../../../tests/fixtures/advisories/crate-serde.json"),
+        include_str!("../../../tests/fixtures/advisories/gem-rack.json"),
+    ]
+    .map(|json| crate::advisories::parse(json).unwrap().unwrap());
+    cache
+        .apply_advisories(vein_adapter::AdvisoryImport {
+            source: crate::advisories::SOURCE,
+            revision: "seeded",
+            full: true,
+            upserts: &advisories,
+            removed: &[],
+        })
+        .await
+        .unwrap();
+
     // A crate of ours the release delay holds, for the trust tools.
     cache
         .set_version_status(
@@ -692,10 +710,10 @@ async fn gems_are_readable_as_resources() {
     assert_eq!(gem.get("prerelease"), None);
     let (_, all) = session.read("vein://gems/rack/versions").await;
     assert_eq!(
-        all,
-        json!({"versions": [
+        all["versions"],
+        json!([
             "3.2.7", "3.2.6", "3.2.5", "3.1.22", "3.1.21", "3.1.20", "2.2.24", "2.2.23"
-        ]})
+        ])
     );
     assert_eq!(gem["cached"], json!(["3.2.7", "3.2.6"]));
     assert_eq!(
@@ -800,6 +818,47 @@ async fn completes_gem_names_and_cached_versions() {
         json!(["3.2.7"]),
         "3.2.6 does not match the prefix"
     );
+}
+
+/// An advisory shows next to the versions it affects, and nowhere else.
+#[cfg(all(feature = "crates", feature = "gems"))]
+#[tokio::test]
+async fn advisories_ride_along_with_the_versions_they_affect() {
+    let (service, _storage) = open().await;
+    let session = Session::open(&service).await;
+
+    let (_, serde) = session.read("vein://crates/serde").await;
+    let advisory = &serde["advisories"][0];
+    assert_eq!(advisory["id"], "GHSA-test-serd-0001");
+    assert_eq!(advisory["cve"], json!(["CVE-2026-00002"]));
+    assert_eq!(advisory["severity"], "high");
+    assert_eq!(advisory["vulnerable"], json!(["< 1.0.100"]));
+    assert_eq!(advisory["affects"], json!(["1.0.99"]));
+    assert!(
+        !advisory["summary"].as_str().unwrap().contains('\u{202e}'),
+        "the reporter's text is cleaned"
+    );
+
+    let (_, old) = session.read("vein://crates/serde/versions/1.0.99").await;
+    assert_eq!(old["advisories"][0]["fixed_in"], "1.0.100");
+    let (_, current) = session.read("vein://crates/serde/versions/1.0.228").await;
+    assert_eq!(
+        current.get("advisories"),
+        None,
+        "a clean version adds nothing"
+    );
+    let (_, all) = session.read("vein://crates/serde/versions").await;
+    assert_eq!(all["advisories"][0]["vulnerable"], json!(["< 1.0.100"]));
+    assert_eq!(all["advisories"][0].get("summary"), None);
+
+    let (_, rack) = session.read("vein://gems/rack").await;
+    assert_eq!(
+        rack["advisories"][0]["affects"],
+        json!(["3.2.6", "3.2.5", "3.1.22", "3.1.21"]),
+        "3.2.7 is the fix"
+    );
+    let (_, fixed) = session.read("vein://gems/rack/versions/3.2.7").await;
+    assert_eq!(fixed.get("advisories"), None, "3.2.7 is the fix");
 }
 
 #[cfg(feature = "crates")]

@@ -54,6 +54,10 @@ pub struct VersionList {
     /// npm: the deprecated ones.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub deprecated: Vec<String>,
+    /// Every security advisory about the package, and the versions it
+    /// affects; each version's resource says which apply to it.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub advisories: Vec<super::advisories::Note>,
 }
 
 impl VersionList {

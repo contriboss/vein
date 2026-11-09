@@ -1,6 +1,9 @@
 use mcp_host::prelude::*;
 use mcp_host::registry::router::McpResourceTemplateRouter;
 
+use vein_adapter::AssetKind;
+
+use crate::admin::mcp::advisories::for_version;
 use crate::admin::mcp::views::{VersionDetails, gem_version_uri};
 use crate::admin::mcp::{VeinMcp, json_resource, uri_param};
 
@@ -18,7 +21,18 @@ impl VeinMcp {
         let version = uri_param(&ctx, "version")?;
         let meta = self.cached_metadata(name, version).await?;
         let uri = gem_version_uri(&meta.name, &meta.version, &meta.platform);
-        json_resource(uri, &VersionDetails::from(meta))
+        let advisories = for_version(
+            AssetKind::Gem,
+            &self.advisories(AssetKind::Gem, &meta.name).await,
+            &meta.version,
+        );
+        json_resource(
+            uri,
+            &VersionDetails {
+                advisories,
+                ..VersionDetails::from(meta)
+            },
+        )
     }
 }
 

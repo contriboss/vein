@@ -1,6 +1,9 @@
 use mcp_host::prelude::*;
 use mcp_host::registry::router::McpResourceTemplateRouter;
 
+use vein_adapter::AssetKind;
+
+use crate::admin::mcp::advisories::every;
 use crate::admin::mcp::rubygems::is_prerelease;
 use crate::admin::mcp::version_list::VersionList;
 use crate::admin::mcp::{VeinMcp, json_resource, unknown_package, uri_param};
@@ -22,7 +25,10 @@ impl VeinMcp {
         }
         json_resource(
             format!("vein://gems/{name}/versions"),
-            &VersionList::split(published.iter().map(String::as_str), is_prerelease),
+            &VersionList {
+                advisories: every(&self.advisories(AssetKind::Gem, name).await),
+                ..VersionList::split(published.iter().map(String::as_str), is_prerelease)
+            },
         )
     }
 }

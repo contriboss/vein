@@ -1,7 +1,8 @@
-//! Security advisories: GitHub's reviewed advisory database, imported into
-//! Postgres by a recurring job, and matched against the versions an agent
-//! reads through `/mcp`. Nothing is pushed: an advisory costs a lookup only
-//! when someone looks at a package it is about.
+//! Security advisories, from GitHub's reviewed advisory database.
+//!
+//! A recurring job imports them into Postgres; `/mcp` matches them against
+//! the versions an agent reads. Nothing is pushed: an advisory costs a
+//! lookup only when someone looks at a package it is about.
 
 mod osv;
 mod sync;

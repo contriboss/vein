@@ -59,6 +59,12 @@ registries = ["gem", "crate", "npm"]
 # at vein://trusted), so they skip the delay without a list here.
 enabled = true
 
+[advisories]
+# Security advisories next to what agents read through /mcp: GitHub's
+# reviewed advisory database, a ~370 MB sparse clone under the storage
+# path, fetched hourly (git is installed on harbor).
+enabled = true
+
 [code_context]
 # The MCP's code tools (search, read, grep, examples, research...) from
 # GitHits; its queries leave this network. The token lives outside the

@@ -245,6 +245,21 @@ impl AdminResources {
         self.cache.trusted_packages().await
     }
 
+    /// Whether the advisory job runs, so reads carry advisories.
+    #[must_use]
+    pub fn advisories_enabled(&self) -> bool {
+        self.config.advisories.enabled
+    }
+
+    /// Every security advisory about packages `names` of registry `kind`.
+    pub async fn advisories(
+        &self,
+        kind: AssetKind,
+        names: &[String],
+    ) -> Result<Vec<vein_adapter::Advisory>> {
+        self.cache.advisories_for(kind, names).await
+    }
+
     /// One cached version's indexed exports, by path.
     pub async fn exports(
         &self,

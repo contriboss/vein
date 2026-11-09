@@ -3,6 +3,7 @@ use mcp_host::registry::router::McpResourceTemplateRouter;
 use serde::Serialize;
 use vein_adapter::AssetKind;
 
+use crate::admin::mcp::advisories::{Note, for_versions};
 use crate::admin::mcp::version_list::{is_semver_prerelease, newer_prerelease, newest_releases};
 use crate::admin::mcp::views::{TrackedVersion, cached_labels, total_if_truncated};
 use crate::admin::mcp::{VeinMcp, json_resource, read_error, unknown_package, uri_param};
@@ -35,6 +36,10 @@ struct Crate {
     /// first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     quarantine: Vec<TrackedVersion>,
+    /// Security advisories affecting the versions listed or cached here
+    /// (`affects` says which), from GitHub's advisory database.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    advisories: Vec<Note>,
 }
 
 impl VeinMcp {
@@ -69,13 +74,25 @@ impl VeinMcp {
             index.iter().map(|entry| entry.vers.as_str()),
             is_semver_prerelease,
         );
+        let prerelease = newer_prerelease(not_yanked(), is_semver_prerelease);
+        let cached = cached_labels(&cached);
+        let advisories = for_versions(
+            AssetKind::Crate,
+            &self.advisories(AssetKind::Crate, name).await,
+            &versions
+                .iter()
+                .chain(&cached)
+                .chain(&prerelease)
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        );
         json_resource(
             format!("vein://crates/{name}"),
             &Crate {
                 latest: not_yanked()
                     .find(|version| !is_semver_prerelease(version))
                     .map(str::to_owned),
-                prerelease: newer_prerelease(not_yanked(), is_semver_prerelease),
+                prerelease,
                 total_versions: total_if_truncated(index.len(), versions.len()),
                 yanked: index
                     .iter()
@@ -83,8 +100,9 @@ impl VeinMcp {
                     .map(|entry| entry.vers.clone())
                     .collect(),
                 versions,
-                cached: cached_labels(&cached),
+                cached,
                 quarantine: quarantine.into_iter().map(TrackedVersion::from).collect(),
+                advisories,
                 name: name.to_owned(),
             },
         )

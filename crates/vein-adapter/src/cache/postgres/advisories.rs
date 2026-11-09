@@ -64,7 +64,7 @@ impl PostgresCacheBackend {
             .bind(&advisory.aliases)
             .bind(&advisory.severity)
             .bind(&advisory.summary)
-            .bind(advisory.published.map(|at| at.to_sqlx()))
+            .bind(advisory.published.map(ToSqlx::to_sqlx))
             .bind(advisory.modified.to_sqlx())
             .execute(&mut *tx)
             .await
@@ -144,7 +144,7 @@ impl PostgresCacheBackend {
                     aliases,
                     severity,
                     summary,
-                    published: published.map(|at| at.to_jiff()),
+                    published: published.map(jiff_sqlx::Timestamp::to_jiff),
                     modified: modified.to_jiff(),
                     packages: vec![package],
                 }),

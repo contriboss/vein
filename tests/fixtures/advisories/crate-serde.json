@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.4.0",
+  "id": "GHSA-test-serd-0001",
+  "modified": "2026-11-01T00:00:00Z",
+  "published": "2026-11-01T00:00:00Z",
+  "aliases": ["CVE-2026-00002"],
+  "summary": "serde before 1.0.100 mishandles ‮escapes",
+  "affected": [
+    {
+      "package": { "ecosystem": "crates.io", "name": "serde" },
+      "ranges": [{ "type": "SEMVER", "events": [{ "introduced": "0" }, { "fixed": "1.0.100" }] }]
+    }
+  ],
+  "database_specific": { "severity": "HIGH", "github_reviewed": true }
+}

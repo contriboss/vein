@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.4.0",
+  "id": "GHSA-test-rack-0001",
+  "modified": "2026-11-01T00:00:00Z",
+  "published": "2026-10-01T00:00:00Z",
+  "aliases": ["CVE-2026-00003"],
+  "summary": "rack before 3.2.7 parses multipart bodies slowly",
+  "affected": [
+    {
+      "package": { "ecosystem": "RubyGems", "name": "rack" },
+      "ranges": [{ "type": "ECOSYSTEM", "events": [{ "introduced": "3.0.0" }, { "fixed": "3.2.7" }] }]
+    }
+  ],
+  "database_specific": { "severity": "MODERATE", "github_reviewed": true }
+}

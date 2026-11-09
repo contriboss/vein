@@ -3,6 +3,7 @@ use mcp_host::registry::router::McpResourceTemplateRouter;
 use serde::Serialize;
 use vein_adapter::AssetKind;
 
+use crate::admin::mcp::advisories::{Note, for_versions};
 use crate::admin::mcp::rubygems::is_prerelease;
 use crate::admin::mcp::version_list::{newer_prerelease, newest_releases};
 use crate::admin::mcp::views::{TrackedVersion, total_if_truncated};
@@ -38,6 +39,10 @@ struct Gem {
     /// Versions the release delay policy tracks, newest first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     quarantine: Vec<TrackedVersion>,
+    /// Security advisories affecting the versions listed or cached here
+    /// (`affects` says which), from GitHub's advisory database.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    advisories: Vec<Note>,
     /// The newest cached version's summary and licenses, as its authors
     /// wrote them.
     #[serde(skip_serializing_if = "GemText::is_empty")]
@@ -93,15 +98,27 @@ impl VeinMcp {
 
         let newest_first = || published.iter().map(String::as_str);
         let versions = newest_releases(newest_first(), is_prerelease);
+        let prerelease = newer_prerelease(newest_first(), is_prerelease);
+        let advisories = for_versions(
+            AssetKind::Gem,
+            &self.advisories(AssetKind::Gem, name).await,
+            &versions
+                .iter()
+                .chain(&cached)
+                .chain(&prerelease)
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        );
         json_resource(
             format!("vein://gems/{name}"),
             &Gem {
                 latest: versions.first().cloned(),
-                prerelease: newer_prerelease(newest_first(), is_prerelease),
+                prerelease,
                 total_versions: total_if_truncated(published.len(), versions.len()),
                 versions,
                 cached,
                 quarantine: quarantine.into_iter().map(TrackedVersion::from).collect(),
+                advisories,
                 not_in_catalog: !in_catalog,
                 author_supplied,
                 name: name.to_owned(),

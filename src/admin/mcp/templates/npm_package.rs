@@ -5,6 +5,7 @@ use mcp_host::registry::router::McpResourceTemplateRouter;
 use serde::Serialize;
 use vein_adapter::AssetKind;
 
+use crate::admin::mcp::advisories::{Note, for_versions};
 use crate::admin::mcp::npm::{Packument, is_typescript_tag};
 use crate::admin::mcp::version_list::{is_semver_prerelease, newer_prerelease, newest_releases};
 use crate::admin::mcp::views::{
@@ -57,6 +58,10 @@ struct Package {
     /// first.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     quarantine: Vec<TrackedVersion>,
+    /// Security advisories affecting the versions listed or cached here
+    /// (`affects` says which), from GitHub's advisory database.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    advisories: Vec<Note>,
 }
 
 impl VeinMcp {
@@ -112,6 +117,18 @@ impl VeinMcp {
             && versions
                 .iter()
                 .all(|version| deprecation(version).is_some());
+        let prerelease = newer_prerelease(versions.iter().copied(), is_semver_prerelease);
+        let cached = cached_labels(&cached);
+        let advisories = for_versions(
+            AssetKind::NpmPackage,
+            &self.advisories(AssetKind::NpmPackage, name).await,
+            &listed
+                .iter()
+                .chain(&cached)
+                .chain(&prerelease)
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+        );
         json_resource(
             format!("vein://npm/{name}"),
             &Package {
@@ -130,7 +147,7 @@ impl VeinMcp {
                 },
                 latest,
                 dist_tags,
-                prerelease: newer_prerelease(versions.iter().copied(), is_semver_prerelease),
+                prerelease,
                 total_versions: total_if_truncated(versions.len(), listed.len()),
                 all_deprecated,
                 deprecated: if all_deprecated {
@@ -143,8 +160,9 @@ impl VeinMcp {
                         .collect()
                 },
                 versions: listed,
-                cached: cached_labels(&cached),
+                cached,
                 quarantine: quarantine.into_iter().map(TrackedVersion::from).collect(),
+                advisories,
                 name: name.to_owned(),
             },
         )

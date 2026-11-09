@@ -21,7 +21,10 @@ fn reads_what_an_agent_needs() {
     assert_eq!(advisory.severity.as_deref(), Some("HIGH"));
     assert_eq!(advisory.packages.len(), 1);
     let package = &advisory.packages[0];
-    assert_eq!((package.kind, package.name.as_str()), (AssetKind::Gem, "shopify_app"));
+    assert_eq!(
+        (package.kind, package.name.as_str()),
+        (AssetKind::Gem, "shopify_app")
+    );
     assert_eq!(requirements(&package.affected), [">= 22.1.0, < 23.0.3"]);
 }
 
@@ -32,7 +35,10 @@ fn ranges_of_one_package_are_merged() {
     assert_eq!(advisory.packages.len(), 1);
     assert_eq!(
         requirements(&advisory.packages[0].affected),
-        [">= 3.25.0, < 3.90.0", ">= 4.0.0-canary.0, < 4.0.0-canary.34"]
+        [
+            ">= 3.25.0, < 3.90.0",
+            ">= 4.0.0-canary.0, < 4.0.0-canary.34"
+        ]
     );
 }
 
@@ -40,7 +46,10 @@ fn ranges_of_one_package_are_merged() {
 /// versions; listed versions are kept; severity is upper-cased.
 #[test]
 fn reads_every_shape_of_range() {
-    assert_eq!(requirements(&advisory(FROM_ZERO).packages[0].affected), ["< 1.1.1"]);
+    assert_eq!(
+        requirements(&advisory(FROM_ZERO).packages[0].affected),
+        ["< 1.1.1"]
+    );
     let advisory = advisory(LAST_AFFECTED);
     assert_eq!(advisory.severity.as_deref(), Some("CRITICAL"));
     assert_eq!(
@@ -85,7 +94,9 @@ fn prereleases_order_per_registry() {
     let payload = &advisory(TWO_RANGES).packages[0].affected;
     let hit = |version| affects(AssetKind::NpmPackage, payload, version);
     assert_eq!(
-        hit("4.0.0-canary.9").and_then(|hit| hit.fixed_in).as_deref(),
+        hit("4.0.0-canary.9")
+            .and_then(|hit| hit.fixed_in)
+            .as_deref(),
         Some("4.0.0-canary.34")
     );
     assert_eq!(hit("4.0.0-canary.34"), None);

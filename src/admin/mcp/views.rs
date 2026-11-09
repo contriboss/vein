@@ -40,6 +40,9 @@ pub struct PackageVersion<D> {
     /// or metadata.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub published: Option<D>,
+    /// Security advisories affecting this version, each with its fix.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub advisories: Vec<super::advisories::Note>,
 }
 
 /// A package file held in the proxy's storage.
@@ -117,6 +120,9 @@ pub struct VersionDetails {
     /// A `CycloneDX` SBOM is at `.../sbom`.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub sbom: bool,
+    /// Security advisories affecting this version, each with its fix.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub advisories: Vec<super::advisories::Note>,
 }
 
 #[cfg(feature = "gems")]
@@ -191,6 +197,7 @@ impl From<GemMetadata> for VersionDetails {
         });
         Self {
             sbom: meta.sbom.is_some(),
+            advisories: Vec::new(),
             dependencies: meta
                 .dependencies
                 .into_iter()
