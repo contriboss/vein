@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.4.0",
+  "id": "GHSA-test-last-affd",
+  "modified": "2026-11-01T00:00:00Z",
+  "published": "2026-11-01T00:00:00Z",
+  "aliases": ["CVE-2026-00001", "RUSTSEC-2026-0001"],
+  "summary": "demo-crate has a flaw up to and including 1.4.2",
+  "affected": [
+    {
+      "package": { "ecosystem": "crates.io", "name": "demo-crate" },
+      "ranges": [
+        { "type": "ECOSYSTEM", "events": [{ "introduced": "1.2.0" }, { "last_affected": "1.4.2" }] },
+        { "type": "GIT", "repo": "https://example.com/demo", "events": [{ "introduced": "0" }, { "fixed": "abc123" }] }
+      ],
+      "versions": ["0.9.9"]
+    }
+  ],
+  "database_specific": { "severity": "critical", "github_reviewed": true }
+}

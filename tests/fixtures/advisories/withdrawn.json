@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.4.0",
+  "id": "GHSA-test-wdrn-0001",
+  "modified": "2026-11-02T00:00:00Z",
+  "published": "2026-10-01T00:00:00Z",
+  "withdrawn": "2026-11-02T00:00:00Z",
+  "summary": "Reported in error",
+  "affected": [
+    {
+      "package": { "ecosystem": "RubyGems", "name": "demo-gem" },
+      "ranges": [{ "type": "ECOSYSTEM", "events": [{ "introduced": "0" }, { "fixed": "2.0.0" }] }]
+    }
+  ],
+  "database_specific": { "severity": "LOW", "github_reviewed": true }
+}

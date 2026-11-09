@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.4.0",
+  "id": "GHSA-6j52-38f8-qhxr",
+  "modified": "2026-10-29T16:39:49Z",
+  "published": "2026-10-29T16:39:49Z",
+  "aliases": [
+    "CVE-2026-63414"
+  ],
+  "summary": "Shopify App: Token exchange shop context confusion may allow cross-shop authorization bypass in affected apps",
+  "details": "In token-exchange authenticated controllers, `shopify_app` exposes shop context through helpers such as `current_shopify_domain`. Prior to the fix, `current_shopify_domain` could resolve to the sanitized `shop` query parameter instead of the shop identity derived from the verified Shopify ID token or active Shopify session.\n\nAs a result, a request authenticated for one shop could include a different `shop` query parameter, causing application code to treat the requested shop as the current shop.\n\nApplications that used `current_shopify_domain`, or the request `shop` parameter, for authorization decisions, tenant lookup, stored access-token selection, or shop-scoped data access may have been vulnerable to cross-shop context confusion.\n\nThe patched version hardens token-exchange handling so that:\n   - `current_shopify_domain` resolves to the authenticated shop from the verified token or session.\n   - `authenticated_shopify_domain` exposes the trusted authenticated shop.\n   - `requested_shopify_domain` exposes the sanitized requested `shop` parameter for bootstrap or routing use cases only.\n   - Token-exchange requests are rejected with `401 Unauthorized` when the requested shop does not match the authenticated shop.\n\n## Impact\n\nIn affected applications, an attacker with a valid Shopify session token for one shop could send an authenticated request that also supplied a different `shop` query parameter. If the application relied on `current_shopify_domain` or `params[:shop]` for security-sensitive shop scoping, application code could operate in the context of the requested shop rather than the authenticated shop.\n\nAffected applications are those that:\n\n   1. Use `shopify_app` token-exchange authentication;\n   2. Accept authenticated controller requests where a `shop` query parameter may be present; and\n   3. Use `current_shopify_domain` or the request `shop` parameter for authorization, tenant lookup, stored access-token selection, or shop-scoped resource access.\n\nDepending on the application’s authorization model, this could result in unauthorized access to another shop’s application data or unauthorized shop-scoped actions.\n\n## Remediation\nUpgrade to `shopify_app` version `23.0.3`\n\n## Workarounds\nApplications that cannot upgrade immediately should apply equivalent validation in token-exchange authenticated controllers:\n\n- Do not use `params[:shop]` for authorization, tenant lookup, access-token selection, or data scoping.\n- On vulnerable versions, avoid relying on `current_shopify_domain` for security-sensitive shop scoping if a `shop` query parameter may be present.\n- Use the authenticated shop from the verified ID token or active Shopify session instead, such as `current_shopify_session.shop` or the verified JWT `dest` value.\n   - If a sanitized `params[:shop]` value is present, reject the request with `401 Unauthorized` when it does not match the authenticated shop.\n\n## Credit\n\nThis issue was responsibly reported by Hackerone researcher [leqtuer](https://hackerone.com/leqtuer?type=user).",
+  "severity": [
+    {
+      "type": "CVSS_V4",
+      "score": "CVSS:4.0/AV:N/AC:L/AT:P/PR:L/UI:N/VC:H/VI:H/VA:N/SC:N/SI:N/SA:N"
+    }
+  ],
+  "affected": [
+    {
+      "package": {
+        "ecosystem": "RubyGems",
+        "name": "shopify_app"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "22.1.0"
+            },
+            {
+              "fixed": "23.0.3"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "references": [
+    {
+      "type": "WEB",
+      "url": "https://github.com/Shopify/shopify_app/security/advisories/GHSA-6j52-38f8-qhxr"
+    },
+    {
+      "type": "PACKAGE",
+      "url": "https://github.com/Shopify/shopify_app"
+    },
+    {
+      "type": "WEB",
+      "url": "https://github.com/Shopify/shopify_app/releases/tag/v23.0.3"
+    }
+  ],
+  "database_specific": {
+    "cwe_ids": [
+      "CWE-863"
+    ],
+    "severity": "HIGH",
+    "github_reviewed": true,
+    "github_reviewed_at": "2026-10-29T16:39:49Z",
+    "nvd_published_at": null
+  }
+}

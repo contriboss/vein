@@ -1,0 +1,77 @@
+{
+  "schema_version": "1.4.0",
+  "id": "GHSA-r4hm-p9f9-fj9v",
+  "modified": "2026-11-06T19:50:34Z",
+  "published": "2026-11-06T19:50:34Z",
+  "aliases": [
+    "CVE-2026-55649"
+  ],
+  "summary": "GeoNode has Stored XSS in Documents metadata abstract field",
+  "details": "The abstract metadata of documents is not sanitised. It’s possible to store arbitrary HTML (and JS) that will be executed when visiting the page.",
+  "severity": [
+    {
+      "type": "CVSS_V3",
+      "score": "CVSS:3.1/AV:N/AC:L/PR:L/UI:R/S:U/C:H/I:L/A:N"
+    }
+  ],
+  "affected": [
+    {
+      "package": {
+        "ecosystem": "PyPI",
+        "name": "GeoNode"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "5.0.3"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "references": [
+    {
+      "type": "WEB",
+      "url": "https://github.com/GeoNode/geonode/security/advisories/GHSA-r4hm-p9f9-fj9v"
+    },
+    {
+      "type": "WEB",
+      "url": "https://github.com/GeoNode/geonode/pull/14322"
+    },
+    {
+      "type": "WEB",
+      "url": "https://github.com/GeoNode/geonode/pull/14343"
+    },
+    {
+      "type": "WEB",
+      "url": "https://github.com/GeoNode/geonode/commit/0803857b22eba5b55729145ef401b1bc1c23e332"
+    },
+    {
+      "type": "WEB",
+      "url": "https://github.com/GeoNode/geonode/commit/730d8fae206ea5b051f630718aeecae1bf7b5760"
+    },
+    {
+      "type": "PACKAGE",
+      "url": "https://github.com/GeoNode/geonode"
+    },
+    {
+      "type": "WEB",
+      "url": "https://github.com/GeoNode/geonode/releases/tag/5.0.3"
+    }
+  ],
+  "database_specific": {
+    "cwe_ids": [
+      "CWE-79"
+    ],
+    "severity": "MODERATE",
+    "github_reviewed": true,
+    "github_reviewed_at": "2026-11-06T19:50:34Z",
+    "nvd_published_at": null
+  }
+}

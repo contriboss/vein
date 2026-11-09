@@ -10,6 +10,8 @@ use sqlx::{
 
 use crate::version::sort_newest_first;
 
+mod advisories;
+
 use super::{
     CacheBackendTrait, PackageVersion, QuarantineStats, TrustedPackage, VersionStatus,
     backend_common::{

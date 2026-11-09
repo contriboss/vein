@@ -1,3 +1,4 @@
+pub mod advisory;
 mod backend_common;
 pub mod models;
 pub mod postgres;
@@ -37,6 +38,7 @@ pub use quarantine::{
     calculate_availability,
 };
 
+pub use advisory::{Advisory, AdvisoryImport, Affected, AffectedPackage, Interval};
 pub use postgres::PostgresCacheBackend;
 
 // Public trait for cache backend implementations

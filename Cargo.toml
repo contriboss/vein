@@ -117,6 +117,7 @@ tokio = { workspace = true, features = ["full"] }
 
 # Serialization
 serde.workspace = true
+semver = "1.0.28"
 serde_json.workspace = true
 serde_yaml = { workspace = true, optional = true }
 toml.workspace = true

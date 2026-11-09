@@ -1,0 +1,76 @@
+{
+  "schema_version": "1.4.0",
+  "id": "GHSA-m5ph-mmg5-6w5h",
+  "modified": "2026-11-05T18:07:30Z",
+  "published": "2026-11-05T18:07:30Z",
+  "aliases": [
+    "CVE-2026-62300"
+  ],
+  "summary": "filecoin-pin: Unbounded DAG pinning can exhaust server resources",
+  "details": "## Summary\n\nThe IPFS Pinning Service API implementation accepts a caller-controlled CID through `POST /pins`, queues background processing, and then recursively fetches the full DAG with `helia.pins.add(cid)`. The route and background pinning path do not enforce a request rate limit, per-user quota, maximum DAG byte count, maximum block count, traversal timeout, or concurrent pinning limit.\n\nAn authenticated caller, or an unauthenticated caller when the server is started with `ALLOW_NO_AUTH=true`, can submit one or more pins whose CIDs resolve to very large DAGs. The server writes fetched blocks to CAR files under `carStoragePath` and can consume disk, network, CPU, and libp2p resources until the process or host becomes unavailable.\n\n## Details\n\n`POST /pins` validates only that the request body contains a syntactically valid CID string, then forwards it to the pin store:\n\n- `src/filecoin-pinning-server.ts:304-342` accepts the request, parses `cid` with `CID.parse`, and calls `pinStore.pin(request.user, cidObject, parsed.options)`.\n- `src/filecoin-pin-store.ts:153-188` stores the pin as `queued` and schedules `_processPinInBackground` with `setTimeout`. There is no queue, semaphore, or global cap around this scheduling.\n- `src/filecoin-pin-store.ts:211-217` creates a per-pin Helia node and forwards caller-supplied `origins`.\n- `src/filecoin-pin-store.ts:260-274` walks the full DAG with `for await (const pinnedCid of helia.pins.add(cid))`.\n- `src/create-pinning-helia.ts:47-80` creates a libp2p/Helia node with the Bitswap block broker and no application-level resource limits.\n- `src/core/car/car-blockstore-base.ts:65-107` writes every fetched block and updates `stats.totalSize` only after writing.\n- `src/core/car/car-file-backend.ts:84-93` streams blocks to the CAR writer on disk.\n\nThe Helia node created for each pin has no bootstrap or mDNS configuration (`src/create-pinning-helia.ts:57`). A public CID alone may therefore not be fetchable unless the node can reach a content source. In practice, the API also accepts `origins`, so an attacker can supply a reachable attacker-controlled libp2p origin that serves a large DAG and cause the server to retrieve it.\n\n## Impact\n\nSuccessful exploitation affects availability:\n\n- Disk exhaustion from unbounded CAR files in `carStoragePath`.\n- Network exhaustion from recursive Bitswap retrieval.\n- CPU and memory pressure from concurrent libp2p/Helia pin operations.\n- Service degradation or process failure for other users of the daemon.\n- Operational cost and manual recovery burden from large partial CAR files.\n\nThe default daemon configuration reduces exposure because the server binds to `localhost` and refuses to start without an access token unless `ALLOW_NO_AUTH=true`. The finding is most significant when the daemon is exposed beyond localhost, when the token is shared across untrusted users, or when the no-auth mode is enabled.\n\n## PoC\n\n```bash\ncurl -X POST \"https://target.example/pins\" \\\n  -H \"Authorization: Bearer $ACCESS_TOKEN\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\n    \"cid\": \"CID_OF_LARGE_DAG\",\n    \"origins\": [\"/ip4/203.0.113.10/tcp/4001/p2p/ATTACKER_PEER_ID\"],\n    \"meta\": { \"purpose\": \"resource-exhaustion-validation\" }\n  }'\n```\n\nSubmitting many such requests concurrently accelerates resource pressure because each request schedules independent background processing.",
+  "severity": [
+    {
+      "type": "CVSS_V3",
+      "score": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:N/I:N/A:H"
+    }
+  ],
+  "affected": [
+    {
+      "package": {
+        "ecosystem": "npm",
+        "name": "filecoin-pin"
+      },
+      "ranges": [
+        {
+          "type": "ECOSYSTEM",
+          "events": [
+            {
+              "introduced": "0"
+            },
+            {
+              "fixed": "1.1.1"
+            }
+          ]
+        }
+      ],
+      "database_specific": {
+        "last_known_affected_version_range": "<= 1.1.0"
+      }
+    }
+  ],
+  "references": [
+    {
+      "type": "WEB",
+      "url": "https://github.com/filecoin-project/filecoin-pin/security/advisories/GHSA-m5ph-mmg5-6w5h"
+    },
+    {
+      "type": "ADVISORY",
+      "url": "https://nvd.nist.gov/vuln/detail/CVE-2026-62300"
+    },
+    {
+      "type": "WEB",
+      "url": "https://github.com/filecoin-project/filecoin-pin/commit/8db22b47899deb78dadf415fc477cae4bd6e82c2"
+    },
+    {
+      "type": "WEB",
+      "url": "https://github.com/filecoin-project/filecoin-pin/commit/afa019307db23a703737675e94316edcc6572050"
+    },
+    {
+      "type": "PACKAGE",
+      "url": "https://github.com/filecoin-project/filecoin-pin"
+    },
+    {
+      "type": "WEB",
+      "url": "https://github.com/filecoin-project/filecoin-pin/releases/tag/v1.1.1"
+    }
+  ],
+  "database_specific": {
+    "cwe_ids": [
+      "CWE-400"
+    ],
+    "severity": "MODERATE",
+    "github_reviewed": true,
+    "github_reviewed_at": "2026-11-05T18:07:30Z",
+    "nvd_published_at": "2026-10-30T21:17:13Z"
+  }
+}

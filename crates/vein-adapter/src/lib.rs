@@ -16,6 +16,9 @@ pub use cache::{
 
 pub use cache::PostgresCacheBackend as CacheBackend;
 
+// Security advisories
+pub use cache::{Advisory, AdvisoryImport, Affected, AffectedPackage, Interval};
+
 pub use storage::{FileHandle, FilesystemStorage, TempFile};
 pub use version::{compare_gem_versions, is_semver_prerelease, sort_newest_first};
 

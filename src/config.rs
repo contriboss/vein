@@ -10,6 +10,7 @@ use vein_adapter::AssetKind;
 
 // Re-export all submodules
 pub mod admin;
+pub mod advisories;
 pub mod catalog;
 pub mod code_context;
 pub mod database;
@@ -33,6 +34,7 @@ pub(crate) fn resolve_relative(path: &mut PathBuf, base_dir: &Path) {
 
 // Re-export types from submodules for convenience
 pub use admin::{AdminConfig, McpSettings};
+pub use advisories::AdvisoriesConfig;
 pub use catalog::CatalogConfig;
 pub use code_context::CodeContextConfig;
 pub use database::{DATABASE_URL_ENV, DatabaseBackend, DatabaseConfig};
@@ -66,6 +68,8 @@ pub struct Config {
     pub docs: DocsConfig,
     #[serde(default)]
     pub code_context: CodeContextConfig,
+    #[serde(default)]
+    pub advisories: AdvisoriesConfig,
 }
 
 impl Config {

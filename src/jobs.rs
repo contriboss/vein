@@ -25,6 +25,9 @@ pub const QUEUE: &str = "vein";
 /// Every schedule vein owns starts so; others in the database are left be.
 const KEY_PREFIX: &str = "vein:";
 const PROMOTE: &str = "delay.promote";
+const ADVISORIES_KEY: &str = "vein:advisories:sync";
+/// The advisory database's clone, under the storage path.
+const ADVISORY_CHECKOUT: &str = "advisory-database";
 /// crates.io's first crawl is an hour at its crawler limit; npm's walk, half.
 const JOB_TIMEOUT: Duration = Duration::from_hours(4);
 
@@ -57,6 +60,13 @@ pub fn recurring(config: &Config) -> Vec<Recurring> {
         task: crate::exports::TASK,
         cron: "*/10 * * * *",
     });
+    if config.advisories.enabled {
+        jobs.push(Recurring {
+            key: ADVISORIES_KEY.to_owned(),
+            task: crate::advisories::TASK,
+            cron: "41 * * * *",
+        });
+    }
     if config.delay_policy.enabled {
         jobs.push(Recurring {
             key: format!("{KEY_PREFIX}delay:promote"),
@@ -97,6 +107,13 @@ pub async fn run(
             .await
             .context("enqueueing a catalog sync")?;
     }
+    // Nor should advisories wait an hour for their first import.
+    if config.advisories.enabled {
+        queue
+            .enqueue(NewJob::new(QUEUE, crate::advisories::TASK).unique(ADVISORIES_KEY))
+            .await
+            .context("enqueueing an advisory sync")?;
+    }
 
     let mut worker = Worker::new(
         queue.clone(),
@@ -130,6 +147,19 @@ pub async fn run(
             if indexed > 0 {
                 info!(indexed, "exports: indexed cached versions");
             }
+            Ok(())
+        }
+    });
+    let advisories_index = Arc::clone(&index);
+    let checkout = Arc::new(config.storage.path.join(ADVISORY_CHECKOUT));
+    let repository = Arc::new(config.advisories.repository.clone());
+    worker = worker.register(crate::advisories::TASK, move |job| {
+        let index = Arc::clone(&advisories_index);
+        let checkout = Arc::clone(&checkout);
+        let repository = Arc::clone(&repository);
+        async move {
+            let stop = || job.is_cancelled();
+            crate::advisories::sync(&index, &checkout, &repository, &stop).await?;
             Ok(())
         }
     });

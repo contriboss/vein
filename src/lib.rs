@@ -5,6 +5,7 @@ pub mod prelude;
 
 #[cfg(feature = "admin")]
 pub mod admin;
+pub mod advisories;
 pub mod catalog;
 pub mod code_context;
 pub mod config;
