@@ -14,6 +14,10 @@ use crate::advisories::{compare, lockfile};
 /// The largest lockfile read: a big monorepo's `package-lock.json` is a
 /// few MB.
 const LOCKFILE_LIMIT: usize = 16 * 1024 * 1024;
+/// Above this many advisories against one dependency, summaries are left
+/// out (a years-old rack pin has 30-odd): the ids, severities and fix are
+/// what an upgrade needs, each version's resource has the rest.
+const SUMMARIES_UP_TO: usize = 5;
 
 /// Registers the tool. Must run inside a Tokio runtime.
 pub fn offer(server: &Server, resources: &AdminResources) -> anyhow::Result<()> {
@@ -125,7 +129,8 @@ impl Tool for AuditTool {
                             ..advisory.clone()
                         })
                         .collect();
-                    let notes = for_version(kind, &about, &package.version);
+                    let mut notes = for_version(kind, &about, &package.version);
+                    shorten(&mut notes);
                     (!notes.is_empty()).then(|| Vulnerable {
                         upgrade_to: upgrade_to(kind, &notes),
                         name: package.name.clone(),
@@ -144,6 +149,15 @@ impl Tool for AuditTool {
     }
 }
 
+/// Leaves summaries out past [`SUMMARIES_UP_TO`] advisories.
+fn shorten(notes: &mut [Note]) {
+    if notes.len() > SUMMARIES_UP_TO {
+        for note in notes {
+            note.summary = None;
+        }
+    }
+}
+
 /// The highest of the fixes, when every advisory names one.
 fn upgrade_to(kind: vein_adapter::AssetKind, notes: &[Note]) -> Option<String> {
     notes
@@ -154,3 +168,6 @@ fn upgrade_to(kind: vein_adapter::AssetKind, notes: &[Note]) -> Option<String> {
         .max_by(|a, b| compare(kind, a, b))
         .map(str::to_owned)
 }
+
+#[cfg(test)]
+mod tests;
