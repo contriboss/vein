@@ -4,6 +4,7 @@
 //! the versions an agent reads. Nothing is pushed: an advisory costs a
 //! lookup only when someone looks at a package it is about.
 
+pub mod lockfile;
 mod osv;
 mod sync;
 

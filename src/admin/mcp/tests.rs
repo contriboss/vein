@@ -270,19 +270,14 @@ fn hostile_packument() -> String {
 }
 
 async fn seeded_resources(storage: &TempDir, proxy_port: u16) -> AdminResources {
-    seeded_resources_with(
-        storage,
-        proxy_port,
-        crate::config::CodeContextConfig::default(),
-    )
-    .await
+    seeded_resources_with(storage, proxy_port, |_| {}).await
 }
 
-/// [`seeded_resources`], with `code_context` as the config's.
+/// [`seeded_resources`], with the config changed by `configure`.
 async fn seeded_resources_with(
     storage: &TempDir,
     proxy_port: u16,
-    code_context: crate::config::CodeContextConfig,
+    configure: impl FnOnce(&mut VeinConfig),
 ) -> AdminResources {
     let info = storage.path().join("compact_index/info");
     std::fs::create_dir_all(&info).unwrap();
@@ -421,7 +416,7 @@ async fn seeded_resources_with(
     config.server.host = "127.0.0.1".into();
     config.server.port = proxy_port;
     config.docs.docs_rs = format!("http://127.0.0.1:{proxy_port}");
-    config.code_context = code_context;
+    configure(&mut config);
     AdminResources::new(
         Arc::new(config),
         Arc::new(cache),
@@ -1401,9 +1396,11 @@ async fn open_with_code_tools(
         tools,
         ..crate::config::CodeContextConfig::default()
     };
-    let resources = seeded_resources_with(&storage, port, code_context)
-        .await
-        .with_code_context(Arc::new(FakeProvider { remote }));
+    let resources = seeded_resources_with(&storage, port, |config| {
+        config.code_context = code_context;
+    })
+    .await
+    .with_code_context(Arc::new(FakeProvider { remote }));
     let service = service(resources, test_config()).unwrap();
     (service, storage)
 }
@@ -1570,6 +1567,67 @@ async fn open_with_writes() -> (McpHttpService, TempDir) {
 }
 
 const WRITE_TOKEN: &str = "w-token";
+
+/// A lockfile comes back as its vulnerable dependencies only, each with
+/// the version to move to; the tool exists only when advisories are on.
+#[cfg(all(feature = "crates", feature = "gems"))]
+#[tokio::test]
+async fn audit_lockfile_names_what_to_upgrade() {
+    let (port, _) = fake_proxy().await;
+    let storage = tempfile::tempdir().unwrap();
+    let resources = seeded_resources_with(&storage, port, |config| {
+        config.advisories.enabled = true;
+    })
+    .await;
+    let service = service(resources, test_config()).unwrap();
+    let session = Session::open(&service).await;
+    let listed = session.result("tools/list", json!({})).await;
+    assert_eq!(tool_names(&listed), ["audit_lockfile"]);
+
+    let audit = |lockfile: &'static str| {
+        let session = &session;
+        async move {
+            session
+                .result(
+                    "tools/call",
+                    json!({"name": "audit_lockfile", "arguments": {"lockfile": lockfile}}),
+                )
+                .await["structuredContent"]
+                .clone()
+        }
+    };
+    let crates = audit(include_str!("../../../tests/fixtures/lockfiles/Cargo.lock")).await;
+    assert_eq!(crates["registry"], "crate");
+    assert_eq!(crates["checked"], 2);
+    assert_eq!(
+        crates["vulnerable"].as_array().unwrap().len(),
+        1,
+        "{crates}"
+    );
+    let serde = &crates["vulnerable"][0];
+    assert_eq!(serde["name"], "serde");
+    assert_eq!(serde["version"], "1.0.99");
+    assert_eq!(serde["upgrade_to"], "1.0.100");
+    assert_eq!(serde["advisories"][0]["id"], "GHSA-test-serd-0001");
+
+    let gems = audit(include_str!(
+        "../../../tests/fixtures/lockfiles/Gemfile.lock"
+    ))
+    .await;
+    assert_eq!(gems["vulnerable"][0]["name"], "rack");
+    assert_eq!(gems["vulnerable"][0]["upgrade_to"], "3.2.7");
+
+    let refused = session
+        .rpc(
+            "tools/call",
+            json!({"name": "audit_lockfile", "arguments": {"lockfile": "hello"}}),
+        )
+        .await;
+    assert!(
+        refused.to_string().contains("not a Cargo.lock"),
+        "{refused}"
+    );
+}
 
 #[cfg(feature = "crates")]
 fn tool_names(listed: &Value) -> Vec<String> {

@@ -1,0 +1,33 @@
+GIT
+  remote: https://example.com/forked.git
+  revision: 0123456789abcdef
+  specs:
+    forked (0.3.0)
+
+PATH
+  remote: engines/local
+  specs:
+    local-engine (0.1.0)
+
+GEM
+  remote: https://rubygems.org/
+  specs:
+    nokogiri (1.16.0-x86_64-linux)
+      racc (~> 1.4)
+    rack (3.2.6)
+    racc (1.8.1)
+
+PLATFORMS
+  x86_64-linux
+
+DEPENDENCIES
+  forked!
+  local-engine!
+  nokogiri
+  rack (~> 3.2)
+
+CHECKSUMS
+  rack (3.2.6) sha256=cccc
+
+BUNDLED WITH
+   2.6.9
