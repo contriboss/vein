@@ -23,6 +23,7 @@ pub struct Note {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<String>,
     /// The versions it affects, as requirements (`>= 1.2, < 1.4.1`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub vulnerable: Vec<String>,
     /// Which of the versions this answer lists it affects.
     #[serde(skip_serializing_if = "Vec::is_empty")]

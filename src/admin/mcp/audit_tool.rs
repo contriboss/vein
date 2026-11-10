@@ -14,8 +14,8 @@ use crate::advisories::{compare, lockfile};
 /// The largest lockfile read: a big monorepo's `package-lock.json` is a
 /// few MB.
 const LOCKFILE_LIMIT: usize = 16 * 1024 * 1024;
-/// Above this many advisories against one dependency, summaries are left
-/// out (a years-old rack pin has 30-odd): the ids, severities and fix are
+/// Above this many advisories against one dependency, summaries (and the
+/// ranges of those naming a fix) are left out (a years-old rack pin has 30-odd): the ids, severities and fix are
 /// what an upgrade needs, each version's resource has the rest.
 const SUMMARIES_UP_TO: usize = 5;
 
@@ -149,11 +149,15 @@ impl Tool for AuditTool {
     }
 }
 
-/// Leaves summaries out past [`SUMMARIES_UP_TO`] advisories.
+/// Past [`SUMMARIES_UP_TO`] advisories, leaves summaries out, and the
+/// vulnerable ranges of those whose `fixed_in` already says what to do.
 fn shorten(notes: &mut [Note]) {
     if notes.len() > SUMMARIES_UP_TO {
         for note in notes {
             note.summary = None;
+            if note.fixed_in.is_some() {
+                note.vulnerable.clear();
+            }
         }
     }
 }
