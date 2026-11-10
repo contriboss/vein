@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.7.0](https://github.com/contriboss/vein/compare/v0.6.0...v0.7.0) (2026-11-10)
+
+
+### Features
+
+* **adapter:** package exports ledger, list and search ([41a7e4b](https://github.com/contriboss/vein/commit/41a7e4b58663438fcfa288b019fbdd069b4d485b))
+* **adapter:** trusted packages skip the release delay ([ec7bd67](https://github.com/contriboss/vein/commit/ec7bd67714614af50d9bf35319e7536bd2e566df))
+* **advisories:** import GitHub's reviewed advisories hourly ([b9ad943](https://github.com/contriboss/vein/commit/b9ad943a0c6852f1a1a65ee67f237c630e403f66))
+* complete crates exports framework ready for production ([a709fde](https://github.com/contriboss/vein/commit/a709fde97ae39e5b9788f6548d9d1559cd1b9260))
+* **mcp:** advisories next to the versions they affect ([fa532db](https://github.com/contriboss/vein/commit/fa532db58fd4ad5a87ea86a139980210816e458b))
+
+
+### Bug Fixes
+
+* **adapter:** rebuild when a migration is added ([b26c329](https://github.com/contriboss/vein/commit/b26c32934f74e8626d95f817b8fbb541238007a8))
+* **crates:** index exports into Postgres, keep tarballs under storage ([89b5c2c](https://github.com/contriboss/vein/commit/89b5c2caad54a27658c749bfe17acb7dffb289b2))
+* **crates:** key package exports by path, drop duplicate DDL ([b44e399](https://github.com/contriboss/vein/commit/b44e399a691cb27c1412dd11d402a476971f05e2))
+* **exports:** clean doc summaries, Rust crate paths, fixture-based tests ([c46c7dc](https://github.com/contriboss/vein/commit/c46c7dc89f519fdfdc4decb82c0b3c0603336f5d))
+
 ## [0.6.0](https://github.com/contriboss/vein/compare/v0.5.0...v0.6.0) (2026-10-26)
 
 
